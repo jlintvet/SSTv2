@@ -83,7 +83,7 @@ LON_STRIDE = 1
 VARIABLES = ["analysed_sst", "analysis_error", "sea_ice_fraction", "mask"]
 
 # Output directory (relative to this file)
-OUTPUT_DIR = pathlib.Path(__file__).parent / "DailySST"
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
 # Days to retain
 RETENTION_DAYS = 3
