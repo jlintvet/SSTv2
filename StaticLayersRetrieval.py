@@ -6,23 +6,25 @@ region and writes them as JSON files into DailySST/.
 
   DailySST/
     bathymetry.json   – GEBCO_2020 depth grid (~1.8 km resolution, ~8 MB)
-    wrecks.json       – NOAA AWOIS + ENC wrecks (GeoJSON FeatureCollection)
+    wrecks.json       – NOAA ENC wrecks GeoJSON FeatureCollection
 
 Run once to populate, or re-run via manual workflow dispatch to refresh.
 
 Bathymetry
 ----------
   GEBCO_2020 via NOAA CoastWatch ERDDAP (dataset: GEBCO_2020)
-  Stride 4 = ~1.8 km resolution — enough for depth contours and canyon
-  visualization while keeping the file under ~10 MB.
-  Set BATHY_STRIDE = 1 for full 450 m resolution (~135 MB — requires Git LFS).
+  Stride 4 = ~1.8 km resolution (~8 MB, fits GitHub's 100 MB limit).
+  Set BATHY_STRIDE = 1 for full 450 m resolution (~135 MB, requires Git LFS).
 
 Wrecks
 ------
-  NOAA AWOIS CSV direct download (no REST API, no SSL issues).
-  URL: https://nauticalcharts.noaa.gov/data/docs/awois.csv
-  Filtered to bounding box in-script.
-  Also fetches ENC wrecks from the Coast Survey GeoJSON export if available.
+  NOAA has retired AWOIS. The current authoritative source is ENC Direct to GIS
+  hosted at encdirect.noaa.gov. Wreck points are queried across four ENC scale
+  bands: harbour, approach, coastal, and general — giving the most complete
+  picture from inshore to offshore.
+
+  Each band's wreck layer is queried with a bounding box filter and results are
+  deduplicated by coordinate before writing.
 
 Dependencies
 ------------
@@ -51,7 +53,7 @@ LON_MAX = -72.21
 
 # Bathymetry stride:
 #   1  = full 15 arc-sec (~450 m)  — ~135 MB, requires Git LFS
-#   4  = ~1.8 km                   — ~8 MB   (default, fits GitHub)
+#   4  = ~1.8 km                   — ~8 MB (default, fits GitHub)
 #   10 = ~4.5 km                   — ~1.5 MB
 BATHY_STRIDE = 4
 
@@ -59,16 +61,19 @@ OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
-# NOAA AWOIS direct CSV download — stable, no REST/SSL issues
-AWOIS_CSV_URL = "https://nauticalcharts.noaa.gov/data/docs/awois-a.csv"
-
-# Fallback: NOAA CoastWatch ERDDAP has an ENC wrecks dataset too
-ENC_ERDDAP_URL = (
-    "https://coastwatch.pfeg.noaa.gov/erddap/tabledap/noaa_coastwatch_enc_wrecks.csvp"
-    f"?longitude,latitude,vesslterms,depth,history,catwrk"
-    f"&longitude>={LON_MIN}&longitude<={LON_MAX}"
-    f"&latitude>={LAT_MIN}&latitude<={LAT_MAX}"
-)
+# ENC Direct to GIS — the current NOAA-authoritative wreck source
+# Each entry is (scale_band_name, wreck_point_layer_id)
+# Layer IDs confirmed from encdirect.noaa.gov ArcGIS REST metadata:
+#   enc_harbour  / layer 36  = harbour scale wreck points
+#   enc_approach / layer 36  = approach scale wreck points
+#   enc_coastal  / layer 36  = coastal scale wreck points
+#   enc_general  / layer 36  = general scale wreck points
+ENC_SERVICES = [
+    ("harbour",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_harbour/MapServer/36/query"),
+    ("approach", "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/36/query"),
+    ("coastal",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_coastal/MapServer/36/query"),
+    ("general",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_general/MapServer/36/query"),
+]
 
 TIMEOUT = 180
 MAX_RETRIES = 3
@@ -119,18 +124,16 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
 
     reader = csv.reader(io.StringIO(r.text))
     all_rows = list(reader)
-    # csvp: row 0 = headers+units, row 1 = units, rows 2+ = data
     rows = []
-    for raw in all_rows[2:]:
+    for raw in all_rows[2:]:           # skip header + units rows
         if len(raw) < 3:
             continue
         try:
             lat  = round(float(raw[0]), 6)
             lon  = round(float(raw[1]), 6)
-            elev = float(raw[2])          # metres, negative = below sea level
+            elev = float(raw[2])
         except (ValueError, IndexError):
             continue
-
         depth_ft = None if elev >= 0 else round(abs(elev) * 3.28084, 1)
         rows.append({"lat": lat, "lon": lon, "depth_ft": depth_ft})
 
@@ -163,132 +166,118 @@ def write_bathymetry(session: requests.Session) -> pathlib.Path:
 
 
 # ---------------------------------------------------------------------------
-# Wrecks — NOAA AWOIS direct CSV download
+# Wrecks — NOAA ENC Direct to GIS (encdirect.noaa.gov)
 # ---------------------------------------------------------------------------
 
-def _fetch_awois_wrecks(session: requests.Session) -> list[dict]:
+def _query_enc_layer(session: requests.Session,
+                     scale_band: str,
+                     url: str) -> list[dict]:
     """
-    Download the AWOIS CSV directly from NOAA and filter to bounding box.
-    CSV columns vary by version but always include LATDEC, LONDEC, VESSLTERMS,
-    DEPTH, HISTORY.
+    Page through one ENC wreck layer with a bounding box filter.
+    Returns a list of GeoJSON-style feature dicts.
     """
-    log.info("Fetching AWOIS wrecks CSV …")
-    try:
-        r = session.get(AWOIS_CSV_URL, timeout=TIMEOUT)
-        r.raise_for_status()
-    except Exception as exc:
-        log.warning("  AWOIS download failed: %s", exc)
-        return []
-
     features = []
-    reader = csv.DictReader(io.StringIO(r.text))
+    offset = 0
+    page_size = 1000
+    bbox = f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}"
 
-    # Normalise header names — NOAA uses inconsistent casing across versions
-    def get(row, *keys):
-        for k in keys:
-            for rk in row:
-                if rk.strip().upper() == k.upper():
-                    v = row[rk].strip()
-                    return v if v else None
-        return None
+    while True:
+        params = {
+            "where":             "1=1",
+            "geometry":          bbox,
+            "geometryType":      "esriGeometryEnvelope",
+            "inSR":              "4326",
+            "spatialRel":        "esriSpatialRelIntersects",
+            "outFields":         "*",
+            "returnGeometry":    "true",
+            "f":                 "geojson",
+            "resultOffset":      offset,
+            "resultRecordCount": page_size,
+        }
 
-    for row in reader:
+        log.info("  Querying ENC %s wrecks (offset=%d) …", scale_band, offset)
         try:
-            lat = float(get(row, "LATDEC", "LAT", "LATITUDE") or "")
-            lon = float(get(row, "LONDEC", "LON", "LONGITUDE") or "")
-        except (ValueError, TypeError):
-            continue
+            r = session.get(url, params=params, timeout=TIMEOUT)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as exc:
+            log.warning("  %s query failed at offset %d: %s", scale_band, offset, exc)
+            break
 
-        # Filter to bounding box
-        if not (LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX):
-            continue
+        batch = data.get("features", [])
+        if not batch:
+            break
 
-        raw_depth = get(row, "DEPTH", "DEPTH_M", "DEPTHLSD")
-        try:
-            depth_ft = round(float(raw_depth), 1) if raw_depth else None
-        except ValueError:
-            depth_ft = None
+        for feat in batch:
+            props = feat.get("properties") or {}
+            geom  = feat.get("geometry", {})
+            coords = geom.get("coordinates")
+            if not coords or len(coords) < 2:
+                continue
 
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
-            "properties": {
-                "name":         get(row, "VESSLTERMS", "NAME", "FEATURE") or "Unknown",
-                "depth_ft":     depth_ft,
-                "source":       "AWOIS",
-                "history":      get(row, "HISTORY", "REMARKS", "DESCRIPTION"),
-                "year_sunk":    get(row, "YEARSUNK", "YEAR"),
-                "feature_type": get(row, "CATWRK", "FEATTYPE", "TYPE"),
-            },
-        })
+            lon_f, lat_f = float(coords[0]), float(coords[1])
 
-    log.info("  AWOIS: %d features in bounding box.", len(features))
-    return features
+            # Depth — ENC uses VALSOU (value of sounding) in metres
+            valsou = props.get("VALSOU") or props.get("valsou")
+            try:
+                depth_ft = round(float(valsou) * 3.28084, 1) if valsou else None
+            except (ValueError, TypeError):
+                depth_ft = None
 
+            # Wreck category — CATWRK codes:
+            # 1=non-dangerous, 2=dangerous, 3=distributed remains,
+            # 4=submerged, 5=partly submerged
+            catwrk_map = {
+                "1": "non-dangerous",
+                "2": "dangerous",
+                "3": "distributed remains",
+                "4": "submerged",
+                "5": "partly submerged",
+            }
+            catwrk_raw = str(props.get("CATWRK") or props.get("catwrk") or "")
+            catwrk = catwrk_map.get(catwrk_raw, catwrk_raw or None)
 
-def _fetch_enc_wrecks(session: requests.Session) -> list[dict]:
-    """
-    Try to fetch ENC wrecks from CoastWatch ERDDAP tabledap.
-    This dataset may not exist — we catch all errors gracefully.
-    """
-    log.info("Fetching ENC wrecks from ERDDAP (best-effort) …")
-    try:
-        r = session.get(ENC_ERDDAP_URL, timeout=60)
-        r.raise_for_status()
-    except Exception as exc:
-        log.info("  ENC ERDDAP not available (%s) — skipping.", exc)
-        return []
+            name = (
+                props.get("OBJNAM") or props.get("objnam")
+                or props.get("NOBJNM") or props.get("nobjnm")
+                or "Unknown"
+            )
 
-    features = []
-    reader = csv.reader(io.StringIO(r.text))
-    all_rows = list(reader)
-    if len(all_rows) < 3:
-        return features
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [round(lon_f, 6), round(lat_f, 6)],
+                },
+                "properties": {
+                    "name":       name,
+                    "depth_ft":   depth_ft,
+                    "wreck_type": catwrk,
+                    "scale_band": scale_band,
+                    "source":     "NOAA ENC Direct",
+                },
+            })
 
-    headers = [h.split(" (")[0].strip().lower() for h in all_rows[0]]
-    idx = {name: i for i, name in enumerate(headers)}
+        log.info("    %s: %d features so far.", scale_band, len(features))
+        if len(batch) < page_size:
+            break
+        offset += page_size
+        time.sleep(0.3)
 
-    for raw in all_rows[2:]:
-        if len(raw) < 2:
-            continue
-        try:
-            lon = float(raw[idx["longitude"]])
-            lat = float(raw[idx["latitude"]])
-        except (KeyError, ValueError, IndexError):
-            continue
-
-        raw_depth = raw[idx["depth"]] if "depth" in idx else None
-        try:
-            depth_ft = round(float(raw_depth) * 3.28084, 1) if raw_depth else None
-        except (ValueError, TypeError):
-            depth_ft = None
-
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
-            "properties": {
-                "name":         raw[idx["vesslterms"]] if "vesslterms" in idx else "Unknown",
-                "depth_ft":     depth_ft,
-                "source":       "ENC",
-                "history":      raw[idx["history"]] if "history" in idx else None,
-                "year_sunk":    None,
-                "feature_type": raw[idx["catwrk"]] if "catwrk" in idx else None,
-            },
-        })
-
-    log.info("  ENC ERDDAP: %d features.", len(features))
     return features
 
 
 def write_wrecks(session: requests.Session) -> pathlib.Path:
-    features = []
-    features.extend(_fetch_awois_wrecks(session))
-    features.extend(_fetch_enc_wrecks(session))
+    all_features = []
+    for scale_band, url in ENC_SERVICES:
+        feats = _query_enc_layer(session, scale_band, url)
+        all_features.extend(feats)
+        log.info("  %s total: %d features.", scale_band, len(feats))
 
-    # Deduplicate by rounded coordinate (AWOIS and ENC overlap significantly)
+    # Deduplicate by coordinate rounded to 3 decimal places (~100m)
     seen = set()
     unique = []
-    for f in features:
+    for f in all_features:
         key = (
             round(f["geometry"]["coordinates"][0], 3),
             round(f["geometry"]["coordinates"][1], 3),
@@ -297,22 +286,26 @@ def write_wrecks(session: requests.Session) -> pathlib.Path:
             seen.add(key)
             unique.append(f)
 
-    log.info("Wrecks total: %d unique features (%d before dedup).",
-             len(unique), len(features))
+    log.info("Wrecks: %d unique features (%d before dedup).",
+             len(unique), len(all_features))
 
     geojson = {
         "type": "FeatureCollection",
         "metadata": {
-            "sources": {
-                "AWOIS": AWOIS_CSV_URL,
-                "ENC":   "https://coastwatch.pfeg.noaa.gov/erddap/tabledap/",
-            },
+            "source":  "NOAA ENC Direct to GIS (encdirect.noaa.gov)",
+            "note":    "AWOIS has been retired by NOAA. ENC Direct is the current authoritative source.",
+            "updated": "weekly (NOAA updates ENC Direct every Saturday)",
             "region": {
                 "lat_min": LAT_MIN, "lat_max": LAT_MAX,
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
             },
-            "units": {
-                "depth_ft": "feet below surface, null if uncharted"
+            "units": {"depth_ft": "feet below surface, null if uncharted"},
+            "wreck_types": {
+                "non-dangerous":       "charted wreck, not a hazard",
+                "dangerous":           "hazard to surface navigation",
+                "distributed remains": "scattered wreck debris",
+                "submerged":           "fully submerged",
+                "partly submerged":    "partially above water",
             },
         },
         "feature_count": len(unique),
