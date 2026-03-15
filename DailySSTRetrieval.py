@@ -149,10 +149,20 @@ def _check_availability(session: requests.Session, date: datetime.date) -> bool:
 
 
 def _fahrenheit(val: str) -> float | None:
-    """Parse a float SST value; ERDDAP uses 'NaN' for missing."""
+    """
+    Convert an ERDDAP csvp SST value to Fahrenheit.
+    ERDDAP unpacks the NetCDF scale/offset automatically, so csvp delivers
+    analysed_sst already in degrees Celsius (valid ocean range: ~-2 to 36 C).
+    Fill/land pixels arrive as -327.67 (raw int16 fill scaled to float);
+    we reject anything outside the physically plausible ocean range.
+    """
     try:
-        f = float(val)
-        return None if f != f else round((f - 273.15) * 9/5 + 32, 4)  # Kelvin → Fahrenheit
+        c = float(val)
+        if c != c:               # NaN
+            return None
+        if c < -3.0 or c > 40.0:  # fill value or non-ocean pixel
+            return None
+        return round(c * 9/5 + 32, 4)   # Celsius -> Fahrenheit
     except (ValueError, TypeError):
         return None
 
@@ -198,7 +208,7 @@ def _parse_csv(text: str) -> list[dict]:
         if lat is None or lon is None:
             continue
 
-        # analysed_sst is delivered in Kelvin by ERDDAP griddap
+        # analysed_sst is delivered in Celsius by ERDDAP (scale/offset already applied)
         sst_raw = raw[idx.get("analysed_sst", -1)] if "analysed_sst" in idx else None
         sst = _fahrenheit(sst_raw) if sst_raw is not None else None
 
@@ -206,7 +216,10 @@ def _parse_csv(text: str) -> list[dict]:
             "lat":   lat,
             "lon":   lon,
             "sst":   sst,
-            "error": _float(raw[idx["analysis_error"]]) if "analysis_error" in idx else None,
+            # analysis_error is a delta in Celsius; multiply by 1.8 for Fahrenheit delta
+            "error": round(float(raw[idx["analysis_error"]]) * 1.8, 4)
+                     if "analysis_error" in idx and raw[idx["analysis_error"]] not in ("", "NaN")
+                     else None,
             "ice":   _float(raw[idx["sea_ice_fraction"]]) if "sea_ice_fraction" in idx else None,
             "mask":  _float(raw[idx["mask"]]) if "mask" in idx else None,
         }
