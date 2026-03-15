@@ -5,8 +5,9 @@ Fetches two static reference layers for the Mid-Atlantic offshore fishing
 region and writes them as JSON files into DailySST/.
 
   DailySST/
-    bathymetry.json   – GEBCO_2020 depth grid (~1.8 km resolution, ~8 MB)
-    wrecks.json       – NOAA ENC wrecks GeoJSON FeatureCollection
+    bathymetry.json           – GEBCO_2020 depth grid (~1.8 km resolution, ~8 MB)
+    bathymetry_contours.json  – GeoJSON LineStrings at fishing-relevant depths (~1-3 MB)
+    wrecks.json               – NOAA ENC wrecks GeoJSON FeatureCollection
 
 Run once to populate, or re-run via manual workflow dispatch to refresh.
 
@@ -143,7 +144,7 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     return rows
 
 
-def write_bathymetry(session: requests.Session) -> pathlib.Path:
+def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict]]:
     rows = _fetch_bathymetry(session)
     payload = {
         "dataset":    "GEBCO_2020",
@@ -162,8 +163,155 @@ def write_bathymetry(session: requests.Session) -> pathlib.Path:
     with open(dest, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"))
     log.info("bathymetry.json written  (%.1f MB)", dest.stat().st_size / 1e6)
-    return dest
+    return dest, rows
 
+
+
+# ---------------------------------------------------------------------------
+# Bathymetry contours — marching squares via contourpy
+# ---------------------------------------------------------------------------
+
+# Fishing-relevant depth thresholds in feet.
+# These are the lines that matter on the water:
+#   30   = nearshore bottom limit (flounder, sea bass)
+#   60   = inshore reef / wreck belt
+#   100  = king mackerel / cobia transition
+#   200  = amberjack / grouper deep edge
+#   300  = outer shelf — mahi, wahoo in season
+#   600  = shelf break — primary pelagic target zone
+#   1000 = upper slope — deep dropfish, swordfish at night
+#   1500 = mid-slope
+#   2000 = canyon floor / deep water
+CONTOUR_DEPTHS_FT = [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]
+
+
+def _build_grid(rows: list[dict]):
+    """
+    Convert the flat list of {lat, lon, depth_ft} rows into a 2-D numpy-style
+    grid using only the standard library.  Returns (lats, lons, grid_2d) where
+    grid_2d[i][j] is the depth at lats[i], lons[j].  Ocean = positive float,
+    land/null = 0.0 (treated as sea-level — contourpy will not cross it).
+    """
+    lats_set = sorted(set(r["lat"] for r in rows))
+    lons_set = sorted(set(r["lon"] for r in rows))
+    lat_idx  = {v: i for i, v in enumerate(lats_set)}
+    lon_idx  = {v: i for i, v in enumerate(lons_set)}
+
+    grid = [[0.0] * len(lons_set) for _ in range(len(lats_set))]
+    for r in rows:
+        if r["depth_ft"] is not None:
+            grid[lat_idx[r["lat"]]][lon_idx[r["lon"]]] = r["depth_ft"]
+
+    return lats_set, lons_set, grid
+
+
+def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
+    """
+    Run marching squares at a single depth threshold and return a list of
+    GeoJSON LineString coordinate arrays.
+    Uses contourpy (lightweight, no matplotlib dependency).
+    """
+    from contourpy import contour_generator
+
+    # contourpy expects x = columns (lon), y = rows (lat)
+    import array as _array
+
+    n_rows = len(lats)
+    n_cols = len(lons)
+
+    # Flatten grid to a list for contourpy (row-major)
+    flat = []
+    for row in grid:
+        flat.extend(row)
+
+    cg = contour_generator(
+        x=lons,
+        y=lats,
+        z=flat,
+        name="serial",
+    )
+    lines = cg.lines(depth_ft)   # returns list of (N,2) arrays of [lon, lat]
+
+    features = []
+    for line in lines:
+        if len(line) < 2:
+            continue
+        coords = [[round(float(pt[0]), 5), round(float(pt[1]), 5)] for pt in line]
+        features.append(coords)
+    return features
+
+
+def write_contours(rows: list[dict]) -> pathlib.Path:
+    """
+    Build contour GeoJSON from the already-fetched bathymetry grid rows.
+    No additional network request needed.
+    """
+    try:
+        import contourpy  # noqa: F401
+    except ImportError:
+        log.error("contourpy not installed — run: pip install contourpy")
+        raise
+
+    log.info("Generating depth contours at %s ft …", CONTOUR_DEPTHS_FT)
+    lats, lons, grid = _build_grid(rows)
+    log.info("  Grid: %d lats x %d lons", len(lats), len(lons))
+
+    all_features = []
+    for depth_ft in CONTOUR_DEPTHS_FT:
+        lines = _grid_to_geojson_contours(lats, lons, grid, depth_ft)
+        for coords in lines:
+            all_features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": coords,
+                },
+                "properties": {
+                    "depth_ft":   depth_ft,
+                    "depth_label": f"{depth_ft} ft",
+                    # Fishing significance for UI tooltips / styling
+                    "fishing_note": {
+                        30:   "nearshore bottom limit",
+                        60:   "inshore reef and wreck belt",
+                        100:  "king mackerel / cobia line",
+                        200:  "amberjack / grouper deep edge",
+                        300:  "outer shelf — mahi and wahoo",
+                        600:  "shelf break — primary pelagic zone",
+                        1000: "upper slope — swordfish at night",
+                        1500: "mid-slope",
+                        2000: "canyon floor",
+                    }.get(depth_ft),
+                },
+            })
+        log.info("  %d ft: %d line segments", depth_ft, len(lines))
+
+    geojson = {
+        "type": "FeatureCollection",
+        "metadata": {
+            "dataset":      "GEBCO_2020",
+            "source":       "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
+            "contour_depths_ft": CONTOUR_DEPTHS_FT,
+            "units":        {"depth_ft": "feet below surface"},
+            "region": {
+                "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+                "lon_min": LON_MIN, "lon_max": LON_MAX,
+            },
+            "note": (
+                "Each Feature is a LineString at a fixed depth. "
+                "Style by depth_ft property for a nautical chart look: "
+                "heavier weight for 100/300/600 ft lines, lighter for others."
+            ),
+        },
+        "feature_count": len(all_features),
+        "features": all_features,
+    }
+
+    dest = OUTPUT_DIR / "bathymetry_contours.json"
+    with open(dest, "w", encoding="utf-8") as fh:
+        json.dump(geojson, fh, separators=(",", ":"))
+    log.info("bathymetry_contours.json written  (%d features, %.2f MB)",
+             len(all_features), dest.stat().st_size / 1e6)
+    return dest
 
 # ---------------------------------------------------------------------------
 # Wrecks — NOAA ENC Direct to GIS (encdirect.noaa.gov)
@@ -329,10 +477,19 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session = _make_session()
 
+    bathy_rows = []
     try:
-        write_bathymetry(session)
+        _, bathy_rows = write_bathymetry(session)
     except Exception as exc:
         log.error("Bathymetry fetch failed: %s", exc)
+
+    try:
+        if bathy_rows:
+            write_contours(bathy_rows)
+        else:
+            log.warning("Skipping contours — no bathymetry rows available.")
+    except Exception as exc:
+        log.error("Contour generation failed: %s", exc)
 
     try:
         write_wrecks(session)
