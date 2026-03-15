@@ -228,6 +228,18 @@ def _parse_csv(text: str) -> list[dict]:
     return rows
 
 
+def _actual_extent(rows: list[dict]) -> dict:
+    """Return the min/max lat/lon actually present in the parsed rows."""
+    if not rows:
+        return {}
+    lats = [r["lat"] for r in rows]
+    lons = [r["lon"] for r in rows]
+    return {
+        "lat_min": min(lats), "lat_max": max(lats),
+        "lon_min": min(lons), "lon_max": max(lons),
+    }
+
+
 def _fetch_day_json(session: requests.Session,
                     date: datetime.date,
                     dest: pathlib.Path) -> bool:
@@ -250,6 +262,7 @@ def _fetch_day_json(session: requests.Session,
         log.warning("  No rows parsed for %s — skipping.", date.isoformat())
         return False
 
+    extent = _actual_extent(rows)
     payload = {
         "date":          date.isoformat(),
         "generated_utc": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -262,6 +275,7 @@ def _fetch_day_json(session: requests.Session,
             "lon_max": LON_MAX,
             "stride":  LAT_STRIDE,
         },
+        "actual_extent": extent,
         "units": {
             "sst":   "fahrenheit",
             "error": "fahrenheit",
