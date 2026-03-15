@@ -204,14 +204,16 @@ def _build_grid(rows: list[dict]):
     Convert the flat list of {lat, lon, depth_ft} rows into a 2-D numpy-style
     grid using only the standard library.  Returns (lats, lons, grid_2d) where
     grid_2d[i][j] is the depth at lats[i], lons[j].  Ocean = positive float,
-    land/null = 0.0 (treated as sea-level — contourpy will not cross it).
+    land/null = float("nan") so contourpy treats them as masked no-data cells
+    and will not draw contours across them — preventing spurious artifacts.
     """
+    import math
     lats_set = sorted(set(r["lat"] for r in rows))
     lons_set = sorted(set(r["lon"] for r in rows))
     lat_idx  = {v: i for i, v in enumerate(lats_set)}
     lon_idx  = {v: i for i, v in enumerate(lons_set)}
 
-    grid = [[0.0] * len(lons_set) for _ in range(len(lats_set))]
+    grid = [[math.nan] * len(lons_set) for _ in range(len(lats_set))]
     for r in rows:
         if r["depth_ft"] is not None:
             grid[lat_idx[r["lat"]]][lon_idx[r["lon"]]] = r["depth_ft"]
