@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m ensurepip --upgrade
           python -m pip install --upgrade pip
-          python -m pip install requests
+          python -m pip install -r requirements.txt
 
       - name: Run StaticLayersRetrieval.py
         run: python StaticLayersRetrieval.py
@@ -40,7 +40,6 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Add everything written into DailySST/ — don't hardcode filenames
           git add DailySST/
 
           if git diff --cached --quiet; then
