@@ -1,0 +1,50 @@
+name: Static Layers Retrieval (Bathymetry + Wrecks)
+
+on:
+  workflow_dispatch:    # manual trigger only — run once or when you want to refresh
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  retrieve-static-layers:
+    name: Fetch bathymetry and wrecks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m ensurepip --upgrade
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Run StaticLayersRetrieval.py
+        run: python StaticLayersRetrieval.py
+
+      - name: Commit static layers to repository
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add DailySST/bathymetry.json DailySST/wrecks.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: update static layers (bathymetry + wrecks)"
+            git push
+          fi
