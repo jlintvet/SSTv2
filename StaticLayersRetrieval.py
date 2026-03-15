@@ -144,8 +144,21 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     return rows
 
 
+def _actual_extent(rows: list[dict]) -> dict:
+    """Return the min/max lat/lon actually returned by ERDDAP for this request."""
+    if not rows:
+        return {}
+    lats = [r["lat"] for r in rows]
+    lons = [r["lon"] for r in rows]
+    return {
+        "lat_min": round(min(lats), 6), "lat_max": round(max(lats), 6),
+        "lon_min": round(min(lons), 6), "lon_max": round(max(lons), 6),
+    }
+
+
 def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict]]:
     rows = _fetch_bathymetry(session)
+    extent = _actual_extent(rows)
     payload = {
         "dataset":    "GEBCO_2020",
         "source":     "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
@@ -156,6 +169,7 @@ def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict
             "lat_min": LAT_MIN, "lat_max": LAT_MAX,
             "lon_min": LON_MIN, "lon_max": LON_MAX,
         },
+        "actual_extent": extent,
         "point_count": len(rows),
         "points": rows,
     }
@@ -295,6 +309,10 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
             "region": {
                 "lat_min": LAT_MIN, "lat_max": LAT_MAX,
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
+            },
+            "actual_extent": {
+                "lat_min": round(min(lats), 6), "lat_max": round(max(lats), 6),
+                "lon_min": round(min(lons), 6), "lon_max": round(max(lons), 6),
             },
             "note": (
                 "Each Feature is a LineString at a fixed depth. "
