@@ -224,24 +224,15 @@ def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
     Run marching squares at a single depth threshold and return a list of
     GeoJSON LineString coordinate arrays.
     Uses contourpy (lightweight, no matplotlib dependency).
+    contourpy requires z as a 2D array (list of lists) — grid is already
+    in that shape from _build_grid, so pass it directly.
     """
     from contourpy import contour_generator
-
-    # contourpy expects x = columns (lon), y = rows (lat)
-    import array as _array
-
-    n_rows = len(lats)
-    n_cols = len(lons)
-
-    # Flatten grid to a list for contourpy (row-major)
-    flat = []
-    for row in grid:
-        flat.extend(row)
 
     cg = contour_generator(
         x=lons,
         y=lats,
-        z=flat,
+        z=grid,
         name="serial",
     )
     lines = cg.lines(depth_ft)   # returns list of (N,2) arrays of [lon, lat]
