@@ -70,7 +70,7 @@ LON_MAX = -72.21
 # Increase to reduce file size (e.g. 4 = ~1.8 km, 10 = ~4.5 km).
 BATHY_STRIDE = 1
 
-OUTPUT_DIR = pathlib.Path(__file__).parent / "DailySST"
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
