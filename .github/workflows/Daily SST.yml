@@ -26,10 +26,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: ${{ env.pythonLocation }}/bin/pip install -r requirements.txt
+        run: |
+          which python
+          python --version
+          python -m ensurepip --upgrade
+          python -m pip install --upgrade pip
+          python -m pip install requests
+          python -m pip show requests
 
       - name: Run DailySSTRetrieval.py
-        run: ${{ env.pythonLocation }}/bin/python DailySSTRetrieval.py
+        run: python DailySSTRetrieval.py
 
       - name: Commit DailySST data to repository
         run: |
