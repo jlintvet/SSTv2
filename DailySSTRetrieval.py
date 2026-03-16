@@ -68,10 +68,10 @@ ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
 
 # Spatial subset (degrees)
 # Region: southern New Jersey (N) → Myrtle Beach SC (S),
-#         Jacksonville FL (W)     → ~200 miles offshore Virginia Beach (E)
+#         Myrtle Beach SC (W)     → ~200 miles offshore Virginia Beach (E)
 LAT_MIN = 33.70
 LAT_MAX = 39.00
-LON_MIN = -81.66
+LON_MIN = -78.89
 LON_MAX = -72.21
 
 # Stride — 10 = ~10 km resolution, keeps JSON files to a manageable size.
