@@ -481,10 +481,45 @@ def write_wrecks(session: requests.Session) -> pathlib.Path:
         all_features.extend(feats)
         log.info("  %s total: %d features.", scale_band, len(feats))
 
+    # ---------------------------------------------------------------------------
+    # Fishing target filters
+    # Purpose 1: offshore fishing targets (meaningful structure, not inshore clutter)
+    # Purpose 2: depth-qualified wrecks only (known depth, deep enough to fish)
+    # ---------------------------------------------------------------------------
+
+    # Filter 1 — wreck type
+    # Keep only discrete submerged structures fishable as wreck targets.
+    # Drop:
+    #   "distributed remains" — scattered debris, not a defined fishing location
+    #   "partly submerged"    — still breaking the surface, inshore hazard only
+    #   None / unknown type   — unclassified obstructions (pilings, rocks, etc.)
+    KEEP_TYPES = {"submerged", "non-dangerous", "dangerous"}
+    filtered = [
+        f for f in all_features
+        if f["properties"].get("wreck_type") in KEEP_TYPES
+    ]
+    log.info("After type filter: %d / %d (kept submerged/non-dangerous/dangerous).",
+             len(filtered), len(all_features))
+
+    # Filter 2 — minimum depth
+    # Require a charted depth of at least 20 ft.
+    # This removes:
+    #   - All harbour-layer ICW obstructions (pilings, rocks, jetty ends)
+    #   - Any wreck with null depth that has no fishing utility
+    # 20 ft is the minimum depth where a wreck becomes a bottom fishing target
+    # for species like sea bass, sheepshead, and flounder.
+    MIN_DEPTH_FT = 20.0
+    filtered = [
+        f for f in filtered
+        if f["properties"].get("depth_ft") is not None
+        and f["properties"]["depth_ft"] >= MIN_DEPTH_FT
+    ]
+    log.info("After depth filter (>= %d ft): %d.", MIN_DEPTH_FT, len(filtered))
+
     # Deduplicate by coordinate rounded to 3 decimal places (~100m)
     seen = set()
     unique = []
-    for f in all_features:
+    for f in filtered:
         key = (
             round(f["geometry"]["coordinates"][0], 3),
             round(f["geometry"]["coordinates"][1], 3),
@@ -493,8 +528,8 @@ def write_wrecks(session: requests.Session) -> pathlib.Path:
             seen.add(key)
             unique.append(f)
 
-    log.info("Wrecks: %d unique features (%d before dedup).",
-             len(unique), len(all_features))
+    log.info("Wrecks: %d unique fishing targets (%d raw → %d after type+depth filters → %d after dedup).",
+             len(unique), len(all_features), len(filtered), len(unique))
 
     geojson = {
         "type": "FeatureCollection",
