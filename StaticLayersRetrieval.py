@@ -49,7 +49,7 @@ from urllib3.util.retry import Retry
 
 LAT_MIN = 33.70
 LAT_MAX = 39.00
-LON_MIN = -80.85
+LON_MIN = -81.66
 LON_MAX = -72.21
 
 # Bathymetry stride:
