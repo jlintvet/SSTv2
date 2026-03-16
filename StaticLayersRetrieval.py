@@ -204,15 +204,18 @@ def _build_grid(rows: list[dict]):
     Convert the flat list of {lat, lon, depth_ft} rows into a 2-D grid.
     Returns (lats, lons, grid_2d) where grid_2d[i][j] is depth at lats[i], lons[j].
 
-    Land/null cells are initialised as NaN so contourpy skips them entirely.
+    Two classes of NaN exist in the raw GEBCO data at stride 4:
+      1. Land cells — elevation >= 0, written as None in rows, must stay NaN
+         so contourpy never draws contours across land.
+      2. Sparse ocean gaps — grid cells that fall between GEBCO sample points
+         due to the stride. These appear as NaN surrounded by valid ocean values
+         and cause contourpy to draw tight closing contours (the diamond/spike
+         artifact) around each isolated filled cell.
 
-    After the initial fill, a two-pass nearest-neighbor interpolation propagates
-    ocean depth values into adjacent empty cells.  This prevents the diamond/spike
-    artifact where a single isolated ocean cell surrounded by NaN causes marching
-    squares to draw tight closing contours around one point.
-
-    Land cells that remain NaN after both passes (fully surrounded by other land)
-    are left as NaN — contourpy will correctly ignore them.
+    The fix: for cells that are NaN but have ocean neighbors within a 1-cell
+    radius, fill with the average of those neighbors (ocean gap fill).
+    For cells that are NaN and have NO ocean neighbors, leave as NaN (land).
+    This fills sparse gaps without spreading ocean values onto land.
     """
     import math
 
@@ -223,38 +226,39 @@ def _build_grid(rows: list[dict]):
     n_rows   = len(lats_set)
     n_cols   = len(lons_set)
 
-    # Flat list for efficient pass — reshape to 2D at the end
+    # Step 1: place known ocean depths; land/null cells remain NaN
     flat = [math.nan] * (n_rows * n_cols)
     for r in rows:
         if r["depth_ft"] is not None:
-            i = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
-            flat[i] = r["depth_ft"]
+            flat[lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]] = r["depth_ft"]
 
-    # Pass 1: left→right, top→bottom
-    for row in range(n_rows):
-        for col in range(n_cols):
-            i = row * n_cols + col
-            if not math.isnan(flat[i]):
-                continue
-            if col > 0 and not math.isnan(flat[i - 1]):
-                flat[i] = flat[i - 1]
-                continue
-            if row > 0 and not math.isnan(flat[i - n_cols]):
-                flat[i] = flat[i - n_cols]
+    # Step 2: iterative neighbor-average fill for sparse ocean gaps only.
+    # Run up to 6 passes — each pass can fill cells that were filled in the
+    # previous pass, gradually closing gaps without ever touching true land.
+    for _ in range(6):
+        changed = False
+        new_flat = flat[:]
+        for row in range(n_rows):
+            for col in range(n_cols):
+                i = row * n_cols + col
+                if not math.isnan(flat[i]):
+                    continue
+                # Gather 4-connected ocean neighbors
+                neighbors = []
+                for dr, dc in ((-1,0),(1,0),(0,-1),(0,1)):
+                    nr, nc = row + dr, col + dc
+                    if 0 <= nr < n_rows and 0 <= nc < n_cols:
+                        v = flat[nr * n_cols + nc]
+                        if not math.isnan(v):
+                            neighbors.append(v)
+                if neighbors:
+                    new_flat[i] = sum(neighbors) / len(neighbors)
+                    changed = True
+        flat = new_flat
+        if not changed:
+            break
 
-    # Pass 2: right→left, bottom→top
-    for row in range(n_rows - 1, -1, -1):
-        for col in range(n_cols - 1, -1, -1):
-            i = row * n_cols + col
-            if not math.isnan(flat[i]):
-                continue
-            if col < n_cols - 1 and not math.isnan(flat[i + 1]):
-                flat[i] = flat[i + 1]
-                continue
-            if row < n_rows - 1 and not math.isnan(flat[i + n_cols]):
-                flat[i] = flat[i + n_cols]
-
-    # Reshape back to 2D — land cells still NaN remain NaN (contourpy skips them)
+    # Step 3: reshape to 2D — true land cells still NaN, contourpy skips them
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats_set, lons_set, grid
 
