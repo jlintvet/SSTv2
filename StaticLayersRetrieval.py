@@ -54,9 +54,11 @@ LON_MAX = -72.21
 
 # Bathymetry stride:
 #   1  = full 15 arc-sec (~450 m)  — ~135 MB, requires Git LFS
-#   4  = ~1.8 km                   — ~8 MB (default, fits GitHub)
+#   2  = ~900 m                    — ~32 MB (default — enough resolution
+#                                    for narrow features like Norfolk Canyon)
+#   4  = ~1.8 km                   — ~8 MB (too coarse, canyon renders as spike)
 #   10 = ~4.5 km                   — ~1.5 MB
-BATHY_STRIDE = 4
+BATHY_STRIDE = 2
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
@@ -281,9 +283,13 @@ def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
     )
     lines = cg.lines(depth_ft)   # returns list of (N,2) arrays of [lon, lat]
 
+    # Minimum point count filter — short closing loops (< 6 points) are
+    # typically contour artifacts around single-cell features, not real
+    # bathymetric structure.  Real canyon/shelf features produce long lines.
+    MIN_POINTS = 6
     features = []
     for line in lines:
-        if len(line) < 2:
+        if len(line) < MIN_POINTS:
             continue
         coords = [[round(float(pt[0]), 5), round(float(pt[1]), 5)] for pt in line]
         features.append(coords)
