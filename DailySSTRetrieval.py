@@ -68,10 +68,10 @@ ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
 
 # Spatial subset (degrees)
 # Region: southern New Jersey (N) → Myrtle Beach SC (S),
-#         Charlotte NC (W)        → ~200 miles offshore Virginia Beach (E)
+#         Jacksonville FL (W)     → ~200 miles offshore Virginia Beach (E)
 LAT_MIN = 33.70
 LAT_MAX = 39.00
-LON_MIN = -80.85
+LON_MIN = -81.66
 LON_MAX = -72.21
 
 # Stride — 10 = ~10 km resolution, keeps JSON files to a manageable size.
@@ -281,6 +281,7 @@ def _fetch_day_json(session: requests.Session,
             "error": "fahrenheit",
             "ice":   "fraction_0_to_1",
             "mask":  "categorical",
+            
         },
         "row_count": len(rows),
         "rows": rows,
@@ -360,7 +361,7 @@ def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
             "sst":   "fahrenheit",
             "error": "fahrenheit",
             "ice":   "fraction_0_to_1",
-            "mask":  "categorical",
+            
         },
         "file_count": len(files_on_disk),
         "files":      files_on_disk,
