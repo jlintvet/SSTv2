@@ -201,23 +201,61 @@ CONTOUR_DEPTHS_FT = [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]
 
 def _build_grid(rows: list[dict]):
     """
-    Convert the flat list of {lat, lon, depth_ft} rows into a 2-D numpy-style
-    grid using only the standard library.  Returns (lats, lons, grid_2d) where
-    grid_2d[i][j] is the depth at lats[i], lons[j].  Ocean = positive float,
-    land/null = float("nan") so contourpy treats them as masked no-data cells
-    and will not draw contours across them — preventing spurious artifacts.
+    Convert the flat list of {lat, lon, depth_ft} rows into a 2-D grid.
+    Returns (lats, lons, grid_2d) where grid_2d[i][j] is depth at lats[i], lons[j].
+
+    Land/null cells are initialised as NaN so contourpy skips them entirely.
+
+    After the initial fill, a two-pass nearest-neighbor interpolation propagates
+    ocean depth values into adjacent empty cells.  This prevents the diamond/spike
+    artifact where a single isolated ocean cell surrounded by NaN causes marching
+    squares to draw tight closing contours around one point.
+
+    Land cells that remain NaN after both passes (fully surrounded by other land)
+    are left as NaN — contourpy will correctly ignore them.
     """
     import math
+
     lats_set = sorted(set(r["lat"] for r in rows))
     lons_set = sorted(set(r["lon"] for r in rows))
     lat_idx  = {v: i for i, v in enumerate(lats_set)}
     lon_idx  = {v: i for i, v in enumerate(lons_set)}
+    n_rows   = len(lats_set)
+    n_cols   = len(lons_set)
 
-    grid = [[math.nan] * len(lons_set) for _ in range(len(lats_set))]
+    # Flat list for efficient pass — reshape to 2D at the end
+    flat = [math.nan] * (n_rows * n_cols)
     for r in rows:
         if r["depth_ft"] is not None:
-            grid[lat_idx[r["lat"]]][lon_idx[r["lon"]]] = r["depth_ft"]
+            i = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
+            flat[i] = r["depth_ft"]
 
+    # Pass 1: left→right, top→bottom
+    for row in range(n_rows):
+        for col in range(n_cols):
+            i = row * n_cols + col
+            if not math.isnan(flat[i]):
+                continue
+            if col > 0 and not math.isnan(flat[i - 1]):
+                flat[i] = flat[i - 1]
+                continue
+            if row > 0 and not math.isnan(flat[i - n_cols]):
+                flat[i] = flat[i - n_cols]
+
+    # Pass 2: right→left, bottom→top
+    for row in range(n_rows - 1, -1, -1):
+        for col in range(n_cols - 1, -1, -1):
+            i = row * n_cols + col
+            if not math.isnan(flat[i]):
+                continue
+            if col < n_cols - 1 and not math.isnan(flat[i + 1]):
+                flat[i] = flat[i + 1]
+                continue
+            if row < n_rows - 1 and not math.isnan(flat[i + n_cols]):
+                flat[i] = flat[i + n_cols]
+
+    # Reshape back to 2D — land cells still NaN remain NaN (contourpy skips them)
+    grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats_set, lons_set, grid
 
 
