@@ -315,10 +315,28 @@ _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
 def _parse_gpx_file(gpx_path: pathlib.Path, region: str) -> tuple[list[dict], int]:
     """
     Parse a single Fishing Status GPX file and return (features, skipped).
+    Sanitizes common XML issues (unescaped & outside CDATA) before parsing.
     Features are NOT yet deduplicated — caller handles that after merging.
     """
-    tree = ET.parse(gpx_path)
-    root = tree.getroot()
+    # Read raw bytes and fix unescaped & that aren't already part of an
+    # XML entity reference (e.g. &amp; &lt; &gt; &quot; &apos; &#NNN;)
+    raw = gpx_path.read_bytes()
+    # Replace bare & not followed by an entity/char reference
+    import re as _re
+    raw = _re.sub(rb'&(?!amp;|lt;|gt;|quot;|apos;|#)', b'&amp;', raw)
+
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as exc:
+        log.error("Failed to parse %s: %s", gpx_path.name, exc)
+        # Show the offending line for easier debugging
+        line_no = exc.position[0] if exc.position else 0
+        lines = raw.split(b'\n')
+        if line_no:
+            for i in range(max(0, line_no - 2), min(len(lines), line_no + 1)):
+                log.error("  Line %d: %s", i + 1,
+                          lines[i].decode("utf-8", errors="replace"))
+        return [], 0
 
     ns = ""
     if root.tag.startswith("{"):
