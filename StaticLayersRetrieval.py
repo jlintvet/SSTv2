@@ -63,9 +63,9 @@ BATHY_STRIDE = 2
 
 OUTPUT_DIR    = pathlib.Path(__file__).resolve().parent / "DailySST"
 GPX_FILENAMES = [
-    ("HatterasNC.gpx",   "HatterasNC"),
-    ("MoreheadNC.gpx",   "MoreheadNC"),
-    ("ChesapeakeMD.gpx", "ChesapeakeMD"),
+    ("fishing_spots_HatterasNC.gpx",   "HatterasNC"),
+    ("fishing_spots_MoreheadNC.gpx",   "MoreheadNC"),
+    ("fishing_spots_ChesapeakeMD.gpx", "ChesapeakeMD"),
 ]
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
