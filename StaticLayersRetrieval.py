@@ -493,11 +493,22 @@ def write_wrecks(session: requests.Session) -> pathlib.Path:
     #   "distributed remains" — scattered debris, not a defined fishing location
     #   "partly submerged"    — still breaking the surface, inshore hazard only
     #   None / unknown type   — unclassified obstructions (pilings, rocks, etc.)
+    # Whitelist of explicit wreck types that are fishable targets.
+    # Also keep features where wreck_type is None/unclassified — many ENC
+    # records have valid position and depth but no CATWRK field populated.
+    # These are still useful fishing targets if they pass the depth filter.
     KEEP_TYPES = {"submerged", "non-dangerous", "dangerous"}
     filtered = [
         f for f in all_features
         if f["properties"].get("wreck_type") in KEEP_TYPES
+        or f["properties"].get("wreck_type") is None
     ]
+    # Log a sample of wreck_type values to diagnose mapping issues
+    type_counts = {}
+    for f in all_features:
+        t = str(f["properties"].get("wreck_type"))
+        type_counts[t] = type_counts.get(t, 0) + 1
+    log.info("wreck_type distribution: %s", sorted(type_counts.items(), key=lambda x: -x[1])[:10])
     log.info("After type filter: %d / %d (kept submerged/non-dangerous/dangerous).",
              len(filtered), len(all_features))
 
