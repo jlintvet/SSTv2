@@ -1,50 +1,49 @@
 """
 StaticLayersRetrieval.py
 ========================
-Fetches two static reference layers for the Mid-Atlantic offshore fishing
-region and writes them as JSON files into DailySST/.
+Fetches static reference layers for the Mid-Atlantic offshore fishing region
+and writes them as JSON files into DailySST/.
 
   DailySST/
-    bathymetry.json           – GEBCO_2020 depth grid (~1.8 km resolution, ~8 MB)
-    bathymetry_contours.json  – GeoJSON LineStrings at fishing-relevant depths (~1-3 MB)
-    wrecks.json               – NOAA ENC wrecks GeoJSON FeatureCollection
+    bathymetry.json           – GEBCO_2020 depth grid (~32 MB at stride 2)
+    bathymetry_contours.json  – GeoJSON LineStrings at fishing-relevant depths
+    wrecks.json               – Named fishing spots parsed from fishing_spots.gpx
 
 Run once to populate, or re-run via manual workflow dispatch to refresh.
 
 Bathymetry
 ----------
   GEBCO_2020 via NOAA CoastWatch ERDDAP (dataset: GEBCO_2020)
-  Stride 4 = ~1.8 km resolution (~8 MB, fits GitHub's 100 MB limit).
-  Set BATHY_STRIDE = 1 for full 450 m resolution (~135 MB, requires Git LFS).
+  Stride 2 = ~900 m resolution — enough to render narrow features like
+  Norfolk Canyon without the spike artifact caused by stride 4.
 
-Wrecks
-------
-  NOAA has retired AWOIS. The current authoritative source is ENC Direct to GIS
-  hosted at encdirect.noaa.gov. Wreck points are queried across four ENC scale
-  bands: harbour, approach, coastal, and general — giving the most complete
-  picture from inshore to offshore.
-
-  Each band's wreck layer is queried with a bounding box filter and results are
-  deduplicated by coordinate before writing.
+Points of interest / wrecks
+----------------------------
+  Parsed from DailySST/fishing_spots.gpx — a Fishing Status community GPX
+  export containing named rocks, ledges, wrecks, and artificial reefs.
+  To update: replace fishing_spots.gpx with a new export and re-run.
+  No network request is made for this layer.
 
 Dependencies
 ------------
-  pip install requests
+  pip install requests contourpy
 """
 
 import csv
 import io
 import json
 import logging
+import math
 import pathlib
-import time
+import re
+import xml.etree.ElementTree as ET
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ---------------------------------------------------------------------------
-# Configuration — keep in sync with DailySSTRetrieval.py
+# Configuration
 # ---------------------------------------------------------------------------
 
 LAT_MIN = 33.70
@@ -54,33 +53,19 @@ LON_MAX = -72.21
 
 # Bathymetry stride:
 #   1  = full 15 arc-sec (~450 m)  — ~135 MB, requires Git LFS
-#   2  = ~900 m                    — ~32 MB (default — enough resolution
-#                                    for narrow features like Norfolk Canyon)
-#   4  = ~1.8 km                   — ~8 MB (too coarse, canyon renders as spike)
+#   2  = ~900 m                    — ~32 MB (default)
+#   4  = ~1.8 km                   — ~8 MB (too coarse, canyon = spike artifact)
 #   10 = ~4.5 km                   — ~1.5 MB
 BATHY_STRIDE = 2
 
-OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
+OUTPUT_DIR   = pathlib.Path(__file__).resolve().parent / "DailySST"
+GPX_FILENAME = "fishing_spots.gpx"
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
-# ENC Direct to GIS — the current NOAA-authoritative wreck source
-# Each entry is (scale_band_name, wreck_point_layer_id)
-# Layer IDs confirmed from encdirect.noaa.gov ArcGIS REST metadata:
-#   enc_harbour  / layer 36  = harbour scale wreck points
-#   enc_approach / layer 36  = approach scale wreck points
-#   enc_coastal  / layer 36  = coastal scale wreck points
-#   enc_general  / layer 36  = general scale wreck points
-ENC_SERVICES = [
-    ("harbour",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_harbour/MapServer/36/query"),
-    ("approach", "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_approach/MapServer/36/query"),
-    ("coastal",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_coastal/MapServer/36/query"),
-    ("general",  "https://encdirect.noaa.gov/arcgis/rest/services/encdirect/enc_general/MapServer/36/query"),
-]
-
-TIMEOUT = 180
+TIMEOUT    = 180
 MAX_RETRIES = 3
-BACKOFF = 2
+BACKOFF    = 2
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,10 +110,10 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     r = session.get(url, timeout=TIMEOUT)
     r.raise_for_status()
 
-    reader = csv.reader(io.StringIO(r.text))
+    reader   = csv.reader(io.StringIO(r.text))
     all_rows = list(reader)
-    rows = []
-    for raw in all_rows[2:]:           # skip header + units rows
+    rows     = []
+    for raw in all_rows[2:]:
         if len(raw) < 3:
             continue
         try:
@@ -147,7 +132,6 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
 
 
 def _actual_extent(rows: list[dict]) -> dict:
-    """Return the min/max lat/lon actually returned by ERDDAP for this request."""
     if not rows:
         return {}
     lats = [r["lat"] for r in rows]
@@ -159,7 +143,7 @@ def _actual_extent(rows: list[dict]) -> dict:
 
 
 def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict]]:
-    rows = _fetch_bathymetry(session)
+    rows   = _fetch_bathymetry(session)
     extent = _actual_extent(rows)
     payload = {
         "dataset":    "GEBCO_2020",
@@ -172,8 +156,8 @@ def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict
             "lon_min": LON_MIN, "lon_max": LON_MAX,
         },
         "actual_extent": extent,
-        "point_count": len(rows),
-        "points": rows,
+        "point_count":   len(rows),
+        "points":        rows,
     }
     dest = OUTPUT_DIR / "bathymetry.json"
     with open(dest, "w", encoding="utf-8") as fh:
@@ -182,45 +166,20 @@ def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict
     return dest, rows
 
 
-
 # ---------------------------------------------------------------------------
 # Bathymetry contours — marching squares via contourpy
 # ---------------------------------------------------------------------------
 
-# Fishing-relevant depth thresholds in feet.
-# These are the lines that matter on the water:
-#   30   = nearshore bottom limit (flounder, sea bass)
-#   60   = inshore reef / wreck belt
-#   100  = king mackerel / cobia transition
-#   200  = amberjack / grouper deep edge
-#   300  = outer shelf — mahi, wahoo in season
-#   600  = shelf break — primary pelagic target zone
-#   1000 = upper slope — deep dropfish, swordfish at night
-#   1500 = mid-slope
-#   2000 = canyon floor / deep water
 CONTOUR_DEPTHS_FT = [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]
 
 
 def _build_grid(rows: list[dict]):
     """
-    Convert the flat list of {lat, lon, depth_ft} rows into a 2-D grid.
-    Returns (lats, lons, grid_2d) where grid_2d[i][j] is depth at lats[i], lons[j].
-
-    Two classes of NaN exist in the raw GEBCO data at stride 4:
-      1. Land cells — elevation >= 0, written as None in rows, must stay NaN
-         so contourpy never draws contours across land.
-      2. Sparse ocean gaps — grid cells that fall between GEBCO sample points
-         due to the stride. These appear as NaN surrounded by valid ocean values
-         and cause contourpy to draw tight closing contours (the diamond/spike
-         artifact) around each isolated filled cell.
-
-    The fix: for cells that are NaN but have ocean neighbors within a 1-cell
-    radius, fill with the average of those neighbors (ocean gap fill).
-    For cells that are NaN and have NO ocean neighbors, leave as NaN (land).
-    This fills sparse gaps without spreading ocean values onto land.
+    Build a 2-D depth grid from the flat row list.
+    Land/null = NaN so contourpy skips them.
+    Sparse ocean gaps are filled by iterative neighbor-average to prevent
+    isolated single-cell features producing closing-contour artifacts.
     """
-    import math
-
     lats_set = sorted(set(r["lat"] for r in rows))
     lons_set = sorted(set(r["lon"] for r in rows))
     lat_idx  = {v: i for i, v in enumerate(lats_set)}
@@ -228,26 +187,22 @@ def _build_grid(rows: list[dict]):
     n_rows   = len(lats_set)
     n_cols   = len(lons_set)
 
-    # Step 1: place known ocean depths; land/null cells remain NaN
     flat = [math.nan] * (n_rows * n_cols)
     for r in rows:
         if r["depth_ft"] is not None:
             flat[lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]] = r["depth_ft"]
 
-    # Step 2: iterative neighbor-average fill for sparse ocean gaps only.
-    # Run up to 6 passes — each pass can fill cells that were filled in the
-    # previous pass, gradually closing gaps without ever touching true land.
+    # Iterative neighbor-average fill — ocean gaps only (land stays NaN)
     for _ in range(6):
-        changed = False
+        changed  = False
         new_flat = flat[:]
         for row in range(n_rows):
             for col in range(n_cols):
                 i = row * n_cols + col
                 if not math.isnan(flat[i]):
                     continue
-                # Gather 4-connected ocean neighbors
                 neighbors = []
-                for dr, dc in ((-1,0),(1,0),(0,-1),(0,1)):
+                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                     nr, nc = row + dr, col + dc
                     if 0 <= nr < n_rows and 0 <= nc < n_cols:
                         v = flat[nr * n_cols + nc]
@@ -260,32 +215,14 @@ def _build_grid(rows: list[dict]):
         if not changed:
             break
 
-    # Step 3: reshape to 2D — true land cells still NaN, contourpy skips them
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats_set, lons_set, grid
 
 
 def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
-    """
-    Run marching squares at a single depth threshold and return a list of
-    GeoJSON LineString coordinate arrays.
-    Uses contourpy (lightweight, no matplotlib dependency).
-    contourpy requires z as a 2D array (list of lists) — grid is already
-    in that shape from _build_grid, so pass it directly.
-    """
     from contourpy import contour_generator
-
-    cg = contour_generator(
-        x=lons,
-        y=lats,
-        z=grid,
-        name="serial",
-    )
-    lines = cg.lines(depth_ft)   # returns list of (N,2) arrays of [lon, lat]
-
-    # Minimum point count filter — short closing loops (< 6 points) are
-    # typically contour artifacts around single-cell features, not real
-    # bathymetric structure.  Real canyon/shelf features produce long lines.
+    cg    = contour_generator(x=lons, y=lats, z=grid, name="serial")
+    lines = cg.lines(depth_ft)
     MIN_POINTS = 6
     features = []
     for line in lines:
@@ -297,10 +234,6 @@ def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
 
 
 def write_contours(rows: list[dict]) -> pathlib.Path:
-    """
-    Build contour GeoJSON from the already-fetched bathymetry grid rows.
-    No additional network request needed.
-    """
     try:
         import contourpy  # noqa: F401
     except ImportError:
@@ -317,14 +250,10 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
         for coords in lines:
             all_features.append({
                 "type": "Feature",
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": coords,
-                },
+                "geometry": {"type": "LineString", "coordinates": coords},
                 "properties": {
-                    "depth_ft":   depth_ft,
+                    "depth_ft":    depth_ft,
                     "depth_label": f"{depth_ft} ft",
-                    # Fishing significance for UI tooltips / styling
                     "fishing_note": {
                         30:   "nearshore bottom limit",
                         60:   "inshore reef and wreck belt",
@@ -343,10 +272,10 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
     geojson = {
         "type": "FeatureCollection",
         "metadata": {
-            "dataset":      "GEBCO_2020",
-            "source":       "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
+            "dataset":           "GEBCO_2020",
+            "source":            "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
             "contour_depths_ft": CONTOUR_DEPTHS_FT,
-            "units":        {"depth_ft": "feet below surface"},
+            "units":             {"depth_ft": "feet below surface"},
             "region": {
                 "lat_min": LAT_MIN, "lat_max": LAT_MAX,
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
@@ -355,14 +284,9 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
                 "lat_min": round(min(lats), 6), "lat_max": round(max(lats), 6),
                 "lon_min": round(min(lons), 6), "lon_max": round(max(lons), 6),
             },
-            "note": (
-                "Each Feature is a LineString at a fixed depth. "
-                "Style by depth_ft property for a nautical chart look: "
-                "heavier weight for 100/300/600 ft lines, lighter for others."
-            ),
         },
         "feature_count": len(all_features),
-        "features": all_features,
+        "features":      all_features,
     }
 
     dest = OUTPUT_DIR / "bathymetry_contours.json"
@@ -372,197 +296,125 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
              len(all_features), dest.stat().st_size / 1e6)
     return dest
 
+
 # ---------------------------------------------------------------------------
-# Wrecks — NOAA ENC Direct to GIS (encdirect.noaa.gov)
+# Fishing spots — parsed from GPX file
 # ---------------------------------------------------------------------------
 
-def _query_enc_layer(session: requests.Session,
-                     scale_band: str,
-                     url: str) -> list[dict]:
+# GPX namespace
+_GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
+
+
+def write_wrecks(_session=None) -> pathlib.Path:
     """
-    Page through one ENC wreck layer with a bounding box filter.
-    Returns a list of GeoJSON-style feature dicts.
+    Parse fishing_spots.gpx from OUTPUT_DIR and write wrecks.json.
+    The GPX file is a Fishing Status community export containing named
+    rocks, ledges, wrecks, and artificial reefs.
+
+    Each waypoint is converted to a GeoJSON Point feature with:
+      name     — waypoint name from <n> tag
+      symbol   — "Wreck" or "Rocks" from <sym> tag
+      fs_id    — Fishing Status ID from <desc> tag (e.g. "ID#5262")
     """
+    gpx_path = OUTPUT_DIR / GPX_FILENAME
+    if not gpx_path.exists():
+        log.error("GPX file not found: %s", gpx_path)
+        log.error("Place %s in the DailySST/ folder and re-run.", GPX_FILENAME)
+        return OUTPUT_DIR / "wrecks.json"
+
+    log.info("Parsing %s …", gpx_path)
+    tree = ET.parse(gpx_path)
+    root = tree.getroot()
+
+    # Handle both namespaced and non-namespaced GPX
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag.split("}")[0] + "}"
+
     features = []
-    offset = 0
-    page_size = 1000
-    bbox = f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}"
+    skipped  = 0
 
-    while True:
-        params = {
-            "where":             "1=1",
-            "geometry":          bbox,
-            "geometryType":      "esriGeometryEnvelope",
-            "inSR":              "4326",
-            "spatialRel":        "esriSpatialRelIntersects",
-            "outFields":         "*",
-            "returnGeometry":    "true",
-            "f":                 "geojson",
-            "resultOffset":      offset,
-            "resultRecordCount": page_size,
-        }
-
-        log.info("  Querying ENC %s wrecks (offset=%d) …", scale_band, offset)
+    for wpt in root.findall(f"{ns}wpt"):
         try:
-            r = session.get(url, params=params, timeout=TIMEOUT)
-            r.raise_for_status()
-            data = r.json()
-        except Exception as exc:
-            log.warning("  %s query failed at offset %d: %s", scale_band, offset, exc)
-            break
+            lat = float(wpt.get("lat"))
+            lon = float(wpt.get("lon"))
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
 
-        batch = data.get("features", [])
-        if not batch:
-            break
+        # Filter to bounding box
+        if not (LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX):
+            skipped += 1
+            continue
 
-        for feat in batch:
-            props = feat.get("properties") or {}
-            geom  = feat.get("geometry", {})
-            coords = geom.get("coordinates")
-            if not coords or len(coords) < 2:
-                continue
+        # Name — standard GPX <name> tag
+        name_el = wpt.find(f"{ns}name") or wpt.find("name")
+        name    = name_el.text.strip() if name_el is not None and name_el.text else "Unknown"
 
-            lon_f, lat_f = float(coords[0]), float(coords[1])
+        # Symbol type
+        sym_el = wpt.find(f"{ns}sym") or wpt.find("sym")
+        symbol = sym_el.text.strip() if sym_el is not None and sym_el.text else "Unknown"
 
-            # Depth — ENC uses VALSOU (value of sounding) in metres
-            valsou = props.get("VALSOU") or props.get("valsou")
-            try:
-                depth_ft = round(float(valsou) * 3.28084, 1) if valsou else None
-            except (ValueError, TypeError):
-                depth_ft = None
+        # Fishing Status ID from description
+        desc_el = wpt.find(f"{ns}desc") or wpt.find("desc")
+        desc    = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+        fs_id   = re.search(r"ID#(\d+)", desc)
+        fs_id   = fs_id.group(1) if fs_id else None
 
-            # Wreck category — CATWRK codes:
-            # 1=non-dangerous, 2=dangerous, 3=distributed remains,
-            # 4=submerged, 5=partly submerged
-            catwrk_map = {
-                "1": "non-dangerous",
-                "2": "dangerous",
-                "3": "distributed remains",
-                "4": "submerged",
-                "5": "partly submerged",
-            }
-            catwrk_raw = str(props.get("CATWRK") or props.get("catwrk") or "")
-            catwrk = catwrk_map.get(catwrk_raw, catwrk_raw or None)
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type":        "Point",
+                "coordinates": [round(lon, 6), round(lat, 6)],
+            },
+            "properties": {
+                "name":   name,
+                "symbol": symbol,   # "Wreck" | "Rocks"
+                "fs_id":  fs_id,
+                "source": "Fishing Status (fishingstatus.com)",
+            },
+        })
 
-            name = (
-                props.get("OBJNAM") or props.get("objnam")
-                or props.get("NOBJNM") or props.get("nobjnm")
-                or "Unknown"
-            )
+    log.info("  Parsed %d features (%d outside bounds / skipped).",
+             len(features), skipped)
 
-            features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [round(lon_f, 6), round(lat_f, 6)],
-                },
-                "properties": {
-                    "name":       name,
-                    "depth_ft":   depth_ft,
-                    "wreck_type": catwrk,
-                    "scale_band": scale_band,
-                    "source":     "NOAA ENC Direct",
-                },
-            })
-
-        log.info("    %s: %d features so far.", scale_band, len(features))
-        if len(batch) < page_size:
-            break
-        offset += page_size
-        time.sleep(0.3)
-
-    return features
-
-
-def write_wrecks(session: requests.Session) -> pathlib.Path:
-    all_features = []
-    for scale_band, url in ENC_SERVICES:
-        feats = _query_enc_layer(session, scale_band, url)
-        all_features.extend(feats)
-        log.info("  %s total: %d features.", scale_band, len(feats))
-
-    # ---------------------------------------------------------------------------
-    # Fishing target filters
-    # Purpose 1: offshore fishing targets (meaningful structure, not inshore clutter)
-    # Purpose 2: depth-qualified wrecks only (known depth, deep enough to fish)
-    # ---------------------------------------------------------------------------
-
-    # Filter 1 — wreck type
-    # Keep only discrete submerged structures fishable as wreck targets.
-    # Drop:
-    #   "distributed remains" — scattered debris, not a defined fishing location
-    #   "partly submerged"    — still breaking the surface, inshore hazard only
-    #   None / unknown type   — unclassified obstructions (pilings, rocks, etc.)
-    # Whitelist of explicit wreck types that are fishable targets.
-    # Also keep features where wreck_type is None/unclassified — many ENC
-    # records have valid position and depth but no CATWRK field populated.
-    # These are still useful fishing targets if they pass the depth filter.
-    KEEP_TYPES = {"submerged", "non-dangerous", "dangerous"}
-    filtered = [
-        f for f in all_features
-        if f["properties"].get("wreck_type") in KEEP_TYPES
-        or f["properties"].get("wreck_type") is None
-    ]
-    # Log a sample of wreck_type values to diagnose mapping issues
-    type_counts = {}
-    for f in all_features:
-        t = str(f["properties"].get("wreck_type"))
-        type_counts[t] = type_counts.get(t, 0) + 1
-    log.info("wreck_type distribution: %s", sorted(type_counts.items(), key=lambda x: -x[1])[:10])
-    log.info("After type filter: %d / %d (kept submerged/non-dangerous/dangerous).",
-             len(filtered), len(all_features))
-
-    # Filter 2 — minimum depth
-    # Require a charted depth of at least 20 ft.
-    # This removes:
-    #   - All harbour-layer ICW obstructions (pilings, rocks, jetty ends)
-    #   - Any wreck with null depth that has no fishing utility
-    # 20 ft is the minimum depth where a wreck becomes a bottom fishing target
-    # for species like sea bass, sheepshead, and flounder.
-    MIN_DEPTH_FT = 20.0
-    filtered = [
-        f for f in filtered
-        if f["properties"].get("depth_ft") is not None
-        and f["properties"]["depth_ft"] >= MIN_DEPTH_FT
-    ]
-    log.info("After depth filter (>= %d ft): %d.", MIN_DEPTH_FT, len(filtered))
-
-    # Deduplicate by coordinate rounded to 3 decimal places (~100m)
-    seen = set()
+    # Deduplicate by coordinate
+    seen   = set()
     unique = []
-    for f in filtered:
+    for f in features:
         key = (
-            round(f["geometry"]["coordinates"][0], 3),
-            round(f["geometry"]["coordinates"][1], 3),
+            round(f["geometry"]["coordinates"][0], 4),
+            round(f["geometry"]["coordinates"][1], 4),
         )
         if key not in seen:
             seen.add(key)
             unique.append(f)
 
-    log.info("Wrecks: %d unique fishing targets (%d raw → %d after type+depth filters → %d after dedup).",
-             len(unique), len(all_features), len(filtered), len(unique))
+    log.info("  %d unique features after dedup.", len(unique))
+
+    # Summary by symbol type
+    sym_counts = {}
+    for f in unique:
+        s = f["properties"]["symbol"]
+        sym_counts[s] = sym_counts.get(s, 0) + 1
+    log.info("  Symbol breakdown: %s", sym_counts)
 
     geojson = {
         "type": "FeatureCollection",
         "metadata": {
-            "source":  "NOAA ENC Direct to GIS (encdirect.noaa.gov)",
-            "note":    "AWOIS has been retired by NOAA. ENC Direct is the current authoritative source.",
-            "updated": "weekly (NOAA updates ENC Direct every Saturday)",
+            "source":  "Fishing Status (fishingstatus.com)",
+            "gpx_file": GPX_FILENAME,
             "region": {
                 "lat_min": LAT_MIN, "lat_max": LAT_MAX,
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
             },
-            "units": {"depth_ft": "feet below surface, null if uncharted"},
-            "wreck_types": {
-                "non-dangerous":       "charted wreck, not a hazard",
-                "dangerous":           "hazard to surface navigation",
-                "distributed remains": "scattered wreck debris",
-                "submerged":           "fully submerged",
-                "partly submerged":    "partially above water",
+            "symbols": {
+                "Wreck": "charted or known shipwreck",
+                "Rocks": "rock, ledge, reef, or bottom structure",
             },
         },
         "feature_count": len(unique),
-        "features": unique,
+        "features":      unique,
     }
 
     dest = OUTPUT_DIR / "wrecks.json"
@@ -597,9 +449,9 @@ def main():
         log.error("Contour generation failed: %s", exc)
 
     try:
-        write_wrecks(session)
+        write_wrecks()
     except Exception as exc:
-        log.error("Wrecks fetch failed: %s", exc)
+        log.error("Wrecks/POI parsing failed: %s", exc)
 
     log.info("=== Done ===")
 
