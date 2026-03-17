@@ -348,7 +348,7 @@ def write_wrecks(_session=None) -> pathlib.Path:
             continue
 
         # Name — standard GPX <name> tag
-        name_el = wpt.find(f"{ns}name") or wpt.find("name")
+        name_el = wpt.find(f"{ns}n") or wpt.find("n")
         name    = name_el.text.strip() if name_el is not None and name_el.text else "Unknown"
 
         # Symbol type
