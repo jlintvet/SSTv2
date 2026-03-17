@@ -7,7 +7,7 @@ and writes them as JSON files into DailySST/.
   DailySST/
     bathymetry.json           – GEBCO_2020 depth grid (~32 MB at stride 2)
     bathymetry_contours.json  – GeoJSON LineStrings at fishing-relevant depths
-    wrecks.json               – Named fishing spots parsed from fishing_spots.gpx
+    wrecks.json               – Named fishing spots merged from all three GPX files
 
 Run once to populate, or re-run via manual workflow dispatch to refresh.
 
@@ -19,9 +19,12 @@ Bathymetry
 
 Points of interest / wrecks
 ----------------------------
-  Parsed from DailySST/fishing_spots.gpx — a Fishing Status community GPX
-  export containing named rocks, ledges, wrecks, and artificial reefs.
-  To update: replace fishing_spots.gpx with a new export and re-run.
+  Parsed from three Fishing Status community GPX exports split by UI region:
+    Fishing_Spots_HatterasNC.gpx    – Cape Hatteras / Diamond Shoals area
+    Fishing_Spots_MoreheadNC.gpx    – Morehead City / Cape Lookout area
+    Fishing_Spots_ChesapeakeMD.gpx  – Chesapeake / Virginia Beach area
+  All three are merged, deduplicated by coordinate, and written to wrecks.json.
+  To update: replace any GPX file with a new export and re-run.
   No network request is made for this layer.
 
 Dependencies
@@ -58,8 +61,12 @@ LON_MAX = -72.21
 #   10 = ~4.5 km                   — ~1.5 MB
 BATHY_STRIDE = 2
 
-OUTPUT_DIR   = pathlib.Path(__file__).resolve().parent / "DailySST"
-GPX_FILENAME = "fishing_spots.gpx"
+OUTPUT_DIR    = pathlib.Path(__file__).resolve().parent / "DailySST"
+GPX_FILENAMES = [
+    ("HatterasNC.gpx",   "HatterasNC"),
+    ("MoreheadNC.gpx",   "MoreheadNC"),
+    ("ChesapeakeMD.gpx", "ChesapeakeMD"),
+]
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
@@ -305,28 +312,14 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
 _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
 
 
-def write_wrecks(_session=None) -> pathlib.Path:
+def _parse_gpx_file(gpx_path: pathlib.Path, region: str) -> tuple[list[dict], int]:
     """
-    Parse fishing_spots.gpx from OUTPUT_DIR and write wrecks.json.
-    The GPX file is a Fishing Status community export containing named
-    rocks, ledges, wrecks, and artificial reefs.
-
-    Each waypoint is converted to a GeoJSON Point feature with:
-      name     — waypoint name from <n> tag
-      symbol   — "Wreck" or "Rocks" from <sym> tag
-      fs_id    — Fishing Status ID from <desc> tag (e.g. "ID#5262")
+    Parse a single Fishing Status GPX file and return (features, skipped).
+    Features are NOT yet deduplicated — caller handles that after merging.
     """
-    gpx_path = OUTPUT_DIR / GPX_FILENAME
-    if not gpx_path.exists():
-        log.error("GPX file not found: %s", gpx_path)
-        log.error("Place %s in the DailySST/ folder and re-run.", GPX_FILENAME)
-        return OUTPUT_DIR / "wrecks.json"
-
-    log.info("Parsing %s …", gpx_path)
     tree = ET.parse(gpx_path)
     root = tree.getroot()
 
-    # Handle both namespaced and non-namespaced GPX
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}")[0] + "}"
@@ -377,17 +370,56 @@ def write_wrecks(_session=None) -> pathlib.Path:
                 "name":   name,
                 "symbol": symbol,   # "Wreck" | "Rocks"
                 "fs_id":  fs_id,
+                "region": region,   # "HatterasNC" | "MoreheadNC" | "ChesapeakeMD"
                 "source": "Fishing Status (fishingstatus.com)",
             },
         })
 
-    log.info("  Parsed %d features (%d outside bounds / skipped).",
-             len(features), skipped)
+    return features, skipped
 
-    # Deduplicate by coordinate
+
+def write_wrecks(_session=None) -> pathlib.Path:
+    """
+    Parse all GPX files in GPX_FILENAMES from OUTPUT_DIR, merge them,
+    deduplicate by coordinate, and write wrecks.json.
+
+    Each file is a Fishing Status community GPX export for a different
+    UI region (Hatteras NC, Morehead NC, Chesapeake VA).  Missing files
+    are warned about but do not abort the run — the remaining files are
+    still processed.
+
+    Each waypoint becomes a GeoJSON Point feature with:
+      name     — waypoint name from <name> tag
+      symbol   — "Wreck" or "Rocks" from <sym> tag
+      fs_id    — Fishing Status ID from <desc> tag (e.g. "ID#5262")
+    """
+    all_features: list[dict] = []
+    found_files:  list[str]  = []
+
+    for filename, region in GPX_FILENAMES:
+        gpx_path = OUTPUT_DIR / filename
+        if not gpx_path.exists():
+            log.warning("GPX file not found (skipping): %s", gpx_path)
+            continue
+        log.info("Parsing %s …", gpx_path)
+        features, skipped = _parse_gpx_file(gpx_path, region)
+        log.info("  %s: %d features parsed, %d outside bounds / skipped.",
+                 filename, len(features), skipped)
+        all_features.extend(features)
+        found_files.append(filename)
+
+    if not found_files:
+        log.error("No GPX files found. Place at least one of %s in %s and re-run.",
+                  [f for f, _ in GPX_FILENAMES], OUTPUT_DIR)
+        return OUTPUT_DIR / "wrecks.json"
+
+    log.info("Total features before dedup: %d (from %d file(s))",
+             len(all_features), len(found_files))
+
+    # Deduplicate by coordinate across all files
     seen   = set()
     unique = []
-    for f in features:
+    for f in all_features:
         key = (
             round(f["geometry"]["coordinates"][0], 4),
             round(f["geometry"]["coordinates"][1], 4),
@@ -399,7 +431,7 @@ def write_wrecks(_session=None) -> pathlib.Path:
     log.info("  %d unique features after dedup.", len(unique))
 
     # Summary by symbol type
-    sym_counts = {}
+    sym_counts: dict[str, int] = {}
     for f in unique:
         s = f["properties"]["symbol"]
         sym_counts[s] = sym_counts.get(s, 0) + 1
@@ -408,8 +440,9 @@ def write_wrecks(_session=None) -> pathlib.Path:
     geojson = {
         "type": "FeatureCollection",
         "metadata": {
-            "source":  "Fishing Status (fishingstatus.com)",
-            "gpx_file": GPX_FILENAME,
+            "source":    "Fishing Status (fishingstatus.com)",
+            "gpx_files": found_files,
+            "regions":   [r for _, r in GPX_FILENAMES],
             "region": {
                 "lat_min": LAT_MIN, "lat_max": LAT_MAX,
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
