@@ -347,16 +347,22 @@ def write_wrecks(_session=None) -> pathlib.Path:
             skipped += 1
             continue
 
-        # Name — standard GPX <name> tag
-        name_el = wpt.find(f"{ns}n") or wpt.find("n")
+        # Use explicit is-not-None — ElementTree elements with no children
+        # evaluate as False in Python, so `el or fallback` short-circuits
+        # past a valid (but childless) element. Fix: check is not None.
+        def _find(tag):
+            el = wpt.find(f"{ns}{tag}")
+            if el is not None:
+                return el
+            return wpt.find(tag)
+
+        name_el = _find("name")
         name    = name_el.text.strip() if name_el is not None and name_el.text else "Unknown"
 
-        # Symbol type
-        sym_el = wpt.find(f"{ns}sym") or wpt.find("sym")
-        symbol = sym_el.text.strip() if sym_el is not None and sym_el.text else "Unknown"
+        sym_el  = _find("sym")
+        symbol  = sym_el.text.strip() if sym_el is not None and sym_el.text else "Unknown"
 
-        # Fishing Status ID from description
-        desc_el = wpt.find(f"{ns}desc") or wpt.find("desc")
+        desc_el = _find("desc")
         desc    = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
         fs_id   = re.search(r"ID#(\d+)", desc)
         fs_id   = fs_id.group(1) if fs_id else None
