@@ -487,10 +487,14 @@ def write_wrecks(_session=None, bathy_rows: list | None = None) -> pathlib.Path:
         if key in seen:
             continue
         seen.add(key)
-        # Depth filter — suppress points shallower than MIN_WRECK_DEPTH_FT
+        # Depth filter — suppress only points where depth is positively
+        # known to be shallower than MIN_WRECK_DEPTH_FT.
+        # If depth is None it means the nearest GEBCO cell is tagged as
+        # land/unresolved — at 900 m stride many nearshore wrecks snap to
+        # a land cell, so we keep those rather than silently dropping them.
         if depth_lookup:
             depth = _depth_at(lat, lon)
-            if depth is None or depth < MIN_WRECK_DEPTH_FT:
+            if depth is not None and depth < MIN_WRECK_DEPTH_FT:
                 shallow += 1
                 continue
         unique.append(f)
