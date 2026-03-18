@@ -419,22 +419,40 @@ def write_wrecks(_session=None, bathy_rows: list | None = None) -> pathlib.Path:
     """
     MIN_WRECK_DEPTH_FT = 50
 
-    # Build a fast nearest-grid-point depth lookup from bathymetry rows.
+    # Build sorted lat/lon arrays for fast nearest-neighbour depth lookup.
+    # Exact key matching fails due to floating-point rounding between the
+    # ERDDAP-returned grid coords and the snapped waypoint coords, so we
+    # use bisect to find the closest grid point instead.
+    import bisect as _bisect
+
     depth_lookup: dict = {}
+    sorted_lats: list = []
+    sorted_lons: list = []
     if bathy_rows:
         for r in bathy_rows:
             depth_lookup[(r["lat"], r["lon"])] = r["depth_ft"]
+        sorted_lats = sorted(set(r["lat"] for r in bathy_rows))
+        sorted_lons = sorted(set(r["lon"] for r in bathy_rows))
         log.info("Depth lookup built from %d bathymetry points.", len(depth_lookup))
     else:
         log.warning("No bathymetry data available — depth filter will be skipped.")
+
+    def _nearest(val: float, arr: list) -> float:
+        """Return the value in sorted arr closest to val."""
+        i = _bisect.bisect_left(arr, val)
+        if i == 0:
+            return arr[0]
+        if i == len(arr):
+            return arr[-1]
+        before, after = arr[i - 1], arr[i]
+        return after if (after - val) < (val - before) else before
 
     def _depth_at(lat: float, lon: float) -> "float | None":
         """Return depth_ft at the nearest bathymetry grid point to (lat, lon)."""
         if not depth_lookup:
             return None
-        step = round(BATHY_STRIDE * 15 / 3600, 6)
-        snap_lat = round(round(lat / step) * step, 6)
-        snap_lon = round(round(lon / step) * step, 6)
+        snap_lat = _nearest(lat, sorted_lats)
+        snap_lon = _nearest(lon, sorted_lons)
         return depth_lookup.get((snap_lat, snap_lon))
     all_features: list[dict] = []
     found_files:  list[str]  = []
