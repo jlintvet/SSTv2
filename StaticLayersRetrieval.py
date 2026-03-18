@@ -396,10 +396,15 @@ def _parse_gpx_file(gpx_path: pathlib.Path, region: str) -> tuple[list[dict], in
     return features, skipped
 
 
-def write_wrecks(_session=None) -> pathlib.Path:
+def write_wrecks(_session=None, bathy_rows: list | None = None) -> pathlib.Path:
     """
     Parse all GPX files in GPX_FILENAMES from OUTPUT_DIR, merge them,
-    deduplicate by coordinate, and write wrecks.json.
+    deduplicate by coordinate, filter shallow points, and write wrecks.json.
+
+    Points in less than MIN_WRECK_DEPTH_FT of water are suppressed — they
+    are either on land, in harbours, or too shallow to be relevant offshore
+    fishing spots.  Depth is looked up from the bathymetry grid; if no
+    bathymetry data was loaded the depth filter is skipped with a warning.
 
     Each file is a Fishing Status community GPX export for a different
     UI region (Hatteras NC, Morehead NC, Chesapeake VA).  Missing files
@@ -407,10 +412,30 @@ def write_wrecks(_session=None) -> pathlib.Path:
     still processed.
 
     Each waypoint becomes a GeoJSON Point feature with:
-      name     — waypoint name from <name> tag
+      name     — waypoint name from <n> tag
       symbol   — "Wreck" or "Rocks" from <sym> tag
       fs_id    — Fishing Status ID from <desc> tag (e.g. "ID#5262")
+      region   — source file region label
     """
+    MIN_WRECK_DEPTH_FT = 50
+
+    # Build a fast nearest-grid-point depth lookup from bathymetry rows.
+    depth_lookup: dict = {}
+    if bathy_rows:
+        for r in bathy_rows:
+            depth_lookup[(r["lat"], r["lon"])] = r["depth_ft"]
+        log.info("Depth lookup built from %d bathymetry points.", len(depth_lookup))
+    else:
+        log.warning("No bathymetry data available — depth filter will be skipped.")
+
+    def _depth_at(lat: float, lon: float) -> "float | None":
+        """Return depth_ft at the nearest bathymetry grid point to (lat, lon)."""
+        if not depth_lookup:
+            return None
+        step = round(BATHY_STRIDE * 15 / 3600, 6)
+        snap_lat = round(round(lat / step) * step, 6)
+        snap_lon = round(round(lon / step) * step, 6)
+        return depth_lookup.get((snap_lat, snap_lon))
     all_features: list[dict] = []
     found_files:  list[str]  = []
 
@@ -434,19 +459,28 @@ def write_wrecks(_session=None) -> pathlib.Path:
     log.info("Total features before dedup: %d (from %d file(s))",
              len(all_features), len(found_files))
 
-    # Deduplicate by coordinate across all files
-    seen   = set()
-    unique = []
+    # Deduplicate by coordinate and filter out shallow points
+    seen     = set()
+    unique   = []
+    shallow  = 0
     for f in all_features:
-        key = (
-            round(f["geometry"]["coordinates"][0], 4),
-            round(f["geometry"]["coordinates"][1], 4),
-        )
-        if key not in seen:
-            seen.add(key)
-            unique.append(f)
+        lon, lat = f["geometry"]["coordinates"]
+        key = (round(lon, 4), round(lat, 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        # Depth filter — suppress points shallower than MIN_WRECK_DEPTH_FT
+        if depth_lookup:
+            depth = _depth_at(lat, lon)
+            if depth is None or depth < MIN_WRECK_DEPTH_FT:
+                shallow += 1
+                continue
+        unique.append(f)
 
-    log.info("  %d unique features after dedup.", len(unique))
+    log.info("  %d unique features after dedup.", len(seen))
+    if depth_lookup:
+        log.info("  %d suppressed (shallower than %d ft or on land).",
+                 shallow, MIN_WRECK_DEPTH_FT)
 
     # Summary by symbol type
     sym_counts: dict[str, int] = {}
@@ -506,7 +540,7 @@ def main():
         log.error("Contour generation failed: %s", exc)
 
     try:
-        write_wrecks()
+        write_wrecks(bathy_rows=bathy_rows)
     except Exception as exc:
         log.error("Wrecks/POI parsing failed: %s", exc)
 
