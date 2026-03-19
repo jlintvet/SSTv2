@@ -497,9 +497,9 @@ def _fetch_acspo_day_json(session: requests.Session,
 
 
 def _purge_acspo_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
-    """Delete ACSPO_SST_YYYYMMDD.json files older than cutoff."""
+    """Delete GOES19_SST_YYYYMMDD.json files older than cutoff."""
     deleted = []
-    for f in sorted(output_dir.glob("ACSPO_SST_????????.json")):
+    for f in sorted(output_dir.glob("GOES19_SST_????????.json")):
         date_str = f.stem.split("_")[-1]
         try:
             file_date = datetime.date(
@@ -508,25 +508,25 @@ def _purge_acspo_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
         except ValueError:
             continue
         if file_date < cutoff:
-            log.info("Purging old ACSPO file: %s", f.name)
+            log.info("Purging old GOES-19 file: %s", f.name)
             f.unlink()
             deleted.append(f.name)
     return deleted
 
 
-def _write_acspo_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
-    """Write acspo_latest.json as a copy of the newest ACSPO day file."""
-    src = output_dir / f"ACSPO_SST_{newest_date.strftime('%Y%m%d')}.json"
-    dst = output_dir / "acspo_latest.json"
+def _write_goes19_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    """Write goes19_latest.json as a copy of the newest ACSPO day file."""
+    src = output_dir / f"GOES19_SST_{newest_date.strftime('%Y%m%d')}.json"
+    dst = output_dir / "goes19_latest.json"
     if src.exists():
         dst.write_bytes(src.read_bytes())
-        log.info("acspo_latest.json updated  ->  %s", src.name)
+        log.info("goes19_latest.json updated  ->  %s", src.name)
 
 
-def _write_acspo_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
-    """Write acspo_manifest.json cataloguing all ACSPO JSON files present."""
+def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
+    """Write goes19_manifest.json cataloguing all ACSPO JSON files present."""
     files_on_disk = []
-    for f in sorted(output_dir.glob("ACSPO_SST_????????.json")):
+    for f in sorted(output_dir.glob("GOES19_SST_????????.json")):
         date_str = f.stem.split("_")[-1]
         iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         entry = next((x for x in fetched if x.get("filename") == f.name), None)
@@ -556,10 +556,10 @@ def _write_acspo_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None
         "files":      files_on_disk,
     }
 
-    manifest_path = output_dir / "acspo_manifest.json"
+    manifest_path = output_dir / "goes19_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
-    log.info("ACSPO manifest written: %d file(s)", len(files_on_disk))
+    log.info("GOES-19 manifest written: %d file(s)", len(files_on_disk))
 
 
 # ---------------------------------------------------------------------------
@@ -654,7 +654,7 @@ def main():
         log.info("Fetching %d GOES-19 day(s): %s", len(acspo_dates),
                  [d.isoformat() for d in acspo_dates])
         for date in acspo_dates:
-            filename = f"ACSPO_SST_{date.strftime('%Y%m%d')}.json"
+            filename = f"GOES19_SST_{date.strftime('%Y%m%d')}.json"
             dest     = OUTPUT_DIR / filename
             success  = _fetch_acspo_day_json(session, date, acspo_hours[date], dest)
             if success:
@@ -671,8 +671,8 @@ def main():
                 })
 
     if acspo_fetched:
-        _write_acspo_latest(OUTPUT_DIR, max(acspo_dates))
-    _write_acspo_manifest(OUTPUT_DIR, acspo_fetched)
+        _write_goes19_latest(OUTPUT_DIR, max(acspo_dates))
+    _write_goes19_manifest(OUTPUT_DIR, acspo_fetched)
 
     log.info("=== Done. MUR %d/%d | GOES-19 %d/%d day(s) retrieved. ===",
              len(fetched),      len(target_dates),
