@@ -305,6 +305,77 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
 
 
 # ---------------------------------------------------------------------------
+# Land mask — derived from MUR SST mask field
+# ---------------------------------------------------------------------------
+
+def write_landmask() -> pathlib.Path:
+    """
+    Generate landmask.json from any available MUR_SST_YYYYMMDD.json file.
+
+    MUR SST includes a 'mask' field per pixel:
+      1 = open ocean
+      2 = land
+      5 = lake / inland water
+      (other values = sea ice, etc.)
+
+    We treat anything with mask != 1 as land/non-ocean, coarsen to 0.05-deg
+    bins to reduce file size (~10x smaller than full 1-km grid), and write
+    a simple list of {lat, lon} points.
+
+    The UI overlays these points as opaque land-coloured squares on the
+    GOES-19 canvas to restore the coastline that is absent from the raw
+    GOES-19 data.
+    """
+    # Find the most recent MUR file available
+    mur_files = sorted(OUTPUT_DIR.glob("MUR_SST_????????.json"), reverse=True)
+    if not mur_files:
+        log.error("No MUR SST files found in %s — cannot generate landmask.", OUTPUT_DIR)
+        return OUTPUT_DIR / "landmask.json"
+
+    src = mur_files[0]
+    log.info("Generating landmask from %s …", src.name)
+
+    with open(src, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    rows = data.get("rows", [])
+    if not rows:
+        log.error("No rows in %s — cannot generate landmask.", src.name)
+        return OUTPUT_DIR / "landmask.json"
+
+    BIN = 0.05   # coarsen to 0.05-deg bins (~5.5 km) — keeps file small
+    land_set: set[tuple[float, float]] = set()
+
+    for r in rows:
+        mask = r.get("mask")
+        if mask is None:
+            continue
+        # mask == 1 is open ocean; everything else (land, lake, ice) is non-ocean
+        if mask != 1:
+            lat = round(round(r["lat"] / BIN) * BIN, 2)
+            lon = round(round(r["lon"] / BIN) * BIN, 2)
+            land_set.add((lat, lon))
+
+    points = [{"lat": lat, "lon": lon} for lat, lon in sorted(land_set)]
+    log.info("  %d land/non-ocean points at 0.05-deg resolution.", len(points))
+
+    payload = {
+        "generated_from": src.name,
+        "bin_deg":        BIN,
+        "note":           "mask!=1 pixels from MUR SST, coarsened to 0.05-deg bins",
+        "point_count":    len(points),
+        "points":         points,
+    }
+
+    dest = OUTPUT_DIR / "landmask.json"
+    with open(dest, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"))
+    log.info("landmask.json written  (%d points, %.2f MB)",
+             len(points), dest.stat().st_size / 1e6)
+    return dest
+
+
+# ---------------------------------------------------------------------------
 # Fishing spots — parsed from GPX file
 # ---------------------------------------------------------------------------
 
@@ -565,6 +636,11 @@ def main():
         write_wrecks(bathy_rows=bathy_rows)
     except Exception as exc:
         log.error("Wrecks/POI parsing failed: %s", exc)
+
+    try:
+        write_landmask()
+    except Exception as exc:
+        log.error("Land mask generation failed: %s", exc)
 
     log.info("=== Done ===")
 
