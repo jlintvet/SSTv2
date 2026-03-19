@@ -49,13 +49,14 @@ from urllib3.util.retry import Retry
 
 ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
 
-# NOAA ACSPO Daily Super-collated SST L3S NRT (AVHRR + VIIRS, 0.02 deg ~2 km)
-# Served from AOML ERDDAP — different server from MUR. Cloud pixels = NaN.
-# ~1 day lag. Variable: sea_surface_temperature (Celsius).
-ERDDAP_ACSPO    = "https://cwcgom.aoml.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.csvp"
-ACSPO_VARIABLE  = "sea_surface_temperature"  # Celsius; NaN where cloud-obscured
-ACSPO_STRIDE    = 1                          # native 0.02-deg grid
-ACSPO_HOUR      = "12:00:00Z"               # daily composite timestamp
+# GOES-19 Hourly SST (goes19SSThourly, cwcgom.aoml.noaa.gov)
+# GOES-19 replaced GOES-16 as the operational NOAA East Coast geostationary
+# satellite in late 2024. Hourly composites, ~3-6 hour publication lag.
+# IR only — cloud pixels are NaN. Variable: sst (Celsius).
+# We pull the latest available hour from the previous day as a daily file.
+ERDDAP_ACSPO   = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.csvp"
+ACSPO_VARIABLE = "sst"   # Celsius; NaN where cloud-obscured
+ACSPO_STRIDE   = 1       # native resolution
 # Region: southern New Jersey (N) → Myrtle Beach SC (S),
 #         Myrtle Beach SC (W)     → ~200 miles offshore Virginia Beach (E)
 LAT_MIN = 33.70
@@ -366,23 +367,39 @@ def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
 # ACSPO L3S NRT pipeline (AVHRR + VIIRS, cwcgom.aoml.noaa.gov)
 # ---------------------------------------------------------------------------
 
-def _build_acspo_url(date: datetime.date) -> str:
-    """Construct the ERDDAP csvp URL for a single ACSPO day and region."""
-    ts        = f"{date.isoformat()}T{ACSPO_HOUR}"
+def _build_acspo_url(date: datetime.date, hour: int) -> str:
+    """Construct the ERDDAP csvp URL for a single GOES-19 hourly SST snapshot."""
+    ts        = f"{date.isoformat()}T{hour:02d}:00:00Z"
     time_part = f"[({ts}):1:({ts})]"
     lat_part  = f"[({LAT_MIN}):{ACSPO_STRIDE}:({LAT_MAX})]"
     lon_part  = f"[({LON_MIN}):{ACSPO_STRIDE}:({LON_MAX})]"
     return f"{ERDDAP_ACSPO}?{ACSPO_VARIABLE}{time_part}{lat_part}{lon_part}"
 
 
-def _check_acspo_availability(session: requests.Session, date: datetime.date) -> bool:
-    """HEAD-check whether ACSPO data for date exists on the AOML ERDDAP."""
-    url = _build_acspo_url(date).replace(".csvp", ".nc")
-    try:
-        r = session.head(url, timeout=15)
-        return r.status_code == 200
-    except requests.RequestException:
-        return False
+def _find_latest_acspo_hour(session: requests.Session,
+                             date: datetime.date) -> int | None:
+    """
+    Probe GOES-19 hourly SST for the latest available hour on a given date.
+    Checks hours 23 → 0 and returns the first that responds 200, or None.
+    Uses a short timeout since most hours will return quickly if the date
+    is available at all.
+    """
+    for hour in range(23, -1, -1):
+        url = _build_acspo_url(date, hour).replace(".csvp", ".nc")
+        try:
+            r = session.head(url, timeout=10)
+            if r.status_code == 200:
+                log.info("    Latest available hour: %02d:00Z", hour)
+                return hour
+        except requests.RequestException:
+            continue
+    return None
+
+
+def _check_acspo_availability(session: requests.Session,
+                               date: datetime.date) -> int | None:
+    """Return the latest available hour for date, or None if unavailable."""
+    return _find_latest_acspo_hour(session, date)
 
 
 def _parse_acspo_csv(text: str) -> list[dict]:
@@ -408,7 +425,7 @@ def _parse_acspo_csv(text: str) -> list[dict]:
         if lat is None or lon is None:
             continue
 
-        sst_col = idx.get("sea_surface_temperature")
+        sst_col = idx.get("sst")
         sst = None
         if sst_col is not None and raw[sst_col] not in ("", "NaN"):
             sst = _fahrenheit(raw[sst_col])
@@ -420,39 +437,42 @@ def _parse_acspo_csv(text: str) -> list[dict]:
 
 def _fetch_acspo_day_json(session: requests.Session,
                           date: datetime.date,
+                          hour: int,
                           dest: pathlib.Path) -> bool:
-    """Download ACSPO CSV from AOML ERDDAP, convert to JSON, write to dest."""
-    url = _build_acspo_url(date)
-    log.info("ACSPO Downloading  %s  ->  %s", date.isoformat(), dest.name)
+    """Download GOES-19 hourly SST from AOML ERDDAP, convert to JSON, write to dest."""
+    url = _build_acspo_url(date, hour)
+    log.info("GOES-19 Downloading  %s %02d:00Z  ->  %s",
+             date.isoformat(), hour, dest.name)
 
     try:
         r = session.get(url, timeout=TIMEOUT_SECONDS)
         r.raise_for_status()
     except requests.HTTPError as exc:
-        log.warning("  ACSPO HTTP error for %s: %s", date.isoformat(), exc)
+        log.warning("  GOES-19 HTTP error for %s: %s", date.isoformat(), exc)
         return False
     except requests.RequestException as exc:
-        log.warning("  ACSPO Request error for %s: %s", date.isoformat(), exc)
+        log.warning("  GOES-19 Request error for %s: %s", date.isoformat(), exc)
         return False
 
     rows = _parse_acspo_csv(r.text)
     if not rows:
-        log.warning("  ACSPO: No rows parsed for %s — skipping.", date.isoformat())
+        log.warning("  GOES-19: No rows parsed for %s — skipping.", date.isoformat())
         return False
 
     ocean = sum(1 for r in rows if r["sst"] is not None)
     cloud = len(rows) - ocean
-    log.info("  ACSPO %s: %d rows (%d ocean, %d cloud/null)",
-             date.isoformat(), len(rows), ocean, cloud)
+    log.info("  GOES-19 %s %02d:00Z: %d rows (%d ocean, %d cloud/null)",
+             date.isoformat(), hour, len(rows), ocean, cloud)
 
     extent = _actual_extent(rows)
     payload = {
         "date":          date.isoformat(),
+        "hour_utc":      hour,
+        "obs_time_utc":  f"{date.isoformat()}T{hour:02d}:00:00Z",
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "dataset":       "noaacwLEOACSPOSSTL3SnrtCDaily",
-        "source":        "https://cwcgom.aoml.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily",
-        "sensor":        "AVHRR + VIIRS (NOAA ACSPO L3S NRT super-collated)",
-        "resolution":    "0.02 deg (~2 km)",
+        "dataset":       "goes19SSThourly",
+        "source":        "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly",
+        "sensor":        "GOES-19 ABI (NOAA/AOML hourly SST)",
         "cloud_note":    "sst=null means cloud-covered — no gap fill applied",
         "region": {
             "lat_min": LAT_MIN, "lat_max": LAT_MAX,
@@ -522,9 +542,9 @@ def _write_acspo_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None
 
     manifest = {
         "generated_utc":  datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "dataset":        "noaacwLEOACSPOSSTL3SnrtCDaily",
-        "source":         "https://cwcgom.aoml.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily",
-        "sensor":         "AVHRR + VIIRS (NOAA ACSPO L3S NRT super-collated)",
+        "dataset":        "goes19SSThourly",
+        "source":         "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly",
+        "sensor":         "GOES-19 ABI (NOAA/AOML hourly SST)",
         "retention_days": RETENTION_DAYS,
         "region": {
             "lat_min": LAT_MIN, "lat_max": LAT_MAX,
@@ -605,41 +625,45 @@ def main():
     _write_manifest(OUTPUT_DIR, fetched)
 
     # -----------------------------------------------------------------------
-    # ACSPO L3S NRT (AVHRR + VIIRS, ~1 day lag, cloud pixels = null)
+    # GOES-19 hourly SST (cwcgom.aoml.noaa.gov, ~3-6 hr lag, cloud=null)
     # -----------------------------------------------------------------------
-    log.info("--- ACSPO L3S NRT SST ---")
+    log.info("--- GOES-19 Hourly SST ---")
     deleted_acspo = _purge_acspo_files(OUTPUT_DIR, cutoff_date)
-    log.info("Purged %d old ACSPO file(s).", len(deleted_acspo))
+    log.info("Purged %d old GOES-19 file(s).", len(deleted_acspo))
 
     acspo_dates: list[datetime.date] = []
-    log.info("Probing ACSPO server for available dates …")
+    acspo_hours: dict[datetime.date, int] = {}
+    log.info("Probing GOES-19 server for available dates …")
     for d in candidate_dates:
         if len(acspo_dates) == RETENTION_DAYS:
             break
         log.info("  Checking %s …", d.isoformat())
-        if _check_acspo_availability(session, d):
-            log.info("    Available ✓")
+        hour = _check_acspo_availability(session, d)
+        if hour is not None:
+            log.info("    Available ✓  (latest hour: %02d:00Z)", hour)
             acspo_dates.append(d)
+            acspo_hours[d] = hour
         else:
             log.info("    Not yet available.")
         time.sleep(0.5)
 
     acspo_fetched = []
     if not acspo_dates:
-        log.error("ACSPO: No available dates found within search window.")
+        log.error("GOES-19: No available dates found within search window.")
     else:
-        log.info("Fetching %d ACSPO day(s): %s", len(acspo_dates),
+        log.info("Fetching %d GOES-19 day(s): %s", len(acspo_dates),
                  [d.isoformat() for d in acspo_dates])
         for date in acspo_dates:
             filename = f"ACSPO_SST_{date.strftime('%Y%m%d')}.json"
             dest     = OUTPUT_DIR / filename
-            success  = _fetch_acspo_day_json(session, date, dest)
+            success  = _fetch_acspo_day_json(session, date, acspo_hours[date], dest)
             if success:
                 with open(dest, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
                 acspo_fetched.append({
                     "filename":    filename,
                     "date":        date.isoformat(),
+                    "hour_utc":    acspo_hours[date],
                     "sha256":      _sha256(dest),
                     "row_count":   meta.get("row_count"),
                     "ocean_count": meta.get("ocean_count"),
@@ -650,7 +674,7 @@ def main():
         _write_acspo_latest(OUTPUT_DIR, max(acspo_dates))
     _write_acspo_manifest(OUTPUT_DIR, acspo_fetched)
 
-    log.info("=== Done. MUR %d/%d | ACSPO %d/%d day(s) retrieved. ===",
+    log.info("=== Done. MUR %d/%d | GOES-19 %d/%d day(s) retrieved. ===",
              len(fetched),      len(target_dates),
              len(acspo_fetched), len(acspo_dates))
 
