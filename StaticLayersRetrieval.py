@@ -344,8 +344,11 @@ def write_landmask() -> pathlib.Path:
         mask = r.get("mask")
         if mask is None:
             continue
-        # mask == 1 is open ocean; everything else is land/lake/ice
-        if mask != 1:
+        # mask values:
+        #   1 = open ocean
+        #   2 = land          ← only this should be treated as land
+        #   5 = lake/inland water/sounds/estuaries ← keep transparent, not land
+        if mask == 2:
             points.append({"lat": r["lat"], "lon": r["lon"]})
 
     log.info("  %d land/non-ocean points at native ~0.01-deg resolution.", len(points))
@@ -353,7 +356,7 @@ def write_landmask() -> pathlib.Path:
     payload = {
         "generated_from": src.name,
         "resolution_deg": 0.01,
-        "note":           "mask!=1 pixels from MUR SST at native 1-km resolution",
+        "note":           "mask==2 (land only) pixels from MUR SST — inland water excluded",
         "point_count":    len(points),
         "points":         points,
     }
