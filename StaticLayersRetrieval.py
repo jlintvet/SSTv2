@@ -310,7 +310,8 @@ def write_contours(rows: list[dict]) -> pathlib.Path:
 
 def write_landmask() -> pathlib.Path:
     """
-    Generate landmask.json from any available MUR_SST_YYYYMMDD.json file.
+    Generate landmask.json from any available MUR_SST_YYYYMMDD.json file
+    at the full native 1-km (~0.01 deg) MUR resolution.
 
     MUR SST includes a 'mask' field per pixel:
       1 = open ocean
@@ -318,22 +319,17 @@ def write_landmask() -> pathlib.Path:
       5 = lake / inland water
       (other values = sea ice, etc.)
 
-    We treat anything with mask != 1 as land/non-ocean, coarsen to 0.05-deg
-    bins to reduce file size (~10x smaller than full 1-km grid), and write
-    a simple list of {lat, lon} points.
-
-    The UI overlays these points as opaque land-coloured squares on the
-    GOES-19 canvas to restore the coastline that is absent from the raw
-    GOES-19 data.
+    We write every non-ocean pixel at its exact lat/lon — no binning —
+    so the coastline overlay on the GOES-19 canvas is sharp and accurate.
+    File is larger (~3-5 MB) but is generated once and never changes.
     """
-    # Find the most recent MUR file available
     mur_files = sorted(OUTPUT_DIR.glob("MUR_SST_????????.json"), reverse=True)
     if not mur_files:
         log.error("No MUR SST files found in %s — cannot generate landmask.", OUTPUT_DIR)
         return OUTPUT_DIR / "landmask.json"
 
     src = mur_files[0]
-    log.info("Generating landmask from %s …", src.name)
+    log.info("Generating landmask from %s at native 1-km resolution …", src.name)
 
     with open(src, "r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -343,26 +339,21 @@ def write_landmask() -> pathlib.Path:
         log.error("No rows in %s — cannot generate landmask.", src.name)
         return OUTPUT_DIR / "landmask.json"
 
-    BIN = 0.05   # coarsen to 0.05-deg bins (~5.5 km) — keeps file small
-    land_set: set[tuple[float, float]] = set()
-
+    points = []
     for r in rows:
         mask = r.get("mask")
         if mask is None:
             continue
-        # mask == 1 is open ocean; everything else (land, lake, ice) is non-ocean
+        # mask == 1 is open ocean; everything else is land/lake/ice
         if mask != 1:
-            lat = round(round(r["lat"] / BIN) * BIN, 2)
-            lon = round(round(r["lon"] / BIN) * BIN, 2)
-            land_set.add((lat, lon))
+            points.append({"lat": r["lat"], "lon": r["lon"]})
 
-    points = [{"lat": lat, "lon": lon} for lat, lon in sorted(land_set)]
-    log.info("  %d land/non-ocean points at 0.05-deg resolution.", len(points))
+    log.info("  %d land/non-ocean points at native ~0.01-deg resolution.", len(points))
 
     payload = {
         "generated_from": src.name,
-        "bin_deg":        BIN,
-        "note":           "mask!=1 pixels from MUR SST, coarsened to 0.05-deg bins",
+        "resolution_deg": 0.01,
+        "note":           "mask!=1 pixels from MUR SST at native 1-km resolution",
         "point_count":    len(points),
         "points":         points,
     }
