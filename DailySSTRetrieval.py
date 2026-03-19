@@ -1,45 +1,47 @@
 """
-StaticLayersRetrieval.py
-========================
-Fetches static reference layers for the Mid-Atlantic offshore fishing region
-and writes them as JSON files into DailySST/.
+DailySSTRetrieval.py
+====================
+Retrieves the last three days of SST data from two satellite sources:
 
+  1. MUR SST (jplMURSST41) — NASA JPL 1-km daily blended analysis.
+     Gap-filled (no cloud holes). ~2 day publication lag.
+
+  2. GOES-19 ABI SST (goes19SSThourly) — NOAA/AOML hourly geostationary
+     SST. IR only — cloud pixels are null. ~3-6 hour lag.
+
+Output layout (relative to this script's directory):
   DailySST/
-    bathymetry.json           – GEBCO_2020 depth grid (~32 MB at stride 2)
-    bathymetry_contours.json  – GeoJSON LineStrings at fishing-relevant depths
-    wrecks.json               – Named fishing spots merged from all three GPX files
+    MUR_SST_YYYYMMDD.json    – MUR full grid data for each day
+    latest.json              – MUR most recent day (convenience alias)
+    manifest.json            – MUR catalogue of all stored files
 
-Run once to populate, or re-run via manual workflow dispatch to refresh.
+    GOES19_SST_YYYYMMDD.json – GOES-19 full grid data for each day
+    goes19_latest.json       – GOES-19 most recent day (convenience alias)
+    goes19_manifest.json     – GOES-19 catalogue of all stored files
 
-Bathymetry
-----------
-  GEBCO_2020 via NOAA CoastWatch ERDDAP (dataset: GEBCO_2020)
-  Stride 2 = ~900 m resolution — enough to render narrow features like
-  Norfolk Canyon without the spike artifact caused by stride 4.
+Behaviour
+---------
+* Purges JSON files older than RETENTION_DAYS on every run.
+* Downloads the 3 most-recent available days for each dataset.
+* Writes latest alias and manifest for each dataset.
 
-Points of interest / wrecks
-----------------------------
-  Parsed from three Fishing Status community GPX exports split by UI region:
-    Fishing_Spots_HatterasNC.gpx    – Cape Hatteras / Diamond Shoals area
-    Fishing_Spots_MoreheadNC.gpx    – Morehead City / Cape Lookout area
-    Fishing_Spots_ChesapeakeMD.gpx  – Chesapeake / Virginia Beach area
-  All three are merged, deduplicated by coordinate, and written to wrecks.json.
-  To update: replace any GPX file with a new export and re-run.
-  No network request is made for this layer.
+ERDDAP endpoint
+---------------
+  Uses the .csvp format — no binary parsing library required.
 
 Dependencies
 ------------
-  pip install requests contourpy
+  pip install requests
 """
 
 import csv
 import io
 import json
+import hashlib
 import logging
-import math
+import datetime
 import pathlib
-import re
-import xml.etree.ElementTree as ET
+import time
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -49,30 +51,46 @@ from urllib3.util.retry import Retry
 # Configuration
 # ---------------------------------------------------------------------------
 
+ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
+
+# GOES-19 Hourly SST (goes19SSThourly, cwcgom.aoml.noaa.gov)
+# GOES-19 replaced GOES-16 as the operational East Coast geostationary
+# satellite in late 2024. IR only — cloud pixels are NaN. ~3-6 hr lag.
+ERDDAP_GOES19    = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.csvp"
+GOES19_VARIABLE  = "sst"  # Celsius; NaN where cloud-obscured
+GOES19_STRIDE    = 1      # native resolution
+
+# Region: southern New Jersey (N) → Myrtle Beach SC (S),
+#         Myrtle Beach SC (W)     → ~200 miles offshore Virginia Beach (E)
 LAT_MIN = 33.70
 LAT_MAX = 39.00
 LON_MIN = -78.89
 LON_MAX = -72.21
 
-# Bathymetry stride:
-#   1  = full 15 arc-sec (~450 m)  — ~135 MB, requires Git LFS
-#   2  = ~900 m                    — ~32 MB (default)
-#   4  = ~1.8 km                   — ~8 MB (too coarse, canyon = spike artifact)
-#   10 = ~4.5 km                   — ~1.5 MB
-BATHY_STRIDE = 2
+# Stride — 10 = ~10 km resolution, keeps JSON files to a manageable size.
+# Set to 1 for full 1-km resolution (large files, slow download).
+LAT_STRIDE = 1
+LON_STRIDE = 1
 
-OUTPUT_DIR    = pathlib.Path(__file__).resolve().parent / "DailySST"
-GPX_FILENAMES = [
-    ("Fishing_Spots_HatterasNC.gpx",   "HatterasNC"),
-    ("Fishing_Spots_MoreheadNC.gpx",   "MoreheadNC"),
-    ("Fishing_spots_ChesapeakeMD.gpx", "ChesapeakeMD"),
-]
+# Variables to retrieve
+VARIABLES = ["analysed_sst", "analysis_error", "sea_ice_fraction", "mask"]
 
-ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
+# Output directory (relative to this file)
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
-TIMEOUT    = 180
+# Days to retain
+RETENTION_DAYS = 3
+
+# How many days back to search for available data
+SEARCH_WINDOW = 7
+
+# HTTP settings
+TIMEOUT_SECONDS = 300
 MAX_RETRIES = 3
-BACKOFF    = 2
+BACKOFF_FACTOR = 2
+
+# MUR SST daily timestamp
+DAILY_HOUR = "09:00:00Z"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,530 +101,500 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# HTTP session
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _make_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(
         total=MAX_RETRIES,
-        backoff_factor=BACKOFF,
+        backoff_factor=BACKOFF_FACTOR,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
-    session.mount("http://",  adapter)
+    session.mount("http://", adapter)
     return session
 
 
-# ---------------------------------------------------------------------------
-# Bathymetry — GEBCO via ERDDAP
-# ---------------------------------------------------------------------------
-
-def _fetch_bathymetry(session: requests.Session) -> list[dict]:
-    url = (
-        f"{ERDDAP_BATHY}"
-        f"?elevation"
-        f"[({LAT_MIN}):{BATHY_STRIDE}:({LAT_MAX})]"
-        f"[({LON_MIN}):{BATHY_STRIDE}:({LON_MAX})]"
+def _build_url(date: datetime.date) -> str:
+    """Construct the ERDDAP csvp URL for a single day and region."""
+    ts = f"{date.isoformat()}T{DAILY_HOUR}"
+    time_part = f"[({ts}):1:({ts})]"
+    lat_part  = f"[({LAT_MIN}):{LAT_STRIDE}:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):{LON_STRIDE}:({LON_MAX})]"
+    var_queries = ",".join(
+        f"{v}{time_part}{lat_part}{lon_part}" for v in VARIABLES
     )
-    log.info("Fetching GEBCO bathymetry (stride=%d) …", BATHY_STRIDE)
-    log.info("  URL: %s", url)
+    return f"{ERDDAP_BASE}?{var_queries}"
 
-    r = session.get(url, timeout=TIMEOUT)
-    r.raise_for_status()
 
-    reader   = csv.reader(io.StringIO(r.text))
-    all_rows = list(reader)
-    rows     = []
-    for raw in all_rows[2:]:
-        if len(raw) < 3:
+def _check_availability(session: requests.Session, date: datetime.date) -> bool:
+    """HEAD-check whether data for date exists on the server."""
+    # Use .nc endpoint for the HEAD check — csvp doesn't support HEAD reliably
+    url = _build_url(date).replace(".csvp", ".nc")
+    try:
+        r = session.head(url, timeout=30)
+        return r.status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def _fahrenheit(val: str) -> float | None:
+    """
+    Convert an ERDDAP csvp SST value to Fahrenheit.
+    ERDDAP unpacks the NetCDF scale/offset automatically, so csvp delivers
+    analysed_sst already in degrees Celsius (valid ocean range: ~-2 to 36 C).
+    Fill/land pixels arrive as -327.67 (raw int16 fill scaled to float);
+    we reject anything outside the physically plausible ocean range.
+    """
+    try:
+        c = float(val)
+        if c != c:               # NaN
+            return None
+        if c < -3.0 or c > 40.0:  # fill value or non-ocean pixel
+            return None
+        return round(c * 9/5 + 32, 4)   # Celsius -> Fahrenheit
+    except (ValueError, TypeError):
+        return None
+
+
+def _float(val: str) -> float | None:
+    try:
+        f = float(val)
+        return None if f != f else round(f, 6)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_csv(text: str) -> list[dict]:
+    """
+    Parse ERDDAP csvp response into a list of row dicts.
+
+    csvp format:
+      Row 0: column names  e.g. time (UTC), latitude (degrees_north), ...
+      Row 1: units         e.g. UTC, degrees_north, degrees_east, degree_C, ...
+      Row 2+: data
+    """
+    reader = csv.reader(io.StringIO(text))
+    rows_raw = list(reader)
+
+    if len(rows_raw) < 3:
+        return []
+
+    # Row 0 = headers, Row 1 = units (skip both for data)
+    headers = [h.split(" (")[0].strip() for h in rows_raw[0]]
+
+    # Build index map
+    idx = {name: i for i, name in enumerate(headers)}
+
+    rows = []
+    for raw in rows_raw[2:]:
+        if len(raw) < len(headers):
             continue
         try:
-            lat  = round(float(raw[0]), 6)
-            lon  = round(float(raw[1]), 6)
-            elev = float(raw[2])
-        except (ValueError, IndexError):
+            lat = _float(raw[idx["latitude"]])
+            lon = _float(raw[idx["longitude"]])
+        except KeyError:
             continue
-        depth_ft = None if elev >= 0 else round(abs(elev) * 3.28084, 1)
-        rows.append({"lat": lat, "lon": lon, "depth_ft": depth_ft})
+        if lat is None or lon is None:
+            continue
 
-    ocean = sum(1 for r in rows if r["depth_ft"] is not None)
-    log.info("  Parsed %d points (%d ocean, %d land/null).",
-             len(rows), ocean, len(rows) - ocean)
+        # analysed_sst is delivered in Celsius by ERDDAP (scale/offset already applied)
+        sst_raw = raw[idx.get("analysed_sst", -1)] if "analysed_sst" in idx else None
+        sst = _fahrenheit(sst_raw) if sst_raw is not None else None
+
+        row = {
+            "lat":   lat,
+            "lon":   lon,
+            "sst":   sst,
+            # analysis_error is a delta in Celsius; multiply by 1.8 for Fahrenheit delta
+            "error": round(float(raw[idx["analysis_error"]]) * 1.8, 4)
+                     if "analysis_error" in idx and raw[idx["analysis_error"]] not in ("", "NaN")
+                     else None,
+            "ice":   _float(raw[idx["sea_ice_fraction"]]) if "sea_ice_fraction" in idx else None,
+            "mask":  _float(raw[idx["mask"]]) if "mask" in idx else None,
+        }
+        rows.append(row)
+
     return rows
 
 
 def _actual_extent(rows: list[dict]) -> dict:
+    """Return the min/max lat/lon actually present in the parsed rows."""
     if not rows:
         return {}
     lats = [r["lat"] for r in rows]
     lons = [r["lon"] for r in rows]
     return {
-        "lat_min": round(min(lats), 6), "lat_max": round(max(lats), 6),
-        "lon_min": round(min(lons), 6), "lon_max": round(max(lons), 6),
+        "lat_min": min(lats), "lat_max": max(lats),
+        "lon_min": min(lons), "lon_max": max(lons),
     }
 
 
-def write_bathymetry(session: requests.Session) -> tuple[pathlib.Path, list[dict]]:
-    rows   = _fetch_bathymetry(session)
+def _fetch_day_json(session: requests.Session,
+                    date: datetime.date,
+                    dest: pathlib.Path) -> bool:
+    """Download CSV from ERDDAP, convert to JSON, write to dest."""
+    url = _build_url(date)
+    log.info("Downloading  %s  ->  %s", date.isoformat(), dest.name)
+
+    try:
+        r = session.get(url, timeout=TIMEOUT_SECONDS)
+        r.raise_for_status()
+    except requests.HTTPError as exc:
+        log.warning("  HTTP error for %s: %s", date.isoformat(), exc)
+        return False
+    except requests.RequestException as exc:
+        log.warning("  Request error for %s: %s", date.isoformat(), exc)
+        return False
+
+    rows = _parse_csv(r.text)
+    if not rows:
+        log.warning("  No rows parsed for %s — skipping.", date.isoformat())
+        return False
+
     extent = _actual_extent(rows)
     payload = {
-        "dataset":    "GEBCO_2020",
-        "source":     "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
-        "resolution": f"15 arc-seconds x stride {BATHY_STRIDE} (~{BATHY_STRIDE * 0.45:.1f} km)",
-        "stride":     BATHY_STRIDE,
-        "units":      {"depth_ft": "feet below surface (positive = deeper), null = land"},
+        "date":          date.isoformat(),
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z"),
+        "dataset":       "jplMURSST41",
+        "source":        "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41",
+        "region": {
+            "lat_min": LAT_MIN,
+            "lat_max": LAT_MAX,
+            "lon_min": LON_MIN,
+            "lon_max": LON_MAX,
+            "stride":  LAT_STRIDE,
+        },
+        "actual_extent": extent,
+        "units": {
+            "sst":   "fahrenheit",
+            "error": "fahrenheit",
+            "ice":   "fraction_0_to_1",
+            "mask":  "categorical",
+            
+        },
+        "row_count": len(rows),
+        "rows": rows,
+    }
+
+    tmp = dest.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"))  # compact — smaller file
+    tmp.rename(dest)
+
+    log.info("  Saved %s  (%d rows, %.1f KB)",
+             dest.name, len(rows), dest.stat().st_size / 1024)
+    return True
+
+
+def _sha256(path: pathlib.Path, chunk: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _purge_old_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
+    """Delete MUR_SST_YYYYMMDD.json files older than cutoff."""
+    deleted = []
+    for f in sorted(output_dir.glob("MUR_SST_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        try:
+            file_date = datetime.date(
+                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
+            )
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            log.info("Purging old file: %s", f.name)
+            f.unlink()
+            deleted.append(f.name)
+    return deleted
+
+
+def _write_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    """Write latest.json as a copy of the newest day's data file."""
+    src = output_dir / f"MUR_SST_{newest_date.strftime('%Y%m%d')}.json"
+    dst = output_dir / "latest.json"
+    if src.exists():
+        dst.write_bytes(src.read_bytes())
+        log.info("latest.json updated  ->  %s", src.name)
+
+
+def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
+    """Write manifest.json cataloguing all JSON files present."""
+    files_on_disk = []
+    for f in sorted(output_dir.glob("MUR_SST_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        entry = next((x for x in fetched if x.get("filename") == f.name), None)
+        files_on_disk.append({
+            "filename":   f.name,
+            "date":       iso_date,
+            "size_bytes": f.stat().st_size,
+            "sha256":     entry["sha256"] if entry else _sha256(f),
+            "row_count":  entry["row_count"] if entry else None,
+        })
+
+    manifest = {
+        "generated_utc":  datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z"),
+        "dataset":        "jplMURSST41",
+        "source":         "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41",
+        "retention_days": RETENTION_DAYS,
         "region": {
             "lat_min": LAT_MIN, "lat_max": LAT_MAX,
             "lon_min": LON_MIN, "lon_max": LON_MAX,
+            "stride":  LAT_STRIDE,
+        },
+        "units": {
+            "sst":   "fahrenheit",
+            "error": "fahrenheit",
+            "ice":   "fraction_0_to_1",
+            
+        },
+        "file_count": len(files_on_disk),
+        "files":      files_on_disk,
+    }
+
+    manifest_path = output_dir / "manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    log.info("Manifest written: %d file(s)", len(files_on_disk))
+
+
+# ---------------------------------------------------------------------------
+# GOES-19 Hourly SST pipeline (cwcgom.aoml.noaa.gov)
+# ---------------------------------------------------------------------------
+
+def _build_goes19_url(date: datetime.date, hour: int) -> str:
+    """Construct the ERDDAP csvp URL for a single GOES-19 hourly SST snapshot."""
+    ts        = f"{date.isoformat()}T{hour:02d}:00:00Z"
+    time_part = f"[({ts}):1:({ts})]"
+    lat_part  = f"[({LAT_MIN}):{GOES19_STRIDE}:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):{GOES19_STRIDE}:({LON_MAX})]"
+    return f"{ERDDAP_GOES19}?{GOES19_VARIABLE}{time_part}{lat_part}{lon_part}"
+
+
+def _find_latest_goes19_hour(session: requests.Session,
+                              date: datetime.date) -> "int | None":
+    """
+    Probe GOES-19 hourly SST for the latest available hour on a given date.
+    Walks backwards 23 → 0 and returns the first hour that gets HTTP 200.
+    Short 10-second timeout per probe so unavailable dates fail quickly.
+    """
+    for hour in range(23, -1, -1):
+        url = _build_goes19_url(date, hour).replace(".csvp", ".nc")
+        try:
+            r = session.head(url, timeout=10)
+            if r.status_code == 200:
+                log.info("    Latest available hour: %02d:00Z", hour)
+                return hour
+        except requests.RequestException:
+            continue
+    return None
+
+
+def _parse_goes19_csv(text: str) -> list[dict]:
+    """
+    Parse ERDDAP csvp response for GOES-19 SST.
+    Variable: sst in degrees Celsius. NaN = cloud-covered, stored as null.
+    """
+    reader   = csv.reader(io.StringIO(text))
+    rows_raw = list(reader)
+    if len(rows_raw) < 3:
+        return []
+
+    headers = [h.split(" (")[0].strip() for h in rows_raw[0]]
+    idx     = {name: i for i, name in enumerate(headers)}
+
+    rows = []
+    for raw in rows_raw[2:]:
+        if len(raw) < len(headers):
+            continue
+        lat = _float(raw[idx.get("latitude",  -1)]) if "latitude"  in idx else None
+        lon = _float(raw[idx.get("longitude", -1)]) if "longitude" in idx else None
+        if lat is None or lon is None:
+            continue
+
+        sst_col = idx.get("sst")
+        sst = None
+        if sst_col is not None and raw[sst_col] not in ("", "NaN"):
+            sst = _fahrenheit(raw[sst_col])
+
+        rows.append({"lat": lat, "lon": lon, "sst": sst})
+
+    return rows
+
+
+def _fetch_goes19_day_json(session: requests.Session,
+                           date: datetime.date,
+                           hour: int,
+                           dest: pathlib.Path) -> bool:
+    """Download GOES-19 hourly SST from AOML ERDDAP, convert to JSON, write to dest."""
+    url = _build_goes19_url(date, hour)
+    log.info("GOES-19 Downloading  %s %02d:00Z  ->  %s",
+             date.isoformat(), hour, dest.name)
+
+    try:
+        r = session.get(url, timeout=TIMEOUT_SECONDS)
+        r.raise_for_status()
+    except requests.HTTPError as exc:
+        log.warning("  GOES-19 HTTP error for %s: %s", date.isoformat(), exc)
+        return False
+    except requests.RequestException as exc:
+        log.warning("  GOES-19 Request error for %s: %s", date.isoformat(), exc)
+        return False
+
+    rows = _parse_goes19_csv(r.text)
+    if not rows:
+        log.warning("  GOES-19: No rows parsed for %s — skipping.", date.isoformat())
+        return False
+
+    ocean = sum(1 for r in rows if r["sst"] is not None)
+    cloud = len(rows) - ocean
+    log.info("  GOES-19 %s %02d:00Z: %d rows (%d ocean, %d cloud/null)",
+             date.isoformat(), hour, len(rows), ocean, cloud)
+
+    extent = _actual_extent(rows)
+    payload = {
+        "date":          date.isoformat(),
+        "hour_utc":      hour,
+        "obs_time_utc":  f"{date.isoformat()}T{hour:02d}:00:00Z",
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "dataset":       "goes19SSThourly",
+        "source":        "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly",
+        "sensor":        "GOES-19 ABI (NOAA/AOML hourly SST)",
+        "cloud_note":    "sst=null means cloud-covered — no gap fill applied",
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+            "stride":  GOES19_STRIDE,
         },
         "actual_extent": extent,
-        "point_count":   len(rows),
-        "points":        rows,
+        "units":         {"sst": "fahrenheit"},
+        "row_count":     len(rows),
+        "ocean_count":   ocean,
+        "cloud_count":   cloud,
+        "rows":          rows,
     }
-    dest = OUTPUT_DIR / "bathymetry.json"
-    with open(dest, "w", encoding="utf-8") as fh:
+
+    tmp = dest.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"))
-    log.info("bathymetry.json written  (%.1f MB)", dest.stat().st_size / 1e6)
-    return dest, rows
+    tmp.rename(dest)
+
+    log.info("  Saved %s  (%.1f KB)", dest.name, dest.stat().st_size / 1024)
+    return True
 
 
-# ---------------------------------------------------------------------------
-# Bathymetry contours — marching squares via contourpy
-# ---------------------------------------------------------------------------
-
-CONTOUR_DEPTHS_FT = [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]
-
-
-def _build_grid(rows: list[dict]):
-    """
-    Build a 2-D depth grid from the flat row list.
-    Land/null = NaN so contourpy skips them.
-    Sparse ocean gaps are filled by iterative neighbor-average to prevent
-    isolated single-cell features producing closing-contour artifacts.
-    """
-    lats_set = sorted(set(r["lat"] for r in rows))
-    lons_set = sorted(set(r["lon"] for r in rows))
-    lat_idx  = {v: i for i, v in enumerate(lats_set)}
-    lon_idx  = {v: i for i, v in enumerate(lons_set)}
-    n_rows   = len(lats_set)
-    n_cols   = len(lons_set)
-
-    flat = [math.nan] * (n_rows * n_cols)
-    for r in rows:
-        if r["depth_ft"] is not None:
-            flat[lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]] = r["depth_ft"]
-
-    # Iterative neighbor-average fill — ocean gaps only (land stays NaN)
-    for _ in range(6):
-        changed  = False
-        new_flat = flat[:]
-        for row in range(n_rows):
-            for col in range(n_cols):
-                i = row * n_cols + col
-                if not math.isnan(flat[i]):
-                    continue
-                neighbors = []
-                for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    nr, nc = row + dr, col + dc
-                    if 0 <= nr < n_rows and 0 <= nc < n_cols:
-                        v = flat[nr * n_cols + nc]
-                        if not math.isnan(v):
-                            neighbors.append(v)
-                if neighbors:
-                    new_flat[i] = sum(neighbors) / len(neighbors)
-                    changed = True
-        flat = new_flat
-        if not changed:
-            break
-
-    grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
-    return lats_set, lons_set, grid
-
-
-def _grid_to_geojson_contours(lats, lons, grid, depth_ft: float) -> list:
-    from contourpy import contour_generator
-    cg    = contour_generator(x=lons, y=lats, z=grid, name="serial")
-    lines = cg.lines(depth_ft)
-    MIN_POINTS = 6
-    features = []
-    for line in lines:
-        if len(line) < MIN_POINTS:
-            continue
-        coords = [[round(float(pt[0]), 5), round(float(pt[1]), 5)] for pt in line]
-        features.append(coords)
-    return features
-
-
-def write_contours(rows: list[dict]) -> pathlib.Path:
-    try:
-        import contourpy  # noqa: F401
-    except ImportError:
-        log.error("contourpy not installed — run: pip install contourpy")
-        raise
-
-    log.info("Generating depth contours at %s ft …", CONTOUR_DEPTHS_FT)
-    lats, lons, grid = _build_grid(rows)
-    log.info("  Grid: %d lats x %d lons", len(lats), len(lons))
-
-    all_features = []
-    for depth_ft in CONTOUR_DEPTHS_FT:
-        lines = _grid_to_geojson_contours(lats, lons, grid, depth_ft)
-        for coords in lines:
-            all_features.append({
-                "type": "Feature",
-                "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": {
-                    "depth_ft":    depth_ft,
-                    "depth_label": f"{depth_ft} ft",
-                    "fishing_note": {
-                        30:   "nearshore bottom limit",
-                        60:   "inshore reef and wreck belt",
-                        100:  "king mackerel / cobia line",
-                        200:  "amberjack / grouper deep edge",
-                        300:  "outer shelf — mahi and wahoo",
-                        600:  "shelf break — primary pelagic zone",
-                        1000: "upper slope — swordfish at night",
-                        1500: "mid-slope",
-                        2000: "canyon floor",
-                    }.get(depth_ft),
-                },
-            })
-        log.info("  %d ft: %d line segments", depth_ft, len(lines))
-
-    geojson = {
-        "type": "FeatureCollection",
-        "metadata": {
-            "dataset":           "GEBCO_2020",
-            "source":            "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020",
-            "contour_depths_ft": CONTOUR_DEPTHS_FT,
-            "units":             {"depth_ft": "feet below surface"},
-            "region": {
-                "lat_min": LAT_MIN, "lat_max": LAT_MAX,
-                "lon_min": LON_MIN, "lon_max": LON_MAX,
-            },
-            "actual_extent": {
-                "lat_min": round(min(lats), 6), "lat_max": round(max(lats), 6),
-                "lon_min": round(min(lons), 6), "lon_max": round(max(lons), 6),
-            },
-        },
-        "feature_count": len(all_features),
-        "features":      all_features,
-    }
-
-    dest = OUTPUT_DIR / "bathymetry_contours.json"
-    with open(dest, "w", encoding="utf-8") as fh:
-        json.dump(geojson, fh, separators=(",", ":"))
-    log.info("bathymetry_contours.json written  (%d features, %.2f MB)",
-             len(all_features), dest.stat().st_size / 1e6)
-    return dest
-
-
-# ---------------------------------------------------------------------------
-# Land mask — derived from MUR SST mask field
-# ---------------------------------------------------------------------------
-
-def write_landmask() -> pathlib.Path:
-    """
-    Generate landmask.json from any available MUR_SST_YYYYMMDD.json file.
-
-    MUR SST includes a 'mask' field per pixel:
-      1 = open ocean
-      2 = land
-      5 = lake / inland water
-      (other values = sea ice, etc.)
-
-    We treat anything with mask != 1 as land/non-ocean, coarsen to 0.05-deg
-    bins to reduce file size (~10x smaller than full 1-km grid), and write
-    a simple list of {lat, lon} points.
-
-    The UI overlays these points as opaque land-coloured squares on the
-    GOES-19 canvas to restore the coastline that is absent from the raw
-    GOES-19 data.
-    """
-    # Find the most recent MUR file available
-    mur_files = sorted(OUTPUT_DIR.glob("MUR_SST_????????.json"), reverse=True)
-    if not mur_files:
-        log.error("No MUR SST files found in %s — cannot generate landmask.", OUTPUT_DIR)
-        return OUTPUT_DIR / "landmask.json"
-
-    src = mur_files[0]
-    log.info("Generating landmask from %s …", src.name)
-
-    with open(src, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-
-    rows = data.get("rows", [])
-    if not rows:
-        log.error("No rows in %s — cannot generate landmask.", src.name)
-        return OUTPUT_DIR / "landmask.json"
-
-    BIN = 0.05   # coarsen to 0.05-deg bins (~5.5 km) — keeps file small
-    land_set: set[tuple[float, float]] = set()
-
-    for r in rows:
-        mask = r.get("mask")
-        if mask is None:
-            continue
-        # mask == 1 is open ocean; everything else (land, lake, ice) is non-ocean
-        if mask != 1:
-            lat = round(round(r["lat"] / BIN) * BIN, 2)
-            lon = round(round(r["lon"] / BIN) * BIN, 2)
-            land_set.add((lat, lon))
-
-    points = [{"lat": lat, "lon": lon} for lat, lon in sorted(land_set)]
-    log.info("  %d land/non-ocean points at 0.05-deg resolution.", len(points))
-
-    payload = {
-        "generated_from": src.name,
-        "bin_deg":        BIN,
-        "note":           "mask!=1 pixels from MUR SST, coarsened to 0.05-deg bins",
-        "point_count":    len(points),
-        "points":         points,
-    }
-
-    dest = OUTPUT_DIR / "landmask.json"
-    with open(dest, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, separators=(",", ":"))
-    log.info("landmask.json written  (%d points, %.2f MB)",
-             len(points), dest.stat().st_size / 1e6)
-    return dest
-
-
-# ---------------------------------------------------------------------------
-# Fishing spots — parsed from GPX file
-# ---------------------------------------------------------------------------
-
-# GPX namespace
-_GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
-
-
-def _parse_gpx_file(gpx_path: pathlib.Path, region: str) -> tuple[list[dict], int]:
-    """
-    Parse a single Fishing Status GPX file and return (features, skipped).
-    Sanitizes common XML issues (unescaped & outside CDATA) before parsing.
-    Features are NOT yet deduplicated — caller handles that after merging.
-    """
-    # Read raw bytes and fix unescaped & that aren't already part of an
-    # XML entity reference (e.g. &amp; &lt; &gt; &quot; &apos; &#NNN;)
-    raw = gpx_path.read_bytes()
-    # Replace bare & not followed by an entity/char reference
-    import re as _re
-    raw = _re.sub(rb'&(?!amp;|lt;|gt;|quot;|apos;|#)', b'&amp;', raw)
-
-    try:
-        root = ET.fromstring(raw)
-    except ET.ParseError as exc:
-        log.error("Failed to parse %s: %s", gpx_path.name, exc)
-        # Show the offending line for easier debugging
-        line_no = exc.position[0] if exc.position else 0
-        lines = raw.split(b'\n')
-        if line_no:
-            for i in range(max(0, line_no - 2), min(len(lines), line_no + 1)):
-                log.error("  Line %d: %s", i + 1,
-                          lines[i].decode("utf-8", errors="replace"))
-        return [], 0
-
-    ns = ""
-    if root.tag.startswith("{"):
-        ns = root.tag.split("}")[0] + "}"
-
-    features = []
-    skipped  = 0
-
-    for wpt in root.findall(f"{ns}wpt"):
+def _purge_goes19_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
+    """Delete GOES19_SST_YYYYMMDD.json files older than cutoff."""
+    deleted = []
+    for f in sorted(output_dir.glob("GOES19_SST_????????.json")):
+        date_str = f.stem.split("_")[-1]
         try:
-            lat = float(wpt.get("lat"))
-            lon = float(wpt.get("lon"))
-        except (TypeError, ValueError):
-            skipped += 1
+            file_date = datetime.date(
+                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
+            )
+        except ValueError:
             continue
+        if file_date < cutoff:
+            log.info("Purging old GOES-19 file: %s", f.name)
+            f.unlink()
+            deleted.append(f.name)
+    return deleted
 
-        # Filter to bounding box
-        if not (LAT_MIN <= lat <= LAT_MAX and LON_MIN <= lon <= LON_MAX):
-            skipped += 1
-            continue
 
-        # Use explicit is-not-None — ElementTree elements with no children
-        # evaluate as False in Python, so `el or fallback` short-circuits
-        # past a valid (but childless) element. Fix: check is not None.
-        def _find(tag):
-            el = wpt.find(f"{ns}{tag}")
-            if el is not None:
-                return el
-            return wpt.find(tag)
+def _write_goes19_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    """Write goes19_latest.json as a copy of the newest GOES-19 day file."""
+    src = output_dir / f"GOES19_SST_{newest_date.strftime('%Y%m%d')}.json"
+    dst = output_dir / "goes19_latest.json"
+    if src.exists():
+        dst.write_bytes(src.read_bytes())
+        log.info("goes19_latest.json updated  ->  %s", src.name)
 
-        name_el = _find("name")
-        name    = name_el.text.strip() if name_el is not None and name_el.text else "Unknown"
 
-        sym_el  = _find("sym")
-        symbol  = sym_el.text.strip() if sym_el is not None and sym_el.text else "Unknown"
+def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
+    """
+    Write goes19_manifest.json cataloguing all GOES-19 JSON files present.
+    Ranks files by coverage_pct (most ocean pixels = rank 1) so the UI
+    can immediately identify the clearest-sky observation.
+    """
+    files_on_disk = []
+    for f in sorted(output_dir.glob("GOES19_SST_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        entry = next((x for x in fetched if x.get("filename") == f.name), None)
 
-        desc_el = _find("desc")
-        desc    = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
-        fs_id   = re.search(r"ID#(\d+)", desc)
-        fs_id   = fs_id.group(1) if fs_id else None
+        ocean = entry.get("ocean_count") if entry else None
+        total = entry.get("row_count")   if entry else None
+        hour  = entry.get("hour_utc")    if entry else None
 
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type":        "Point",
-                "coordinates": [round(lon, 6), round(lat, 6)],
-            },
-            "properties": {
-                "name":   name,
-                "symbol": symbol,   # "Wreck" | "Rocks"
-                "fs_id":  fs_id,
-                "region": region,   # "HatterasNC" | "MoreheadNC" | "ChesapeakeMD"
-                "source": "Fishing Status (fishingstatus.com)",
-            },
+        # Fall back to reading counts from the file itself if not in fetched
+        if ocean is None or total is None:
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                ocean = meta.get("ocean_count")
+                total = meta.get("row_count")
+                hour  = meta.get("hour_utc")
+            except Exception:
+                pass
+
+        cloud    = (total - ocean) if (ocean is not None and total is not None) else None
+        pct_cov  = round(ocean / total * 100, 1) if (ocean and total) else None
+
+        files_on_disk.append({
+            "filename":     f.name,
+            "date":         iso_date,
+            "hour_utc":     hour,
+            "size_bytes":   f.stat().st_size,
+            "sha256":       entry["sha256"] if entry else _sha256(f),
+            "row_count":    total,
+            "ocean_count":  ocean,
+            "cloud_count":  cloud,
+            "coverage_pct": pct_cov,
         })
 
-    return features, skipped
+    # Rank by coverage (rank 1 = most ocean pixels = least cloud obstruction)
+    sortable = [f for f in files_on_disk if f["ocean_count"] is not None]
+    sortable.sort(key=lambda x: x["ocean_count"], reverse=True)
+    rank_map = {f["filename"]: i + 1 for i, f in enumerate(sortable)}
+    for f in files_on_disk:
+        f["coverage_rank"] = rank_map.get(f["filename"])
 
+    best = sortable[0] if sortable else None
+    log.info("  GOES-19 coverage ranking:")
+    for f in sortable:
+        log.info("    Rank %d: %s  %.1f%% ocean  (%d cloud pixels)",
+                 f["coverage_rank"], f["date"],
+                 f["coverage_pct"] or 0, f["cloud_count"] or 0)
 
-def write_wrecks(_session=None, bathy_rows: list | None = None) -> pathlib.Path:
-    """
-    Parse all GPX files in GPX_FILENAMES from OUTPUT_DIR, merge them,
-    deduplicate by coordinate, filter shallow points, and write wrecks.json.
-
-    Points in less than MIN_WRECK_DEPTH_FT of water are suppressed — they
-    are either on land, in harbours, or too shallow to be relevant offshore
-    fishing spots.  Depth is looked up from the bathymetry grid; if no
-    bathymetry data was loaded the depth filter is skipped with a warning.
-
-    Each file is a Fishing Status community GPX export for a different
-    UI region (Hatteras NC, Morehead NC, Chesapeake VA).  Missing files
-    are warned about but do not abort the run — the remaining files are
-    still processed.
-
-    Each waypoint becomes a GeoJSON Point feature with:
-      name     — waypoint name from <n> tag
-      symbol   — "Wreck" or "Rocks" from <sym> tag
-      fs_id    — Fishing Status ID from <desc> tag (e.g. "ID#5262")
-      region   — source file region label
-    """
-    MIN_WRECK_DEPTH_FT = 50
-
-    # Build sorted lat/lon arrays for fast nearest-neighbour depth lookup.
-    # Exact key matching fails due to floating-point rounding between the
-    # ERDDAP-returned grid coords and the snapped waypoint coords, so we
-    # use bisect to find the closest grid point instead.
-    import bisect as _bisect
-
-    depth_lookup: dict = {}
-    sorted_lats: list = []
-    sorted_lons: list = []
-    if bathy_rows:
-        for r in bathy_rows:
-            depth_lookup[(r["lat"], r["lon"])] = r["depth_ft"]
-        sorted_lats = sorted(set(r["lat"] for r in bathy_rows))
-        sorted_lons = sorted(set(r["lon"] for r in bathy_rows))
-        log.info("Depth lookup built from %d bathymetry points.", len(depth_lookup))
-    else:
-        log.warning("No bathymetry data available — depth filter will be skipped.")
-
-    def _nearest(val: float, arr: list) -> float:
-        """Return the value in sorted arr closest to val."""
-        i = _bisect.bisect_left(arr, val)
-        if i == 0:
-            return arr[0]
-        if i == len(arr):
-            return arr[-1]
-        before, after = arr[i - 1], arr[i]
-        return after if (after - val) < (val - before) else before
-
-    def _depth_at(lat: float, lon: float) -> "float | None":
-        """Return depth_ft at the nearest bathymetry grid point to (lat, lon)."""
-        if not depth_lookup:
-            return None
-        snap_lat = _nearest(lat, sorted_lats)
-        snap_lon = _nearest(lon, sorted_lons)
-        return depth_lookup.get((snap_lat, snap_lon))
-    all_features: list[dict] = []
-    found_files:  list[str]  = []
-
-    for filename, region in GPX_FILENAMES:
-        gpx_path = OUTPUT_DIR / filename
-        if not gpx_path.exists():
-            log.warning("GPX file not found (skipping): %s", gpx_path)
-            continue
-        log.info("Parsing %s …", gpx_path)
-        features, skipped = _parse_gpx_file(gpx_path, region)
-        log.info("  %s: %d features parsed, %d outside bounds / skipped.",
-                 filename, len(features), skipped)
-        all_features.extend(features)
-        found_files.append(filename)
-
-    if not found_files:
-        log.error("No GPX files found. Place at least one of %s in %s and re-run.",
-                  [f for f, _ in GPX_FILENAMES], OUTPUT_DIR)
-        return OUTPUT_DIR / "wrecks.json"
-
-    log.info("Total features before dedup: %d (from %d file(s))",
-             len(all_features), len(found_files))
-
-    # Deduplicate by coordinate and filter out shallow points
-    seen     = set()
-    unique   = []
-    shallow  = 0
-    for f in all_features:
-        lon, lat = f["geometry"]["coordinates"]
-        key = (round(lon, 4), round(lat, 4))
-        if key in seen:
-            continue
-        seen.add(key)
-        # Depth filter — suppress only points where depth is positively
-        # known to be shallower than MIN_WRECK_DEPTH_FT.
-        # If depth is None it means the nearest GEBCO cell is tagged as
-        # land/unresolved — at 900 m stride many nearshore wrecks snap to
-        # a land cell, so we keep those rather than silently dropping them.
-        if depth_lookup:
-            depth = _depth_at(lat, lon)
-            if depth is not None and depth < MIN_WRECK_DEPTH_FT:
-                shallow += 1
-                continue
-        unique.append(f)
-
-    log.info("  %d unique features after dedup.", len(seen))
-    if depth_lookup:
-        log.info("  %d suppressed (shallower than %d ft or on land).",
-                 shallow, MIN_WRECK_DEPTH_FT)
-
-    # Summary by symbol type
-    sym_counts: dict[str, int] = {}
-    for f in unique:
-        s = f["properties"]["symbol"]
-        sym_counts[s] = sym_counts.get(s, 0) + 1
-    log.info("  Symbol breakdown: %s", sym_counts)
-
-    geojson = {
-        "type": "FeatureCollection",
-        "metadata": {
-            "source":    "Fishing Status (fishingstatus.com)",
-            "gpx_files": found_files,
-            "regions":   [r for _, r in GPX_FILENAMES],
-            "region": {
-                "lat_min": LAT_MIN, "lat_max": LAT_MAX,
-                "lon_min": LON_MIN, "lon_max": LON_MAX,
-            },
-            "symbols": {
-                "Wreck": "charted or known shipwreck",
-                "Rocks": "rock, ledge, reef, or bottom structure",
-            },
+    manifest = {
+        "generated_utc":  datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "dataset":        "goes19SSThourly",
+        "source":         "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly",
+        "sensor":         "GOES-19 ABI (NOAA/AOML hourly SST)",
+        "retention_days": RETENTION_DAYS,
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+            "stride":  GOES19_STRIDE,
         },
-        "feature_count": len(unique),
-        "features":      unique,
+        "units":            {"sst": "fahrenheit"},
+        "file_count":       len(files_on_disk),
+        "best_coverage":    best["filename"] if best else None,
+        "files":            files_on_disk,
     }
 
-    dest = OUTPUT_DIR / "wrecks.json"
-    with open(dest, "w", encoding="utf-8") as fh:
-        json.dump(geojson, fh, separators=(",", ":"))
-    log.info("wrecks.json written  (%d features, %.2f MB)",
-             len(unique), dest.stat().st_size / 1e6)
-    return dest
+    manifest_path = output_dir / "goes19_manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    log.info("GOES-19 manifest written: %d file(s)", len(files_on_disk))
 
 
 # ---------------------------------------------------------------------------
@@ -614,35 +602,116 @@ def write_wrecks(_session=None, bathy_rows: list | None = None) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 
 def main():
-    log.info("=== Static Layers Retrieval ===")
+    today_utc   = datetime.datetime.now(datetime.timezone.utc).date()
+    cutoff_date = today_utc - datetime.timedelta(days=RETENTION_DAYS)
+
+    log.info("=== MUR + GOES-19 SST Daily Retrieval ===")
+    log.info("Today (UTC): %s  |  Cutoff: %s", today_utc, cutoff_date)
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session = _make_session()
 
-    bathy_rows = []
-    try:
-        _, bathy_rows = write_bathymetry(session)
-    except Exception as exc:
-        log.error("Bathymetry fetch failed: %s", exc)
+    candidate_dates = [
+        today_utc - datetime.timedelta(days=d) for d in range(1, SEARCH_WINDOW + 1)
+    ]
 
-    try:
-        if bathy_rows:
-            write_contours(bathy_rows)
+    # -----------------------------------------------------------------------
+    # MUR SST
+    # -----------------------------------------------------------------------
+    log.info("--- MUR SST ---")
+    deleted = _purge_old_files(OUTPUT_DIR, cutoff_date)
+    log.info("Purged %d old MUR file(s).", len(deleted))
+
+    target_dates: list[datetime.date] = []
+    log.info("Probing MUR server for available dates …")
+    for d in candidate_dates:
+        if len(target_dates) == RETENTION_DAYS:
+            break
+        log.info("  Checking %s …", d.isoformat())
+        if _check_availability(session, d):
+            log.info("    Available ✓")
+            target_dates.append(d)
         else:
-            log.warning("Skipping contours — no bathymetry rows available.")
-    except Exception as exc:
-        log.error("Contour generation failed: %s", exc)
+            log.info("    Not yet available.")
+        time.sleep(0.5)
 
-    try:
-        write_wrecks(bathy_rows=bathy_rows)
-    except Exception as exc:
-        log.error("Wrecks/POI parsing failed: %s", exc)
+    fetched = []
+    if not target_dates:
+        log.error("MUR: No available dates found within search window.")
+    else:
+        log.info("Fetching %d MUR day(s): %s", len(target_dates),
+                 [d.isoformat() for d in target_dates])
+        for date in target_dates:
+            filename = f"MUR_SST_{date.strftime('%Y%m%d')}.json"
+            dest     = OUTPUT_DIR / filename
+            success  = _fetch_day_json(session, date, dest)
+            if success:
+                with open(dest, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                fetched.append({
+                    "filename":  filename,
+                    "date":      date.isoformat(),
+                    "sha256":    _sha256(dest),
+                    "row_count": meta.get("row_count"),
+                })
 
-    try:
-        write_landmask()
-    except Exception as exc:
-        log.error("Land mask generation failed: %s", exc)
+    if fetched:
+        _write_latest(OUTPUT_DIR, max(target_dates))
+    _write_manifest(OUTPUT_DIR, fetched)
 
-    log.info("=== Done ===")
+    # -----------------------------------------------------------------------
+    # GOES-19 hourly SST (cwcgom.aoml.noaa.gov, ~3-6 hr lag, cloud=null)
+    # -----------------------------------------------------------------------
+    log.info("--- GOES-19 Hourly SST ---")
+    deleted_goes = _purge_goes19_files(OUTPUT_DIR, cutoff_date)
+    log.info("Purged %d old GOES-19 file(s).", len(deleted_goes))
+
+    goes_dates: list[datetime.date] = []
+    goes_hours: dict[datetime.date, int] = {}
+    log.info("Probing GOES-19 server for available dates …")
+    for d in candidate_dates:
+        if len(goes_dates) == RETENTION_DAYS:
+            break
+        log.info("  Checking %s …", d.isoformat())
+        hour = _find_latest_goes19_hour(session, d)
+        if hour is not None:
+            log.info("    Available ✓  (latest hour: %02d:00Z)", hour)
+            goes_dates.append(d)
+            goes_hours[d] = hour
+        else:
+            log.info("    Not yet available.")
+        time.sleep(0.5)
+
+    goes_fetched = []
+    if not goes_dates:
+        log.error("GOES-19: No available dates found within search window.")
+    else:
+        log.info("Fetching %d GOES-19 day(s): %s", len(goes_dates),
+                 [d.isoformat() for d in goes_dates])
+        for date in goes_dates:
+            filename = f"GOES19_SST_{date.strftime('%Y%m%d')}.json"
+            dest     = OUTPUT_DIR / filename
+            success  = _fetch_goes19_day_json(session, date, goes_hours[date], dest)
+            if success:
+                with open(dest, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                goes_fetched.append({
+                    "filename":    filename,
+                    "date":        date.isoformat(),
+                    "hour_utc":    goes_hours[date],
+                    "sha256":      _sha256(dest),
+                    "row_count":   meta.get("row_count"),
+                    "ocean_count": meta.get("ocean_count"),
+                    "cloud_count": meta.get("cloud_count"),
+                })
+
+    if goes_fetched:
+        _write_goes19_latest(OUTPUT_DIR, max(goes_dates))
+    _write_goes19_manifest(OUTPUT_DIR, goes_fetched)
+
+    log.info("=== Done. MUR %d/%d | GOES-19 %d/%d day(s) retrieved. ===",
+             len(fetched),   len(target_dates),
+             len(goes_fetched), len(goes_dates))
 
 
 if __name__ == "__main__":
