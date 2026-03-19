@@ -9,14 +9,14 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   retrieve-sst:
-    name: Fetch MUR + ACSPO SST and commit
+    name: Fetch MUR + GOES-19 SST and commit
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       - name: Set up Python 3.12
         uses: actions/setup-python@v5.6.0
         with:
@@ -39,6 +39,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit — files are already up to date."
           else
-            git commit -m "chore: daily MUR + ACSPO SST update $(date -u '+%Y-%m-%d')"
+            git commit -m "chore: daily MUR + GOES-19 SST update $(date -u '+%Y-%m-%d')"
+            git pull --rebase origin main
             git push
           fi
