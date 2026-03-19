@@ -6,9 +6,9 @@ Retrieves the last three days of SST data from two satellite sources:
   1. MUR SST (jplMURSST41) — NASA JPL 1-km daily blended analysis.
      Gap-filled (no cloud holes). ~2 day publication lag.
 
-  2. VIIRS ACSPO (noaacwLEOACSPOSSTL3SnrtCDaily) — NOAA/NESDIS 0.02 deg
-     (~2 km) super-collated daily SST from VIIRS + AVHRR. Infrared only
-     so cloud-covered pixels are NaN/missing. Lower lag (~1 day).
+  2. GOES-16 ABI SST (noaacwGOES16SSTsatelliteDaily) — NOAA geostationary
+     daily composite at 0.02° (~2 km). IR only — cloud pixels are NaN.
+     ~3-6 hour lag. Same-day data available.
 
 Output layout (relative to this script's directory):
   DailySST/
@@ -16,9 +16,9 @@ Output layout (relative to this script's directory):
     latest.json              – MUR most recent day (convenience alias)
     manifest.json            – MUR catalogue of all stored files
 
-    VIIRS_SST_YYYYMMDD.json  – VIIRS full grid data for each day
-    viirs_latest.json        – VIIRS most recent day (convenience alias)
-    viirs_manifest.json      – VIIRS catalogue of all stored files
+    GOES_SST_YYYYMMDD.json  – GOES-16 full grid data for each day
+    goes_latest.json        – GOES-16 most recent day (convenience alias)
+    goes_manifest.json      – GOES-16 catalogue of all stored files
 
 Behaviour
 ---------
@@ -54,13 +54,15 @@ from urllib3.util.retry import Retry
 
 ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
 
-# VIIRS ACSPO daily super-collated SST (NOAA/NESDIS/STAR, ~2 km, 0.02 deg)
-# Combines VIIRS (Suomi-NPP, NOAA-20, NOAA-21) + AVHRR. IR only — cloud
-# pixels are NaN (no gap-fill). Publication lag ~1 day vs MUR's ~2 days.
-ERDDAP_VIIRS   = "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.csvp"
-VIIRS_VARIABLE = "sst"       # degrees Celsius; NaN where cloud-obscured
-VIIRS_STRIDE   = 1           # native 0.02-deg grid — keep full ~2 km resolution
-VIIRS_HOUR     = "12:00:00Z" # ACSPO daily composite timestamp
+# GOES-16 ABI SST (noaacwGOES16SSTsatellite)
+# NOAA GOES-16 geostationary satellite — covers US East Coast continuously.
+# Updates every ~10-15 minutes; daily composite available on CoastWatch.
+# IR only — cloud pixels are NaN. ~3-6 hour lag (much fresher than MUR).
+# Resolution: ~2 km (0.02 deg). Same-day / overnight data available.
+ERDDAP_GOES    = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/noaacwGOES16SSTsatelliteDaily.csvp"
+GOES_VARIABLE  = "sst"          # degrees Celsius; NaN where cloud-obscured
+GOES_STRIDE    = 1              # native 0.02-deg grid
+GOES_HOUR      = "12:00:00Z"    # daily composite timestamp
 
 # Spatial subset (degrees)
 # Region: southern New Jersey (N) → Myrtle Beach SC (S),
@@ -370,21 +372,21 @@ def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# VIIRS ACSPO pipeline
+# GOES-16 SST pipeline
 # ---------------------------------------------------------------------------
 
-def _build_viirs_url(date: datetime.date) -> str:
-    """Construct the ERDDAP csvp URL for a single VIIRS day and region."""
-    ts = f"{date.isoformat()}T{VIIRS_HOUR}"
+def _build_goes_url(date: datetime.date) -> str:
+    """Construct the ERDDAP csvp URL for a single GOES-16 day and region."""
+    ts = f"{date.isoformat()}T{GOES_HOUR}"
     time_part = f"[({ts}):1:({ts})]"
-    lat_part  = f"[({LAT_MIN}):{VIIRS_STRIDE}:({LAT_MAX})]"
-    lon_part  = f"[({LON_MIN}):{VIIRS_STRIDE}:({LON_MAX})]"
-    return f"{ERDDAP_VIIRS}?{VIIRS_VARIABLE}{time_part}{lat_part}{lon_part}"
+    lat_part  = f"[({LAT_MIN}):{GOES_STRIDE}:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):{GOES_STRIDE}:({LON_MAX})]"
+    return f"{ERDDAP_GOES}?{GOES_VARIABLE}{time_part}{lat_part}{lon_part}"
 
 
-def _check_viirs_availability(session: requests.Session, date: datetime.date) -> bool:
-    """HEAD-check whether VIIRS data for date exists on the server."""
-    url = _build_viirs_url(date).replace(".csvp", ".nc")
+def _check_goes_availability(session: requests.Session, date: datetime.date) -> bool:
+    """HEAD-check whether GOES-16 data for date exists on the server."""
+    url = _build_goes_url(date).replace(".csvp", ".nc")
     try:
         r = session.head(url, timeout=30)
         return r.status_code == 200
@@ -392,9 +394,9 @@ def _check_viirs_availability(session: requests.Session, date: datetime.date) ->
         return False
 
 
-def _parse_viirs_csv(text: str) -> list[dict]:
+def _parse_goes_csv(text: str) -> list[dict]:
     """
-    Parse ERDDAP csvp response for VIIRS ACSPO SST.
+    Parse ERDDAP csvp response for GOES-16 SST.
 
     The dataset delivers a single variable 'sst' in degrees Celsius.
     NaN values indicate cloud-covered pixels — these are retained in the
@@ -429,48 +431,48 @@ def _parse_viirs_csv(text: str) -> list[dict]:
     return rows
 
 
-def _fetch_viirs_day_json(session: requests.Session,
+def _fetch_goes_day_json(session: requests.Session,
                           date: datetime.date,
                           dest: pathlib.Path) -> bool:
-    """Download VIIRS CSV from ERDDAP, convert to JSON, write to dest."""
-    url = _build_viirs_url(date)
-    log.info("VIIRS Downloading  %s  ->  %s", date.isoformat(), dest.name)
+    """Download GOES-16 CSV from ERDDAP, convert to JSON, write to dest."""
+    url = _build_goes_url(date)
+    log.info("GOES Downloading  %s  ->  %s", date.isoformat(), dest.name)
 
     try:
         r = session.get(url, timeout=TIMEOUT_SECONDS)
         r.raise_for_status()
     except requests.HTTPError as exc:
-        log.warning("  VIIRS HTTP error for %s: %s", date.isoformat(), exc)
+        log.warning("  GOES HTTP error for %s: %s", date.isoformat(), exc)
         return False
     except requests.RequestException as exc:
-        log.warning("  VIIRS Request error for %s: %s", date.isoformat(), exc)
+        log.warning("  GOES Request error for %s: %s", date.isoformat(), exc)
         return False
 
-    rows = _parse_viirs_csv(r.text)
+    rows = _parse_goes_csv(r.text)
     if not rows:
-        log.warning("  VIIRS: No rows parsed for %s — skipping.", date.isoformat())
+        log.warning("  GOES: No rows parsed for %s — skipping.", date.isoformat())
         return False
 
     ocean = sum(1 for r in rows if r["sst"] is not None)
     cloud = len(rows) - ocean
-    log.info("  VIIRS %s: %d rows (%d ocean, %d cloud/null)",
+    log.info("  GOES %s: %d rows (%d ocean, %d cloud/null)",
              date.isoformat(), len(rows), ocean, cloud)
 
     extent = _actual_extent(rows)
     payload = {
         "date":          date.isoformat(),
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "dataset":       "noaacwLEOACSPOSSTL3SnrtCDaily",
-        "source":        "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily",
-        "sensor":        "VIIRS+AVHRR (NOAA ACSPO super-collated)",
-        "resolution":    "0.02 deg (~2 km)",
+        "dataset":       "noaacwGOES16SSTsatelliteDaily",
+        "source":        "https://coastwatch.pfeg.noaa.gov/erddap/griddap/noaacwGOES16SSTsatelliteDaily",
+        "sensor":        "GOES-16 ABI (NOAA CoastWatch daily composite)",
+        "resolution":    "0.05 deg (~5 km)",
         "cloud_note":    "sst=null means cloud-covered — no gap fill applied",
         "region": {
             "lat_min": LAT_MIN,
             "lat_max": LAT_MAX,
             "lon_min": LON_MIN,
             "lon_max": LON_MAX,
-            "stride":  VIIRS_STRIDE,
+            "stride":  GOES_STRIDE,
         },
         "actual_extent": extent,
         "units": {"sst": "fahrenheit"},
@@ -489,10 +491,10 @@ def _fetch_viirs_day_json(session: requests.Session,
     return True
 
 
-def _purge_viirs_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
-    """Delete VIIRS_SST_YYYYMMDD.json files older than cutoff."""
+def _purge_goes_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
+    """Delete GOES_SST_YYYYMMDD.json files older than cutoff."""
     deleted = []
-    for f in sorted(output_dir.glob("VIIRS_SST_????????.json")):
+    for f in sorted(output_dir.glob("GOES_SST_????????.json")):
         date_str = f.stem.split("_")[-1]
         try:
             file_date = datetime.date(
@@ -501,25 +503,25 @@ def _purge_viirs_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
         except ValueError:
             continue
         if file_date < cutoff:
-            log.info("Purging old VIIRS file: %s", f.name)
+            log.info("Purging old GOES file: %s", f.name)
             f.unlink()
             deleted.append(f.name)
     return deleted
 
 
-def _write_viirs_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
-    """Write viirs_latest.json as a copy of the newest VIIRS day file."""
-    src = output_dir / f"VIIRS_SST_{newest_date.strftime('%Y%m%d')}.json"
-    dst = output_dir / "viirs_latest.json"
+def _write_goes_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    """Write goes_latest.json as a copy of the newest GOES-16 day file."""
+    src = output_dir / f"GOES_SST_{newest_date.strftime('%Y%m%d')}.json"
+    dst = output_dir / "goes_latest.json"
     if src.exists():
         dst.write_bytes(src.read_bytes())
-        log.info("viirs_latest.json updated  ->  %s", src.name)
+        log.info("goes_latest.json updated  ->  %s", src.name)
 
 
-def _write_viirs_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
-    """Write viirs_manifest.json cataloguing all VIIRS JSON files present."""
+def _write_goes_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
+    """Write goes_manifest.json cataloguing all GOES-16 JSON files present."""
     files_on_disk = []
-    for f in sorted(output_dir.glob("VIIRS_SST_????????.json")):
+    for f in sorted(output_dir.glob("GOES_SST_????????.json")):
         date_str = f.stem.split("_")[-1]
         iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         entry = next((x for x in fetched if x.get("filename") == f.name), None)
@@ -535,24 +537,24 @@ def _write_viirs_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None
 
     manifest = {
         "generated_utc":  datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "dataset":        "noaacwLEOACSPOSSTL3SnrtCDaily",
-        "source":         "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily",
-        "sensor":         "VIIRS+AVHRR (NOAA ACSPO super-collated)",
+        "dataset":        "noaacwGOES16SSTsatelliteDaily",
+        "source":         "https://coastwatch.pfeg.noaa.gov/erddap/griddap/noaacwGOES16SSTsatelliteDaily",
+        "sensor":         "GOES-16 ABI (NOAA CoastWatch daily composite)",
         "retention_days": RETENTION_DAYS,
         "region": {
             "lat_min": LAT_MIN, "lat_max": LAT_MAX,
             "lon_min": LON_MIN, "lon_max": LON_MAX,
-            "stride":  VIIRS_STRIDE,
+            "stride":  GOES_STRIDE,
         },
         "units":      {"sst": "fahrenheit"},
         "file_count": len(files_on_disk),
         "files":      files_on_disk,
     }
 
-    manifest_path = output_dir / "viirs_manifest.json"
+    manifest_path = output_dir / "goes_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
-    log.info("VIIRS manifest written: %d file(s)", len(files_on_disk))
+    log.info("GOES manifest written: %d file(s)", len(files_on_disk))
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +565,7 @@ def main():
     today_utc   = datetime.datetime.now(datetime.timezone.utc).date()
     cutoff_date = today_utc - datetime.timedelta(days=RETENTION_DAYS)
 
-    log.info("=== MUR + VIIRS SST Daily Retrieval ===")
+    log.info("=== MUR + GOES-16 SST Daily Retrieval ===")
     log.info("Today (UTC): %s  |  Cutoff: %s", today_utc, cutoff_date)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -618,39 +620,39 @@ def main():
     _write_manifest(OUTPUT_DIR, mur_fetched)
 
     # -----------------------------------------------------------------------
-    # VIIRS ACSPO
+    # GOES-16 SST
     # -----------------------------------------------------------------------
-    log.info("--- VIIRS ACSPO SST ---")
-    deleted_viirs = _purge_viirs_files(OUTPUT_DIR, cutoff_date)
-    log.info("Purged %d old VIIRS file(s).", len(deleted_viirs))
+    log.info("--- GOES-16 SST ---")
+    deleted_goes = _purge_goes_files(OUTPUT_DIR, cutoff_date)
+    log.info("Purged %d old GOES file(s).", len(deleted_goes))
 
-    viirs_dates: list[datetime.date] = []
-    log.info("Probing VIIRS server for available dates …")
+    goes_dates: list[datetime.date] = []
+    log.info("Probing GOES server for available dates …")
     for d in candidate_dates:
-        if len(viirs_dates) == RETENTION_DAYS:
+        if len(goes_dates) == RETENTION_DAYS:
             break
         log.info("  Checking %s …", d.isoformat())
-        if _check_viirs_availability(session, d):
+        if _check_goes_availability(session, d):
             log.info("    Available ✓")
-            viirs_dates.append(d)
+            goes_dates.append(d)
         else:
             log.info("    Not yet available.")
         time.sleep(0.5)
 
-    viirs_fetched = []
-    if not viirs_dates:
-        log.error("VIIRS: No available dates found within search window.")
+    goes_fetched = []
+    if not goes_dates:
+        log.error("GOES: No available dates found within search window.")
     else:
-        log.info("Fetching %d VIIRS day(s): %s", len(viirs_dates),
-                 [d.isoformat() for d in viirs_dates])
-        for date in viirs_dates:
-            filename = f"VIIRS_SST_{date.strftime('%Y%m%d')}.json"
+        log.info("Fetching %d GOES day(s): %s", len(goes_dates),
+                 [d.isoformat() for d in goes_dates])
+        for date in goes_dates:
+            filename = f"GOES_SST_{date.strftime('%Y%m%d')}.json"
             dest     = OUTPUT_DIR / filename
-            success  = _fetch_viirs_day_json(session, date, dest)
+            success  = _fetch_goes_day_json(session, date, dest)
             if success:
                 with open(dest, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
-                viirs_fetched.append({
+                goes_fetched.append({
                     "filename":    filename,
                     "date":        date.isoformat(),
                     "sha256":      _sha256(dest),
@@ -659,13 +661,13 @@ def main():
                     "cloud_count": meta.get("cloud_count"),
                 })
 
-    if viirs_fetched:
-        _write_viirs_latest(OUTPUT_DIR, max(viirs_dates))
-    _write_viirs_manifest(OUTPUT_DIR, viirs_fetched)
+    if goes_fetched:
+        _write_goes_latest(OUTPUT_DIR, max(goes_dates))
+    _write_goes_manifest(OUTPUT_DIR, goes_fetched)
 
-    log.info("=== Done. MUR %d/%d | VIIRS %d/%d day(s) retrieved. ===",
+    log.info("=== Done. MUR %d/%d | GOES %d/%d day(s) retrieved. ===",
              len(mur_fetched), len(mur_dates),
-             len(viirs_fetched), len(viirs_dates))
+             len(goes_fetched), len(goes_dates))
 
 
 if __name__ == "__main__":
