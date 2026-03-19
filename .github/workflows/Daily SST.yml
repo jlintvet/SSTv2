@@ -1,4 +1,4 @@
-name: Daily MUR + VIIRS SST Retrieval
+name: Daily MUR + GOES-16 SST Retrieval
 on:
   schedule:
     - cron: "0 0 * * *"
@@ -9,7 +9,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   retrieve-sst:
-    name: Fetch MUR + VIIRS SST and commit
+    name: Fetch MUR + GOES-16 SST and commit
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -39,6 +39,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit — files are already up to date."
           else
-            git commit -m "chore: daily MUR + VIIRS SST update $(date -u '+%Y-%m-%d')"
+            git commit -m "chore: daily MUR + GOES-16 SST update $(date -u '+%Y-%m-%d')"
             git push
           fi
