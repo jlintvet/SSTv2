@@ -131,12 +131,35 @@ def _build_url(date: datetime.date) -> str:
 
 
 def _check_availability(session: requests.Session, date: datetime.date) -> bool:
-    """HEAD-check whether data for date exists on the server."""
-    # Use .nc endpoint for the HEAD check — csvp doesn't support HEAD reliably
-    url = _build_url(date).replace(".csvp", ".nc")
+    """
+    Check whether MUR SST data for date exists on the server.
+    Tries HEAD first; falls back to a small GET request if HEAD fails or
+    returns a non-200 status, since some ERDDAP servers respond poorly to HEAD.
+    """
+    nc_url  = _build_url(date).replace(".csvp", ".nc")
+    # HEAD check
     try:
-        r = session.head(url, timeout=30)
-        return r.status_code == 200
+        r = session.head(nc_url, timeout=15)
+        if r.status_code == 200:
+            return True
+        if r.status_code == 404:
+            return False
+        # Any other status (405 Method Not Allowed, 5xx, etc.) — fall through to GET
+        log.debug("  HEAD returned %d for %s — trying GET probe", r.status_code, date)
+    except requests.RequestException:
+        log.debug("  HEAD failed for %s — trying GET probe", date)
+
+    # GET fallback: request just 1 row via csvp (fast, small response)
+    probe_url = (
+        f"https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
+        f"?analysed_sst"
+        f"[({date.isoformat()}T{DAILY_HOUR}):1:({date.isoformat()}T{DAILY_HOUR})]"
+        f"[({LAT_MIN}):1:({LAT_MIN})]"
+        f"[({LON_MIN}):1:({LON_MIN})]"
+    )
+    try:
+        r = session.get(probe_url, timeout=20)
+        return r.status_code == 200 and len(r.text.strip()) > 0
     except requests.RequestException:
         return False
 
