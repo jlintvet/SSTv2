@@ -88,7 +88,7 @@ def _fetch_bathymetry(session):
 # Chaikin smoothing
 # ---------------------------------------------------------------------------
 
-def _chaikin_smooth(coords, iterations=2):
+def _chaikin_smooth(coords, iterations=4):
     if len(coords) < 3:
         return coords
 
