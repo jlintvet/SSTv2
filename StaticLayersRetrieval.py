@@ -29,47 +29,33 @@ LON_MAX = -72.21
 
 BATHY_STRIDE = 2
 
-OUTPUT_DIR    = pathlib.Path(__file__).resolve().parent / "DailySST"
-GPX_FILENAMES = [
-    ("Fishing_Spots_HatterasNC.gpx",   "HatterasNC"),
-    ("Fishing_Spots_MoreheadNC.gpx",   "MoreheadNC"),
-    ("Fishing_spots_ChesapeakeMD.gpx", "ChesapeakeMD"),
-]
+OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
-TIMEOUT    = 180
+TIMEOUT = 180
 MAX_RETRIES = 3
-BACKOFF    = 2
+BACKOFF = 2
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # HTTP session
 # ---------------------------------------------------------------------------
 
-def _make_session() -> requests.Session:
+def _make_session():
     session = requests.Session()
-    retry = Retry(
-        total=MAX_RETRIES,
-        backoff_factor=BACKOFF,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-    )
+    retry = Retry(total=MAX_RETRIES, backoff_factor=BACKOFF)
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
-    session.mount("http://",  adapter)
     return session
 
 # ---------------------------------------------------------------------------
 # Bathymetry
 # ---------------------------------------------------------------------------
 
-def _fetch_bathymetry(session: requests.Session) -> list[dict]:
+def _fetch_bathymetry(session):
     url = (
         f"{ERDDAP_BATHY}"
         f"?elevation"
@@ -77,31 +63,55 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
         f"[({LON_MIN}):{BATHY_STRIDE}:({LON_MAX})]"
     )
 
+    log.info("Fetching bathymetry...")
     r = session.get(url, timeout=TIMEOUT)
     r.raise_for_status()
 
-    reader   = csv.reader(io.StringIO(r.text))
-    all_rows = list(reader)
+    reader = csv.reader(io.StringIO(r.text))
+    rows = list(reader)[2:]
 
-    rows = []
-    for raw in all_rows[2:]:
+    data = []
+    for r in rows:
         try:
-            lat  = float(raw[0])
-            lon  = float(raw[1])
-            elev = float(raw[2])
+            lat = float(r[0])
+            lon = float(r[1])
+            elev = float(r[2])
         except:
             continue
 
         depth_ft = None if elev >= 0 else abs(elev) * 3.28084
-        rows.append({"lat": lat, "lon": lon, "depth_ft": depth_ft})
+        data.append({"lat": lat, "lon": lon, "depth_ft": depth_ft})
 
-    return rows
+    return data
 
 # ---------------------------------------------------------------------------
-# GRID BUILDER (UPDATED)
+# Chaikin smoothing
 # ---------------------------------------------------------------------------
 
-def _build_grid(rows: list[dict], for_coastline: bool = False):
+def _chaikin_smooth(coords, iterations=2):
+    if len(coords) < 3:
+        return coords
+
+    for _ in range(iterations):
+        new_coords = []
+        for i in range(len(coords) - 1):
+            x1, y1 = coords[i]
+            x2, y2 = coords[i + 1]
+
+            q = [0.75 * x1 + 0.25 * x2, 0.75 * y1 + 0.25 * y2]
+            r = [0.25 * x1 + 0.75 * x2, 0.25 * y1 + 0.75 * y2]
+
+            new_coords.extend([q, r])
+
+        coords = new_coords
+
+    return coords
+
+# ---------------------------------------------------------------------------
+# Grid builder (supports coastline)
+# ---------------------------------------------------------------------------
+
+def _build_grid(rows, for_coastline=False):
     lats = sorted(set(r["lat"] for r in rows))
     lons = sorted(set(r["lon"] for r in rows))
 
@@ -156,11 +166,12 @@ def _build_grid(rows: list[dict], for_coastline: bool = False):
     return lats, lons, grid
 
 # ---------------------------------------------------------------------------
-# CONTOURS (UPDATED)
+# Contours (with smoothing)
 # ---------------------------------------------------------------------------
 
 def _grid_to_geojson_contours(lats, lons, grid, depth_ft):
     from contourpy import contour_generator
+
     cg = contour_generator(x=lons, y=lats, z=grid)
     lines = cg.lines(depth_ft)
 
@@ -170,20 +181,37 @@ def _grid_to_geojson_contours(lats, lons, grid, depth_ft):
     for line in lines:
         if len(line) < MIN_POINTS:
             continue
+
         coords = [[float(p[0]), float(p[1])] for p in line]
+
+        # smoothing
+        if depth_ft == 0:
+            coords = _chaikin_smooth(coords, iterations=3)
+        else:
+            coords = _chaikin_smooth(coords, iterations=1)
+
+        # remove tiny junk coastline segments
+        if depth_ft == 0 and len(coords) < 30:
+            continue
+
         output.append(coords)
 
     return output
 
+# ---------------------------------------------------------------------------
+# Write contours
+# ---------------------------------------------------------------------------
 
 def write_contours(rows):
+    log.info("Generating contours...")
+
     lats, lons, grid = _build_grid(rows)
 
     all_features = []
 
-    CONTOUR_DEPTHS_FT = [30,60,100,200,300,600,1000,1500,2000]
+    depths = [30,60,100,200,300,600,1000,1500,2000]
 
-    for depth in CONTOUR_DEPTHS_FT:
+    for depth in depths:
         lines = _grid_to_geojson_contours(lats, lons, grid, depth)
 
         for coords in lines:
@@ -194,8 +222,10 @@ def write_contours(rows):
             })
 
     # -------------------------------
-    # COASTLINE (NEW)
+    # Coastline
     # -------------------------------
+    log.info("Generating coastline...")
+
     lats_c, lons_c, grid_c = _build_grid(rows, for_coastline=True)
     coast_lines = _grid_to_geojson_contours(lats_c, lons_c, grid_c, 0.0)
 
@@ -218,7 +248,7 @@ def write_contours(rows):
         json.dump({"type":"FeatureCollection","features":all_features}, f)
 
 # ---------------------------------------------------------------------------
-# MAIN
+# Main
 # ---------------------------------------------------------------------------
 
 def main():
@@ -229,8 +259,7 @@ def main():
 
     write_contours(rows)
 
-    print("Done.")
-
+    log.info("Done.")
 
 if __name__ == "__main__":
     main()
