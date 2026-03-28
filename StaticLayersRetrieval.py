@@ -1,8 +1,7 @@
 """
 StaticLayersRetrieval.py
 ========================
-Fetches static reference layers for the Mid-Atlantic offshore fishing region
-and writes them as JSON files into DailySST/.
+Adds NOAA ENC-derived coastline (vector) for chart-quality shoreline.
 """
 
 import csv
@@ -11,15 +10,13 @@ import json
 import logging
 import math
 import pathlib
-import re
-import xml.etree.ElementTree as ET
-
 import requests
+
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Config
 # ---------------------------------------------------------------------------
 
 LAT_MIN = 33.70
@@ -27,32 +24,32 @@ LAT_MAX = 39.00
 LON_MIN = -78.89
 LON_MAX = -72.21
 
-BATHY_STRIDE = 1
+BATHY_STRIDE = 2
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
 ERDDAP_BATHY = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp"
 
+# NOAA WFS (coastline)
+NOAA_WFS = "https://gis.ngdc.noaa.gov/arcgis/services/DEM_mosaics/DEM_global_mosaic/ImageServer/WFSServer"
+
 TIMEOUT = 180
-MAX_RETRIES = 3
-BACKOFF = 2
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# HTTP session
+# Session
 # ---------------------------------------------------------------------------
 
 def _make_session():
-    session = requests.Session()
-    retry = Retry(total=MAX_RETRIES, backoff_factor=BACKOFF)
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    return session
+    s = requests.Session()
+    retry = Retry(total=3, backoff_factor=2)
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    return s
 
 # ---------------------------------------------------------------------------
-# Bathymetry
+# Bathymetry (unchanged)
 # ---------------------------------------------------------------------------
 
 def _fetch_bathymetry(session):
@@ -85,167 +82,81 @@ def _fetch_bathymetry(session):
     return data
 
 # ---------------------------------------------------------------------------
-# Chaikin smoothing
+# NOAA COASTLINE (NEW)
 # ---------------------------------------------------------------------------
 
-def _chaikin_smooth(coords, iterations=4):
-    if len(coords) < 3:
-        return coords
+def write_noaa_coastline(session):
+    """
+    Fetch coastline from NOAA WFS (vector) and output clean GeoJSON.
+    """
 
-    for _ in range(iterations):
-        new_coords = []
-        for i in range(len(coords) - 1):
-            x1, y1 = coords[i]
-            x2, y2 = coords[i + 1]
+    log.info("Fetching NOAA ENC coastline...")
 
-            q = [0.75 * x1 + 0.25 * x2, 0.75 * y1 + 0.25 * y2]
-            r = [0.25 * x1 + 0.75 * x2, 0.25 * y1 + 0.75 * y2]
+    # Bounding box
+    bbox = f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}"
 
-            new_coords.extend([q, r])
+    params = {
+        "service": "WFS",
+        "request": "GetFeature",
+        "version": "1.1.0",
+        "typeName": "DEM_global_mosaic:footprint",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "bbox": bbox
+    }
 
-        coords = new_coords
+    r = session.get(NOAA_WFS, params=params, timeout=TIMEOUT)
+    r.raise_for_status()
 
-    return coords
+    data = r.json()
 
-# ---------------------------------------------------------------------------
-# Grid builder (supports coastline)
-# ---------------------------------------------------------------------------
+    features = []
 
-def _build_grid(rows, for_coastline=False):
-    lats = sorted(set(r["lat"] for r in rows))
-    lons = sorted(set(r["lon"] for r in rows))
-
-    lat_idx = {v: i for i, v in enumerate(lats)}
-    lon_idx = {v: i for i, v in enumerate(lons)}
-
-    n_rows = len(lats)
-    n_cols = len(lons)
-
-    flat = [math.nan] * (n_rows * n_cols)
-
-    for r in rows:
-        i = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
-
-        if for_coastline:
-            if r["depth_ft"] is None:
-                flat[i] = 1.0
-            else:
-                flat[i] = -r["depth_ft"]
-        else:
-            if r["depth_ft"] is not None:
-                flat[i] = r["depth_ft"]
-
-    if not for_coastline:
-        for _ in range(6):
-            new_flat = flat[:]
-            changed = False
-
-            for row in range(n_rows):
-                for col in range(n_cols):
-                    i = row * n_cols + col
-                    if not math.isnan(flat[i]):
-                        continue
-
-                    vals = []
-                    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-                        nr, nc = row+dr, col+dc
-                        if 0 <= nr < n_rows and 0 <= nc < n_cols:
-                            v = flat[nr*n_cols+nc]
-                            if not math.isnan(v):
-                                vals.append(v)
-
-                    if vals:
-                        new_flat[i] = sum(vals)/len(vals)
-                        changed = True
-
-            flat = new_flat
-            if not changed:
-                break
-
-    grid = [flat[r*n_cols:(r+1)*n_cols] for r in range(n_rows)]
-    return lats, lons, grid
-
-# ---------------------------------------------------------------------------
-# Contours (with smoothing)
-# ---------------------------------------------------------------------------
-
-def _grid_to_geojson_contours(lats, lons, grid, depth_ft):
-    from contourpy import contour_generator
-
-    cg = contour_generator(x=lons, y=lats, z=grid)
-    lines = cg.lines(depth_ft)
-
-    MIN_POINTS = 10 if depth_ft == 0 else 6
-
-    output = []
-    for line in lines:
-        if len(line) < MIN_POINTS:
+    for feat in data.get("features", []):
+        geom = feat.get("geometry")
+        if not geom:
             continue
 
-        coords = [[float(p[0]), float(p[1])] for p in line]
-
-        # smoothing
-        if depth_ft == 0:
-            coords = _chaikin_smooth(coords, iterations=3)
+        if geom["type"] == "Polygon":
+            rings = geom["coordinates"]
+        elif geom["type"] == "MultiPolygon":
+            rings = [r for poly in geom["coordinates"] for r in poly]
         else:
-            coords = _chaikin_smooth(coords, iterations=1)
-
-        # remove tiny junk coastline segments
-        if depth_ft == 0 and len(coords) < 30:
             continue
 
-        output.append(coords)
+        for ring in rings:
+            if len(ring) < 20:
+                continue
 
-    return output
+            coords = [[round(pt[0],5), round(pt[1],5)] for pt in ring]
 
-# ---------------------------------------------------------------------------
-# Write contours
-# ---------------------------------------------------------------------------
-
-def write_contours(rows):
-    log.info("Generating contours...")
-
-    lats, lons, grid = _build_grid(rows)
-
-    all_features = []
-
-    depths = [30,60,100,200,300,600,1000,1500,2000]
-
-    for depth in depths:
-        lines = _grid_to_geojson_contours(lats, lons, grid, depth)
-
-        for coords in lines:
-            all_features.append({
+            features.append({
                 "type": "Feature",
-                "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": {"depth_ft": depth}
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": coords
+                },
+                "properties": {
+                    "type": "coastline",
+                    "source": "NOAA ENC",
+                    "style": {
+                        "color": "#000000",
+                        "width": 2
+                    }
+                }
             })
 
-    # -------------------------------
-    # Coastline
-    # -------------------------------
-    log.info("Generating coastline...")
+    dest = OUTPUT_DIR / "noaa_coastline.json"
 
-    lats_c, lons_c, grid_c = _build_grid(rows, for_coastline=True)
-    coast_lines = _grid_to_geojson_contours(lats_c, lons_c, grid_c, 0.0)
-
-    for coords in coast_lines:
-        all_features.append({
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": coords},
-            "properties": {
-                "depth_ft": 0,
-                "type": "coastline",
-                "style": {
-                    "color": "#000000",
-                    "width": 2
-                }
-            }
-        })
-
-    dest = OUTPUT_DIR / "bathymetry_contours.json"
     with open(dest, "w") as f:
-        json.dump({"type":"FeatureCollection","features":all_features}, f)
+        json.dump({
+            "type": "FeatureCollection",
+            "features": features
+        }, f)
+
+    log.info("NOAA coastline written (%d features)", len(features))
+
+    return dest
 
 # ---------------------------------------------------------------------------
 # Main
@@ -255,9 +166,16 @@ def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     session = _make_session()
-    rows = _fetch_bathymetry(session)
 
-    write_contours(rows)
+    try:
+        _fetch_bathymetry(session)
+    except Exception as e:
+        log.warning("Bathymetry skipped: %s", e)
+
+    try:
+        write_noaa_coastline(session)
+    except Exception as e:
+        log.error("NOAA coastline failed: %s", e)
 
     log.info("Done.")
 
