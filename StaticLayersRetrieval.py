@@ -27,7 +27,7 @@ LAT_MAX = 39.00
 LON_MIN = -78.89
 LON_MAX = -72.21
 
-BATHY_STRIDE = 2
+BATHY_STRIDE = 1
 
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
