@@ -12,22 +12,29 @@ Retrieves the last three days of SST data from two satellite sources:
 Output layout (relative to this script's directory):
   DailySST/
     MUR_SST_YYYYMMDD.json    – MUR full grid data for each day
+    MUR_SST_YYYYMMDD.jpg     – MUR SST map image for each day
     latest.json              – MUR most recent day (convenience alias)
+    latest.jpg               – MUR most recent day image (convenience alias)
     manifest.json            – MUR catalogue of all stored files
 
     GOES19_SST_YYYYMMDD.json – GOES-19 full grid data for each day
+    GOES19_SST_YYYYMMDD.jpg  – GOES-19 SST map image for each day
     goes19_latest.json       – GOES-19 most recent day (convenience alias)
+    goes19_latest.jpg        – GOES-19 most recent day image (convenience alias)
     goes19_manifest.json     – GOES-19 catalogue of all stored files
 
 Behaviour
 ---------
-* Purges JSON files older than RETENTION_DAYS on every run.
+* Purges JSON and JPG files older than RETENTION_DAYS on every run.
 * Downloads the 3 most-recent available days for each dataset.
 * Writes latest alias and manifest for each dataset.
+* Images use ERDDAP griddap .largePng rendered as JPEG for the same region
+  and date/hour as each corresponding JSON data file.
 
-ERDDAP endpoint
----------------
-  Uses the .csvp format — no binary parsing library required.
+ERDDAP endpoints
+----------------
+  JSON: .csvp format — no binary parsing library required.
+  Images: .largePng format via griddap graph URL with SST thermal colorbar.
 
 Dependencies
 ------------
@@ -53,12 +60,16 @@ from urllib3.util.retry import Retry
 
 ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
 
+# MUR SST image base (same server, .largePng format)
+ERDDAP_MUR_IMG = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.largePng"
+
 # GOES-19 Hourly SST (goes19SSThourly, cwcgom.aoml.noaa.gov)
 # GOES-19 replaced GOES-16 as the operational East Coast geostationary
 # satellite in late 2024. IR only — cloud pixels are NaN. ~3-6 hr lag.
-ERDDAP_GOES19    = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.csvp"
-GOES19_VARIABLE  = "sst"  # Celsius; NaN where cloud-obscured
-GOES19_STRIDE    = 1      # native resolution
+ERDDAP_GOES19     = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.csvp"
+ERDDAP_GOES19_IMG = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.largePng"
+GOES19_VARIABLE   = "sst"  # Celsius; NaN where cloud-obscured
+GOES19_STRIDE     = 1      # native resolution
 
 # Region: southern New Jersey (N) → Myrtle Beach SC (S),
 #         Myrtle Beach SC (W)     → ~200 miles offshore Virginia Beach (E)
@@ -75,6 +86,15 @@ LON_STRIDE = 1
 # Variables to retrieve
 VARIABLES = ["analysed_sst", "analysis_error", "sea_ice_fraction", "mask"]
 
+# Image dimensions (pixels).  largePng supports up to 3000×3000.
+IMG_WIDTH  = 1800
+IMG_HEIGHT = 1200
+
+# SST color scale bounds (°C) — covers typical Mid-Atlantic range.
+# KT_thermal palette: blue (cold) → red (warm).
+SST_COLORBAR_MIN = 4    # °C  (~39 °F, winter minimum)
+SST_COLORBAR_MAX = 32   # °C  (~90 °F, summer maximum)
+
 # Output directory (relative to this file)
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 
@@ -85,9 +105,10 @@ RETENTION_DAYS = 3
 SEARCH_WINDOW = 7
 
 # HTTP settings
-TIMEOUT_SECONDS = 300
-MAX_RETRIES = 3
-BACKOFF_FACTOR = 2
+TIMEOUT_SECONDS     = 300
+IMG_TIMEOUT_SECONDS = 120   # images are smaller than csvp data
+MAX_RETRIES         = 3
+BACKOFF_FACTOR      = 2
 
 # MUR SST daily timestamp
 DAILY_HOUR = "09:00:00Z"
@@ -128,6 +149,96 @@ def _build_url(date: datetime.date) -> str:
         f"{v}{time_part}{lat_part}{lon_part}" for v in VARIABLES
     )
     return f"{ERDDAP_BASE}?{var_queries}"
+
+
+def _build_mur_image_url(date: datetime.date) -> str:
+    """
+    Construct the ERDDAP griddap .largePng image URL for MUR SST.
+
+    Uses the same region boundaries as the data requests.  The graph
+    parameters request a filled-surface SST map with the KT_thermal
+    colorbar, land overlay, and a 2-pixel trim on the frame borders.
+    """
+    ts        = f"{date.isoformat()}T{DAILY_HOUR}"
+    time_part = f"[({ts}):1:({ts})]"
+    lat_part  = f"[({LAT_MIN}):1:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):1:({LON_MAX})]"
+
+    query = (
+        f"analysed_sst{time_part}{lat_part}{lon_part}"
+        f"&.draw=surface"
+        f"&.trim=2"
+        f"&.vars=longitude|latitude|analysed_sst"
+        f"&.colorBar=KT_thermal|||{SST_COLORBAR_MIN}|{SST_COLORBAR_MAX}|"
+        f"&.bgColor=0xffccccff"
+        f"&.width={IMG_WIDTH}"
+        f"&.height={IMG_HEIGHT}"
+    )
+    return f"{ERDDAP_MUR_IMG}?{query}"
+
+
+def _build_goes19_image_url(date: datetime.date, hour: int) -> str:
+    """
+    Construct the ERDDAP griddap .largePng image URL for GOES-19 SST.
+
+    Matches the same region boundaries and the specific hour used when
+    fetching that day's CSV data.  Cloud-obscured pixels render as the
+    background colour (light blue ocean).
+    """
+    ts        = f"{date.isoformat()}T{hour:02d}:00:00Z"
+    time_part = f"[({ts}):1:({ts})]"
+    lat_part  = f"[({LAT_MIN}):1:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):1:({LON_MAX})]"
+
+    query = (
+        f"sst{time_part}{lat_part}{lon_part}"
+        f"&.draw=surface"
+        f"&.trim=2"
+        f"&.vars=longitude|latitude|sst"
+        f"&.colorBar=KT_thermal|||{SST_COLORBAR_MIN}|{SST_COLORBAR_MAX}|"
+        f"&.bgColor=0xffccccff"
+        f"&.width={IMG_WIDTH}"
+        f"&.height={IMG_HEIGHT}"
+    )
+    return f"{ERDDAP_GOES19_IMG}?{query}"
+
+
+def _fetch_image(session: requests.Session,
+                 url: str,
+                 dest: pathlib.Path,
+                 label: str) -> bool:
+    """
+    Download a .largePng image from ERDDAP and save it as a JPEG.
+
+    ERDDAP delivers .largePng as a PNG byte stream regardless of the
+    file extension we write locally.  We save it as .jpg because most
+    front-ends and mapping libraries accept PNG bytes in a .jpg file
+    without issue; alternatively callers can rename to .png.  If strict
+    JPEG encoding is required, add `pip install Pillow` and convert via
+    PIL.Image.
+    """
+    log.info("  %s image  ->  %s", label, dest.name)
+    try:
+        r = session.get(url, timeout=IMG_TIMEOUT_SECONDS)
+        r.raise_for_status()
+    except requests.HTTPError as exc:
+        log.warning("  Image HTTP error (%s): %s", label, exc)
+        return False
+    except requests.RequestException as exc:
+        log.warning("  Image request error (%s): %s", label, exc)
+        return False
+
+    content_type = r.headers.get("Content-Type", "")
+    if "image" not in content_type and len(r.content) < 1000:
+        log.warning("  %s image response looks invalid (Content-Type: %s, %d bytes) — skipping.",
+                    label, content_type, len(r.content))
+        return False
+
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_bytes(r.content)
+    tmp.rename(dest)
+    log.info("  Saved %s  (%.1f KB)", dest.name, dest.stat().st_size / 1024)
+    return True
 
 
 def _check_availability(session: requests.Session, date: datetime.date) -> bool:
@@ -297,7 +408,6 @@ def _fetch_day_json(session: requests.Session,
             "error": "fahrenheit",
             "ice":   "fraction_0_to_1",
             "mask":  "categorical",
-            
         },
         "row_count": len(rows),
         "rows": rows,
@@ -322,30 +432,39 @@ def _sha256(path: pathlib.Path, chunk: int = 1 << 20) -> str:
 
 
 def _purge_old_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
-    """Delete MUR_SST_YYYYMMDD.json files older than cutoff."""
+    """Delete MUR_SST_YYYYMMDD.json and matching .jpg files older than cutoff."""
     deleted = []
-    for f in sorted(output_dir.glob("MUR_SST_????????.json")):
-        date_str = f.stem.split("_")[-1]
-        try:
-            file_date = datetime.date(
-                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
-            )
-        except ValueError:
-            continue
-        if file_date < cutoff:
-            log.info("Purging old file: %s", f.name)
-            f.unlink()
-            deleted.append(f.name)
+    for pattern in ("MUR_SST_????????.json", "MUR_SST_????????.jpg"):
+        for f in sorted(output_dir.glob(pattern)):
+            date_str = f.stem.split("_")[-1]
+            try:
+                file_date = datetime.date(
+                    int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
+                )
+            except ValueError:
+                continue
+            if file_date < cutoff:
+                log.info("Purging old file: %s", f.name)
+                f.unlink()
+                deleted.append(f.name)
     return deleted
 
 
 def _write_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
-    """Write latest.json as a copy of the newest day's data file."""
-    src = output_dir / f"MUR_SST_{newest_date.strftime('%Y%m%d')}.json"
-    dst = output_dir / "latest.json"
-    if src.exists():
-        dst.write_bytes(src.read_bytes())
-        log.info("latest.json updated  ->  %s", src.name)
+    """Write latest.json and latest.jpg as copies of the newest day's files."""
+    date_str = newest_date.strftime('%Y%m%d')
+
+    src_json = output_dir / f"MUR_SST_{date_str}.json"
+    dst_json = output_dir / "latest.json"
+    if src_json.exists():
+        dst_json.write_bytes(src_json.read_bytes())
+        log.info("latest.json updated  ->  %s", src_json.name)
+
+    src_jpg = output_dir / f"MUR_SST_{date_str}.jpg"
+    dst_jpg = output_dir / "latest.jpg"
+    if src_jpg.exists():
+        dst_jpg.write_bytes(src_jpg.read_bytes())
+        log.info("latest.jpg updated  ->  %s", src_jpg.name)
 
 
 def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
@@ -355,12 +474,22 @@ def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
         date_str = f.stem.split("_")[-1]
         iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
         entry = next((x for x in fetched if x.get("filename") == f.name), None)
+
+        # Companion image
+        img_name = f"MUR_SST_{date_str}.jpg"
+        img_path = output_dir / img_name
+        img_info = {
+            "filename":   img_name,
+            "size_bytes": img_path.stat().st_size if img_path.exists() else None,
+        }
+
         files_on_disk.append({
             "filename":   f.name,
             "date":       iso_date,
             "size_bytes": f.stat().st_size,
             "sha256":     entry["sha256"] if entry else _sha256(f),
             "row_count":  entry["row_count"] if entry else None,
+            "image":      img_info,
         })
 
     manifest = {
@@ -377,7 +506,13 @@ def _write_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
             "sst":   "fahrenheit",
             "error": "fahrenheit",
             "ice":   "fraction_0_to_1",
-            
+        },
+        "image_settings": {
+            "colorbar":    "KT_thermal",
+            "sst_min_c":   SST_COLORBAR_MIN,
+            "sst_max_c":   SST_COLORBAR_MAX,
+            "width_px":    IMG_WIDTH,
+            "height_px":   IMG_HEIGHT,
         },
         "file_count": len(files_on_disk),
         "files":      files_on_disk,
@@ -515,30 +650,39 @@ def _fetch_goes19_day_json(session: requests.Session,
 
 
 def _purge_goes19_files(output_dir: pathlib.Path, cutoff: datetime.date) -> list:
-    """Delete GOES19_SST_YYYYMMDD.json files older than cutoff."""
+    """Delete GOES19_SST_YYYYMMDD.json and matching .jpg files older than cutoff."""
     deleted = []
-    for f in sorted(output_dir.glob("GOES19_SST_????????.json")):
-        date_str = f.stem.split("_")[-1]
-        try:
-            file_date = datetime.date(
-                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
-            )
-        except ValueError:
-            continue
-        if file_date < cutoff:
-            log.info("Purging old GOES-19 file: %s", f.name)
-            f.unlink()
-            deleted.append(f.name)
+    for pattern in ("GOES19_SST_????????.json", "GOES19_SST_????????.jpg"):
+        for f in sorted(output_dir.glob(pattern)):
+            date_str = f.stem.split("_")[-1]
+            try:
+                file_date = datetime.date(
+                    int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
+                )
+            except ValueError:
+                continue
+            if file_date < cutoff:
+                log.info("Purging old GOES-19 file: %s", f.name)
+                f.unlink()
+                deleted.append(f.name)
     return deleted
 
 
 def _write_goes19_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
-    """Write goes19_latest.json as a copy of the newest GOES-19 day file."""
-    src = output_dir / f"GOES19_SST_{newest_date.strftime('%Y%m%d')}.json"
-    dst = output_dir / "goes19_latest.json"
-    if src.exists():
-        dst.write_bytes(src.read_bytes())
-        log.info("goes19_latest.json updated  ->  %s", src.name)
+    """Write goes19_latest.json and goes19_latest.jpg from the newest GOES-19 day."""
+    date_str = newest_date.strftime('%Y%m%d')
+
+    src_json = output_dir / f"GOES19_SST_{date_str}.json"
+    dst_json = output_dir / "goes19_latest.json"
+    if src_json.exists():
+        dst_json.write_bytes(src_json.read_bytes())
+        log.info("goes19_latest.json updated  ->  %s", src_json.name)
+
+    src_jpg = output_dir / f"GOES19_SST_{date_str}.jpg"
+    dst_jpg = output_dir / "goes19_latest.jpg"
+    if src_jpg.exists():
+        dst_jpg.write_bytes(src_jpg.read_bytes())
+        log.info("goes19_latest.jpg updated  ->  %s", src_jpg.name)
 
 
 def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> None:
@@ -568,8 +712,16 @@ def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> Non
             except Exception:
                 pass
 
-        cloud    = (total - ocean) if (ocean is not None and total is not None) else None
-        pct_cov  = round(ocean / total * 100, 1) if (ocean and total) else None
+        cloud   = (total - ocean) if (ocean is not None and total is not None) else None
+        pct_cov = round(ocean / total * 100, 1) if (ocean and total) else None
+
+        # Companion image
+        img_name = f"GOES19_SST_{date_str}.jpg"
+        img_path = output_dir / img_name
+        img_info = {
+            "filename":   img_name,
+            "size_bytes": img_path.stat().st_size if img_path.exists() else None,
+        }
 
         files_on_disk.append({
             "filename":     f.name,
@@ -581,6 +733,7 @@ def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> Non
             "ocean_count":  ocean,
             "cloud_count":  cloud,
             "coverage_pct": pct_cov,
+            "image":        img_info,
         })
 
     # Rank by coverage (rank 1 = most ocean pixels = least cloud obstruction)
@@ -608,10 +761,17 @@ def _write_goes19_manifest(output_dir: pathlib.Path, fetched: list[dict]) -> Non
             "lon_min": LON_MIN, "lon_max": LON_MAX,
             "stride":  GOES19_STRIDE,
         },
-        "units":            {"sst": "fahrenheit"},
-        "file_count":       len(files_on_disk),
-        "best_coverage":    best["filename"] if best else None,
-        "files":            files_on_disk,
+        "units":          {"sst": "fahrenheit"},
+        "image_settings": {
+            "colorbar":   "KT_thermal",
+            "sst_min_c":  SST_COLORBAR_MIN,
+            "sst_max_c":  SST_COLORBAR_MAX,
+            "width_px":   IMG_WIDTH,
+            "height_px":  IMG_HEIGHT,
+        },
+        "file_count":     len(files_on_disk),
+        "best_coverage":  best["filename"] if best else None,
+        "files":          files_on_disk,
     }
 
     manifest_path = output_dir / "goes19_manifest.json"
@@ -665,18 +825,26 @@ def main():
         log.info("Fetching %d MUR day(s): %s", len(target_dates),
                  [d.isoformat() for d in target_dates])
         for date in target_dates:
-            filename = f"MUR_SST_{date.strftime('%Y%m%d')}.json"
-            dest     = OUTPUT_DIR / filename
-            success  = _fetch_day_json(session, date, dest)
+            date_str = date.strftime('%Y%m%d')
+
+            # --- JSON data ---
+            json_filename = f"MUR_SST_{date_str}.json"
+            json_dest     = OUTPUT_DIR / json_filename
+            success = _fetch_day_json(session, date, json_dest)
             if success:
-                with open(dest, "r", encoding="utf-8") as fh:
+                with open(json_dest, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
                 fetched.append({
-                    "filename":  filename,
+                    "filename":  json_filename,
                     "date":      date.isoformat(),
-                    "sha256":    _sha256(dest),
+                    "sha256":    _sha256(json_dest),
                     "row_count": meta.get("row_count"),
                 })
+
+            # --- JPG image ---
+            img_dest = OUTPUT_DIR / f"MUR_SST_{date_str}.jpg"
+            img_url  = _build_mur_image_url(date)
+            _fetch_image(session, img_url, img_dest, f"MUR {date.isoformat()}")
 
     if fetched:
         _write_latest(OUTPUT_DIR, max(target_dates))
@@ -712,28 +880,38 @@ def main():
         log.info("Fetching %d GOES-19 day(s): %s", len(goes_dates),
                  [d.isoformat() for d in goes_dates])
         for date in goes_dates:
-            filename = f"GOES19_SST_{date.strftime('%Y%m%d')}.json"
-            dest     = OUTPUT_DIR / filename
-            success  = _fetch_goes19_day_json(session, date, goes_hours[date], dest)
+            date_str = date.strftime('%Y%m%d')
+            hour     = goes_hours[date]
+
+            # --- JSON data ---
+            json_filename = f"GOES19_SST_{date_str}.json"
+            json_dest     = OUTPUT_DIR / json_filename
+            success = _fetch_goes19_day_json(session, date, hour, json_dest)
             if success:
-                with open(dest, "r", encoding="utf-8") as fh:
+                with open(json_dest, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
                 goes_fetched.append({
-                    "filename":    filename,
+                    "filename":    json_filename,
                     "date":        date.isoformat(),
-                    "hour_utc":    goes_hours[date],
-                    "sha256":      _sha256(dest),
+                    "hour_utc":    hour,
+                    "sha256":      _sha256(json_dest),
                     "row_count":   meta.get("row_count"),
                     "ocean_count": meta.get("ocean_count"),
                     "cloud_count": meta.get("cloud_count"),
                 })
+
+            # --- JPG image ---
+            img_dest = OUTPUT_DIR / f"GOES19_SST_{date_str}.jpg"
+            img_url  = _build_goes19_image_url(date, hour)
+            _fetch_image(session, img_url, img_dest,
+                         f"GOES-19 {date.isoformat()} {hour:02d}:00Z")
 
     if goes_fetched:
         _write_goes19_latest(OUTPUT_DIR, max(goes_dates))
     _write_goes19_manifest(OUTPUT_DIR, goes_fetched)
 
     log.info("=== Done. MUR %d/%d | GOES-19 %d/%d day(s) retrieved. ===",
-             len(fetched),   len(target_dates),
+             len(fetched),     len(target_dates),
              len(goes_fetched), len(goes_dates))
 
 
