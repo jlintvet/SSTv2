@@ -5,7 +5,7 @@ Fetches:
 - Bathymetry (GEBCO)
 - Depth contours
 - Smoothed coastline (derived)
-- NOAA vector coastline (NEW, high quality)
+- NOAA vector coastline (Census TIGER)
 
 Outputs into DailySST/
 """
@@ -240,32 +240,31 @@ def write_contours(rows):
     log.info("Contours written (%d features)", len(all_features))
 
 # ---------------------------------------------------------------------------
-# NOAA COASTLINE
+# COASTLINE (Census TIGERweb — publicly open, no auth required)
 # ---------------------------------------------------------------------------
 
 def write_noaa_coastline(session):
-    log.info("Fetching NOAA/Esri coastline...")
+    """
+    Fetches the US coastline from the Census Bureau TIGERweb REST service.
+    Endpoint: TIGERweb coastline MapServer layer 0
+    Supports standard comma-separated bbox + GeoJSON output natively.
+    """
+    log.info("Fetching coastline from Census TIGERweb...")
 
-    url = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_Coastline/FeatureServer/0/query"
+    url = (
+        "https://tigerweb.geo.census.gov/arcgis/rest/services/"
+        "TIGERweb/coastline/MapServer/0/query"
+    )
 
-    # Use Esri JSON envelope object instead of comma-separated bbox,
-    # and request Esri JSON format (f=json) which all FeatureServers support
     params = {
         "where": "1=1",
         "outFields": "*",
-        "geometry": json.dumps({
-            "xmin": LON_MIN,
-            "ymin": LAT_MIN,
-            "xmax": LON_MAX,
-            "ymax": LAT_MAX,
-            "spatialReference": {"wkid": 4326}
-        }),
+        "geometry": f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}",
         "geometryType": "esriGeometryEnvelope",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
         "outSR": "4326",
-        "resultRecordCount": 2000,
-        "f": "json"  # Esri JSON — universally supported
+        "f": "geojson",
     }
 
     r = session.get(url, params=params, timeout=TIMEOUT)
@@ -273,9 +272,8 @@ def write_noaa_coastline(session):
 
     data = r.json()
 
-    # ArcGIS error messages come back as 200 OK with an "error" key
     if "error" in data:
-        raise RuntimeError(f"ArcGIS error: {data['error']}")
+        raise RuntimeError(f"TIGERweb error: {data['error']}")
 
     features = []
 
@@ -284,11 +282,21 @@ def write_noaa_coastline(session):
         if not geom:
             continue
 
-        # Esri JSON uses "rings" for polygons (not GeoJSON "coordinates")
-        rings = geom.get("rings", [])
+        gtype = geom.get("type", "")
+
+        if gtype == "LineString":
+            rings = [geom["coordinates"]]
+        elif gtype == "MultiLineString":
+            rings = geom["coordinates"]
+        elif gtype == "Polygon":
+            rings = geom["coordinates"]
+        elif gtype == "MultiPolygon":
+            rings = [ring for poly in geom["coordinates"] for ring in poly]
+        else:
+            continue
 
         for ring in rings:
-            if len(ring) < 20:
+            if len(ring) < 5:
                 continue
 
             coords = [[round(pt[0], 5), round(pt[1], 5)] for pt in ring]
@@ -301,13 +309,16 @@ def write_noaa_coastline(session):
                 },
                 "properties": {
                     "type": "coastline",
-                    "source": "NOAA/Esri",
+                    "source": "Census TIGERweb",
                     "style": {
                         "color": "#000000",
                         "width": 2
                     }
                 }
             })
+
+    if not features:
+        log.warning("No coastline features returned — check bbox or service URL.")
 
     dest = OUTPUT_DIR / "noaa_coastline.json"
 
@@ -317,7 +328,7 @@ def write_noaa_coastline(session):
             "features": features
         }, f)
 
-    log.info("NOAA coastline written (%d features)", len(features))
+    log.info("Coastline written (%d features)", len(features))
 
 # ---------------------------------------------------------------------------
 # Main
