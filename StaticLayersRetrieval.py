@@ -207,7 +207,7 @@ def write_contours(rows):
 
     all_features = []
 
-    depths = [30,60,100,200,300,600,1000,1500,2000]
+    depths = [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]
 
     for depth in depths:
         lines = _grid_to_geojson_contours(lats, lons, grid, depth)
@@ -235,10 +235,12 @@ def write_contours(rows):
 
     dest = OUTPUT_DIR / "bathymetry_contours.json"
     with open(dest, "w") as f:
-        json.dump({"type":"FeatureCollection","features":all_features}, f)
+        json.dump({"type": "FeatureCollection", "features": all_features}, f)
+
+    log.info("Contours written (%d features)", len(all_features))
 
 # ---------------------------------------------------------------------------
-# NOAA COASTLINE (WORKING VERSION)
+# NOAA COASTLINE
 # ---------------------------------------------------------------------------
 
 def write_noaa_coastline(session):
@@ -246,21 +248,34 @@ def write_noaa_coastline(session):
 
     url = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_Coastline/FeatureServer/0/query"
 
+    # Use Esri JSON envelope object instead of comma-separated bbox,
+    # and request Esri JSON format (f=json) which all FeatureServers support
     params = {
         "where": "1=1",
         "outFields": "*",
-        "geometry": f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}",
+        "geometry": json.dumps({
+            "xmin": LON_MIN,
+            "ymin": LAT_MIN,
+            "xmax": LON_MAX,
+            "ymax": LAT_MAX,
+            "spatialReference": {"wkid": 4326}
+        }),
         "geometryType": "esriGeometryEnvelope",
-        "inSR": 4326,
+        "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
-        "outSR": 4326,
-        "f": "geojson"
+        "outSR": "4326",
+        "resultRecordCount": 2000,
+        "f": "json"  # Esri JSON — universally supported
     }
 
     r = session.get(url, params=params, timeout=TIMEOUT)
     r.raise_for_status()
 
     data = r.json()
+
+    # ArcGIS error messages come back as 200 OK with an "error" key
+    if "error" in data:
+        raise RuntimeError(f"ArcGIS error: {data['error']}")
 
     features = []
 
@@ -269,18 +284,14 @@ def write_noaa_coastline(session):
         if not geom:
             continue
 
-        if geom["type"] == "Polygon":
-            rings = geom["coordinates"]
-        elif geom["type"] == "MultiPolygon":
-            rings = [r for poly in geom["coordinates"] for r in poly]
-        else:
-            continue
+        # Esri JSON uses "rings" for polygons (not GeoJSON "coordinates")
+        rings = geom.get("rings", [])
 
         for ring in rings:
             if len(ring) < 20:
                 continue
 
-            coords = [[round(pt[0],5), round(pt[1],5)] for pt in ring]
+            coords = [[round(pt[0], 5), round(pt[1], 5)] for pt in ring]
 
             features.append({
                 "type": "Feature",
