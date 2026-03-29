@@ -4,8 +4,9 @@ StaticLayersRetrieval.py
 Fetches:
 - Bathymetry (GEBCO via coastwatch, fallback NCEI sources)
 - Depth contours
-- Smoothed coastline (derived)
-- Coastline (Natural Earth 10m — public domain, raw GeoJSON from GitHub)
+- Smoothed coastline (derived — kept for contour generation only)
+- Coastline line (Natural Earth 10m, public domain)
+- Land mask polygons (Natural Earth 10m, public domain) — NEW
 
 Outputs into DailySST/
 """
@@ -39,6 +40,16 @@ TIMEOUT = 180
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
+# Natural Earth GitHub raw base
+NE_BASE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
+
+# 10m coastline (lines) — for the coastline stroke
+NE_COASTLINE_URL = f"{NE_BASE}/ne_10m_coastline.geojson"
+
+# 10m land polygons — for the land mask fill
+# Using 10m_land which includes all land polygons clipped to shoreline
+NE_LAND_URL = f"{NE_BASE}/ne_10m_land.geojson"
+
 # ---------------------------------------------------------------------------
 # HTTP session
 # ---------------------------------------------------------------------------
@@ -54,9 +65,8 @@ def _make_session():
 # ---------------------------------------------------------------------------
 
 def _parse_erddap_csvp(text):
-    """Parse ERDDAP .csvp response into list of dicts."""
     reader = csv.reader(io.StringIO(text))
-    rows = list(reader)[2:]  # skip header + units row
+    rows = list(reader)[2:]
     data = []
     for row in rows:
         try:
@@ -84,11 +94,8 @@ def _try_erddap(session, base_url, var, stride=2):
 
 
 BATHY_SOURCES = [
-    # 1. coastwatch pfeg — GEBCO 2020 (original, highest quality)
     ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp", "elevation"),
-    # 2. NCEI ERDDAP — GEBCO 2023
-    ("https://www.ncei.noaa.gov/erddap/griddap/GEBCO_2023.csvp", "elevation"),
-    # 3. NCEI ERDDAP — ETOPO 2022 (1 arc-minute global relief)
+    ("https://www.ncei.noaa.gov/erddap/griddap/GEBCO_2023.csvp",        "elevation"),
     ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp", "z"),
 ]
 
@@ -132,15 +139,11 @@ def _chaikin_smooth(coords, iterations=2):
 def _build_grid(rows, for_coastline=False):
     lats = sorted(set(r["lat"] for r in rows))
     lons = sorted(set(r["lon"] for r in rows))
-
     lat_idx = {v: i for i, v in enumerate(lats)}
     lon_idx = {v: i for i, v in enumerate(lons)}
-
     n_rows = len(lats)
     n_cols = len(lons)
-
     flat = [math.nan] * (n_rows * n_cols)
-
     for r in rows:
         i = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
         if for_coastline:
@@ -148,7 +151,6 @@ def _build_grid(rows, for_coastline=False):
         else:
             if r["depth_ft"] is not None:
                 flat[i] = r["depth_ft"]
-
     if not for_coastline:
         for _ in range(6):
             new_flat = flat[:]
@@ -171,7 +173,6 @@ def _build_grid(rows, for_coastline=False):
             flat = new_flat
             if not changed:
                 break
-
     grid = [flat[r*n_cols:(r+1)*n_cols] for r in range(n_rows)]
     return lats, lons, grid
 
@@ -181,12 +182,9 @@ def _build_grid(rows, for_coastline=False):
 
 def _grid_to_geojson_contours(lats, lons, grid, depth_ft):
     from contourpy import contour_generator
-
     cg = contour_generator(x=lons, y=lats, z=grid)
     lines = cg.lines(depth_ft)
-
     MIN_POINTS = 10 if depth_ft == 0 else 6
-
     output = []
     for line in lines:
         if len(line) < MIN_POINTS:
@@ -196,19 +194,16 @@ def _grid_to_geojson_contours(lats, lons, grid, depth_ft):
         if depth_ft == 0 and len(coords) < 30:
             continue
         output.append(coords)
-
     return output
 
 # ---------------------------------------------------------------------------
-# Write contours
+# Write contours (depth only — no derived coastline exported)
 # ---------------------------------------------------------------------------
 
 def write_contours(rows):
     log.info("Generating contours...")
-
     lats, lons, grid = _build_grid(rows)
     all_features = []
-
     for depth in [30, 60, 100, 200, 300, 600, 1000, 1500, 2000]:
         for coords in _grid_to_geojson_contours(lats, lons, grid, depth):
             all_features.append({
@@ -216,113 +211,149 @@ def write_contours(rows):
                 "geometry": {"type": "LineString", "coordinates": coords},
                 "properties": {"depth_ft": depth}
             })
-
-    # Derived coastline
-    lats_c, lons_c, grid_c = _build_grid(rows, for_coastline=True)
-    for coords in _grid_to_geojson_contours(lats_c, lons_c, grid_c, 0.0):
-        all_features.append({
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": coords},
-            "properties": {"depth_ft": 0, "type": "coastline_derived"}
-        })
-
+    # NOTE: derived coastline intentionally excluded — Natural Earth polygon
+    # is used for the land mask and coastline line instead.
     dest = OUTPUT_DIR / "bathymetry_contours.json"
     with open(dest, "w") as f:
         json.dump({"type": "FeatureCollection", "features": all_features}, f)
-
     log.info("Contours written (%d features)", len(all_features))
 
 # ---------------------------------------------------------------------------
-# Coastline — Natural Earth 10m (public domain, CC0)
-# Served as raw GeoJSON directly from GitHub — no auth, no spatial API.
-# We download the global file once and clip to the bbox in memory.
+# Bbox helpers
 # ---------------------------------------------------------------------------
 
-# 10m resolution (~1:10M scale) — detailed enough for a regional fishing chart
-NE_COASTLINE_URL = (
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
-    "master/geojson/ne_10m_coastline.geojson"
-)
+PAD = 0.5  # degrees of padding around bbox for clipping
 
+def _pt_in_bbox(lon, lat):
+    return (LON_MIN - PAD <= lon <= LON_MAX + PAD and
+            LAT_MIN - PAD <= lat <= LAT_MAX + PAD)
 
-def _coord_in_bbox(lon, lat, pad=2.0):
-    """Return True if point is within the region bbox (with a small padding)."""
-    return (
-        LON_MIN - pad <= lon <= LON_MAX + pad and
-        LAT_MIN - pad <= lat <= LAT_MAX + pad
-    )
+def _ring_intersects_bbox(ring):
+    """True if any point in a ring is inside the padded bbox."""
+    return any(_pt_in_bbox(pt[0], pt[1]) for pt in ring)
 
+def _clip_ring_to_bbox(ring):
+    """Return only points within the padded bbox (simple point filter)."""
+    return [[round(pt[0], 5), round(pt[1], 5)]
+            for pt in ring if _pt_in_bbox(pt[0], pt[1])]
 
 def _clip_linestring(coords):
-    """
-    Return only the sub-segments of a LineString whose points touch the bbox.
-    Splits at gaps so we don't draw long lines across the globe.
-    """
-    segments = []
-    current = []
-
+    """Split a linestring at gaps where points leave the bbox."""
+    segments, current = [], []
     for pt in coords:
-        if _coord_in_bbox(pt[0], pt[1]):
+        if _pt_in_bbox(pt[0], pt[1]):
             current.append([round(pt[0], 5), round(pt[1], 5)])
         else:
             if len(current) >= 2:
                 segments.append(current)
             current = []
-
     if len(current) >= 2:
         segments.append(current)
-
     return segments
 
+# ---------------------------------------------------------------------------
+# Coastline line (Natural Earth 10m) — for the stroke on top of land mask
+# ---------------------------------------------------------------------------
 
 def write_noaa_coastline(session):
-    log.info("Fetching Natural Earth 10m coastline from GitHub...")
-
+    log.info("Fetching Natural Earth 10m coastline (lines)...")
     r = session.get(NE_COASTLINE_URL, timeout=TIMEOUT)
     r.raise_for_status()
-
     data = r.json()
     features = []
-
     for feat in data.get("features", []):
-        geom = feat.get("geometry")
-        if not geom:
-            continue
-
+        geom = feat.get("geometry", {})
         gtype = geom.get("type", "")
-
         if gtype == "LineString":
             all_coords = [geom["coordinates"]]
         elif gtype == "MultiLineString":
             all_coords = geom["coordinates"]
         else:
             continue
-
         for coords in all_coords:
             for segment in _clip_linestring(coords):
-                if len(segment) < 5:
+                if len(segment) < 3:
                     continue
                 features.append({
                     "type": "Feature",
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": segment
-                    },
+                    "geometry": {"type": "LineString", "coordinates": segment},
                     "properties": {
                         "type": "coastline",
                         "source": "Natural Earth 10m",
                         "style": {"color": "#000000", "width": 2}
                     }
                 })
-
-    if not features:
-        log.warning("No coastline features clipped to bbox.")
-
     dest = OUTPUT_DIR / "noaa_coastline.json"
     with open(dest, "w") as f:
         json.dump({"type": "FeatureCollection", "features": features}, f)
+    log.info("Coastline lines written (%d features)", len(features))
 
-    log.info("Coastline written (%d features)", len(features))
+# ---------------------------------------------------------------------------
+# Land mask polygons (Natural Earth 10m land) — filled white over SST raster
+# ---------------------------------------------------------------------------
+
+def write_land_mask(session):
+    """
+    Downloads Natural Earth 10m land polygons and clips to the bbox.
+    The renderer fills these polygons white to blank out land areas,
+    then draws the coastline stroke on top.
+    Stored as GeoJSON Polygons/MultiPolygons (ring coordinates preserved).
+    """
+    log.info("Fetching Natural Earth 10m land polygons...")
+    r = session.get(NE_LAND_URL, timeout=TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+
+    features = []
+    for feat in data.get("features", []):
+        geom = feat.get("geometry", {})
+        gtype = geom.get("type", "")
+
+        if gtype == "Polygon":
+            polys = [geom["coordinates"]]
+        elif gtype == "MultiPolygon":
+            polys = geom["coordinates"]
+        else:
+            continue
+
+        clipped_polys = []
+        for poly in polys:
+            # poly is a list of rings; first ring is exterior, rest are holes
+            if not poly:
+                continue
+            exterior = poly[0]
+            # Skip polygons that don't touch the bbox at all
+            if not _ring_intersects_bbox(exterior):
+                continue
+            # Keep all rings; renderer will clip visually via canvas bounds
+            clipped_rings = []
+            for ring in poly:
+                clipped = [[round(pt[0], 5), round(pt[1], 5)] for pt in ring]
+                if len(clipped) >= 3:
+                    clipped_rings.append(clipped)
+            if clipped_rings:
+                clipped_polys.append(clipped_rings)
+
+        if not clipped_polys:
+            continue
+
+        if len(clipped_polys) == 1:
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": clipped_polys[0]},
+                "properties": {"type": "land", "source": "Natural Earth 10m"}
+            })
+        else:
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "MultiPolygon", "coordinates": clipped_polys},
+                "properties": {"type": "land", "source": "Natural Earth 10m"}
+            })
+
+    dest = OUTPUT_DIR / "landmask.json"
+    with open(dest, "w") as f:
+        json.dump({"type": "FeatureCollection", "features": features}, f)
+    log.info("Land mask written (%d polygon features)", len(features))
 
 # ---------------------------------------------------------------------------
 # Main
@@ -334,7 +365,9 @@ def main():
     rows = _fetch_bathymetry(session)
     write_contours(rows)
     write_noaa_coastline(session)
+    write_land_mask(session)
     log.info("Done.")
 
 if __name__ == "__main__":
     main()
+    
