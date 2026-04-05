@@ -25,15 +25,24 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          which python
-          python --version
-          python -m ensurepip --upgrade
           python -m pip install --upgrade pip
           python -m pip install requests urllib3 numpy regionmask contourpy
-          python -m pip show requests numpy regionmask contourpy
 
-      - name: Run StaticLayersRetrieval.py
-        run: python StaticLayersRetrieval.py
+      - name: Run StaticLayersRetrieval.py (only if outputs are missing)
+        run: |
+          NEEDED=0
+          for f in DailySST/bathymetry_contours.json DailySST/noaa_coastline.json DailySST/landmask.json; do
+            if [ ! -f "$f" ]; then
+              echo "Missing: $f"
+              NEEDED=1
+            fi
+          done
+          if [ "$NEEDED" = "1" ]; then
+            echo "Static layer files missing — running StaticLayersRetrieval.py"
+            python StaticLayersRetrieval.py
+          else
+            echo "All static layer files present — skipping StaticLayersRetrieval.py"
+          fi
 
       - name: Run DailySSTRetrieval.py
         run: python DailySSTRetrieval.py
