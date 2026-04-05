@@ -45,7 +45,15 @@ from urllib3.util.retry import Retry
 # Configuration
 # ---------------------------------------------------------------------------
 
-ERDDAP_BASE    = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
+# MUR SST ERDDAP sources — tried in order until one succeeds.
+# coastwatch.pfeg.noaa.gov blocks GitHub Actions runner IPs with connection errors.
+# upwell.pfeg.noaa.gov is the same NOAA group, different host, generally more open.
+MUR_ERDDAP_SOURCES = [
+    "https://upwell.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp",
+    "https://erddap.ifremer.fr/erddap/griddap/jplMURSST41.csvp",
+    "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp",
+]
+ERDDAP_BASE    = MUR_ERDDAP_SOURCES[0]   # default; overridden by _check_and_fetch_mur
 ERDDAP_MUR_IMG = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.largePng"
 
 ERDDAP_GOES19     = "https://cwcgom.aoml.noaa.gov/erddap/griddap/goes19SSThourly.csvp"
@@ -131,7 +139,8 @@ def _make_session() -> requests.Session:
     return session
 
 
-def _build_url(date: datetime.date) -> str:
+def _build_url(date: datetime.date, base_url: str = None) -> str:
+    base      = base_url or ERDDAP_BASE
     ts        = f"{date.isoformat()}T{DAILY_HOUR}"
     time_part = f"[({ts}):1:({ts})]"
     lat_part  = f"[({LAT_MIN}):{LAT_STRIDE}:({LAT_MAX})]"
@@ -139,7 +148,7 @@ def _build_url(date: datetime.date) -> str:
     var_queries = ",".join(
         f"{v}{time_part}{lat_part}{lon_part}" for v in VARIABLES
     )
-    return f"{ERDDAP_BASE}?{var_queries}"
+    return f"{base}?{var_queries}"
 
 
 def _build_mur_image_url(date: datetime.date) -> str:
@@ -198,29 +207,29 @@ def _fetch_image(session, url, dest, label) -> bool:
     return True
 
 
-def _check_availability(session, date) -> bool:
-    nc_url = _build_url(date).replace(".csvp", ".nc")
-    try:
-        r = session.head(nc_url, timeout=15)
-        if r.status_code == 200:
-            return True
-        if r.status_code == 404:
-            return False
-    except requests.RequestException:
-        pass
-
-    probe_url = (
-        f"https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.csvp"
-        f"?analysed_sst"
-        f"[({date.isoformat()}T{DAILY_HOUR}):1:({date.isoformat()}T{DAILY_HOUR})]"
-        f"[({LAT_MIN}):1:({LAT_MIN})]"
-        f"[({LON_MIN}):1:({LON_MIN})]"
-    )
-    try:
-        r = session.get(probe_url, timeout=20)
-        return r.status_code == 200 and len(r.text.strip()) > 0
-    except requests.RequestException:
-        return False
+def _check_availability(session, date) -> "str | None":
+    """
+    Try each MUR ERDDAP source in order. Returns the working base URL
+    for the given date, or None if all sources fail.
+    Uses a tiny single-point probe to avoid large data transfers.
+    """
+    for base_url in MUR_ERDDAP_SOURCES:
+        probe_url = (
+            f"{base_url}"
+            f"?analysed_sst"
+            f"[({date.isoformat()}T{DAILY_HOUR}):1:({date.isoformat()}T{DAILY_HOUR})]"
+            f"[({LAT_MIN}):1:({LAT_MIN})]"
+            f"[({LON_MIN}):1:({LON_MIN})]"
+        )
+        try:
+            log.info("    Probing %s ...", base_url)
+            r = session.get(probe_url, timeout=20)
+            if r.status_code == 200 and len(r.text.strip()) > 0:
+                log.info("    Available ✓ via %s", base_url)
+                return base_url
+        except requests.RequestException as exc:
+            log.warning("    Source unreachable (%s): %s", base_url, exc)
+    return None
 
 
 def _fahrenheit(val: str) -> "float | None":
@@ -328,8 +337,8 @@ def _actual_extent(rows: list[dict]) -> dict:
     }
 
 
-def _fetch_day_json(session, date, dest) -> bool:
-    url = _build_url(date)
+def _fetch_day_json(session, date, dest, base_url=None) -> bool:
+    url = _build_url(date, base_url=base_url)
     log.info("Downloading MUR  %s  ->  %s", date.isoformat(), dest.name)
     try:
         r = session.get(url, timeout=TIMEOUT_SECONDS)
@@ -547,10 +556,14 @@ def _fetch_goes19_day_json(session, date, hour, dest) -> bool:
         return False
 
     # Build regionmask land mask for GOES-19 secondary pass
-    import numpy as np
-    lats_arr = np.arange(LAT_MIN, LAT_MAX + 0.01, GOES19_STRIDE * 0.009)  # approx
-    lons_arr = np.arange(LON_MIN, LON_MAX + 0.01, GOES19_STRIDE * 0.009)
-    land_mask = _build_land_mask(lats_arr, lons_arr)
+    try:
+        import numpy as np
+        lats_arr = np.arange(LAT_MIN, LAT_MAX + 0.01, GOES19_STRIDE * 0.009)
+        lons_arr = np.arange(LON_MIN, LON_MAX + 0.01, GOES19_STRIDE * 0.009)
+        land_mask = _build_land_mask(lats_arr, lons_arr)
+    except ImportError:
+        log.warning("  numpy not available — skipping GOES-19 land mask secondary pass.")
+        land_mask = None
 
     rows = _parse_goes19_csv(r.text, land_mask=land_mask)
     if not rows:
@@ -709,15 +722,17 @@ def main():
     _purge_old_files(OUTPUT_DIR, cutoff_date)
 
     target_dates: list[datetime.date] = []
+    target_sources: dict[datetime.date, str] = {}
     for d in candidate_dates:
         if len(target_dates) == RETENTION_DAYS:
             break
         log.info("  Checking %s …", d.isoformat())
-        if _check_availability(session, d):
-            log.info("    Available ✓")
+        working_url = _check_availability(session, d)
+        if working_url:
             target_dates.append(d)
+            target_sources[d] = working_url
         else:
-            log.info("    Not yet available.")
+            log.info("    Not available on any source.")
         time.sleep(0.5)
 
     fetched = []
@@ -728,7 +743,8 @@ def main():
             date_str = date.strftime('%Y%m%d')
             json_filename = f"MUR_SST_{date_str}.json"
             json_dest     = OUTPUT_DIR / json_filename
-            success = _fetch_day_json(session, date, json_dest)
+            success = _fetch_day_json(session, date, json_dest,
+                                      base_url=target_sources[date])
             if success:
                 with open(json_dest, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
