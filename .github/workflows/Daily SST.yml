@@ -17,20 +17,27 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5.6.0
         with:
           python-version: "3.12"
+
       - name: Install Python dependencies
         run: |
           which python
           python --version
           python -m ensurepip --upgrade
           python -m pip install --upgrade pip
-          python -m pip install requests urllib3
-          python -m pip show requests
+          python -m pip install requests urllib3 numpy regionmask
+          python -m pip show requests numpy regionmask
+
+      - name: Run StaticLayersRetrieval.py
+        run: python StaticLayersRetrieval.py
+
       - name: Run DailySSTRetrieval.py
         run: python DailySSTRetrieval.py
+
       - name: Commit DailySST data to repository
         run: |
           git config user.name  "github-actions[bot]"
