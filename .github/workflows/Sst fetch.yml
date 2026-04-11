@@ -1,0 +1,140 @@
+name: SST Data Fetch
+
+on:
+  # Runs daily at 10:00 UTC (6am ET) — MUR + VIIRS data for yesterday is available by then
+  schedule:
+    - cron: '0 10 * * *'
+
+  # Allow manual trigger with optional date override
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Date to fetch (YYYY-MM-DD). Defaults to yesterday if blank.'
+        required: false
+        default: ''
+      sources:
+        description: 'Which sources to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mur_only
+          - viirs_only
+          - cmems_only
+
+jobs:
+  fetch-sst:
+    name: Fetch SST Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # Store CMEMS credentials as GitHub Secrets:
+      #   Settings → Secrets and variables → Actions → New repository secret
+      CMEMS_USER:     ${{ secrets.CMEMS_USER }}
+      CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
+      TARGET_DATE:    ${{ github.event.inputs.target_date }}
+      SOURCES:        ${{ github.event.inputs.sources || 'all' }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      # ── 3. Install dependencies ───────────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            requests \
+            xarray \
+            netCDF4 \
+            numpy \
+            pandas \
+            pyarrow \
+            copernicusmarine
+
+      # ── 4. Resolve target date ────────────────────────────────────────────────
+      - name: Resolve target date
+        id: date
+        run: |
+          if [ -z "$TARGET_DATE" ]; then
+            echo "date=$(date -u -d 'yesterday' '+%Y-%m-%d')" >> $GITHUB_OUTPUT
+          else
+            echo "date=$TARGET_DATE" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 5. Run fetcher ────────────────────────────────────────────────────────
+      - name: Fetch SST data
+        run: |
+          python sst_data_fetcher.py
+        env:
+          TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
+          SOURCES_OVERRIDE: ${{ env.SOURCES }}
+
+      # ── 6. List outputs ───────────────────────────────────────────────────────
+      - name: List output files
+        run: |
+          echo "=== Generated files ==="
+          ls -lh sst_data/ || echo "No sst_data directory found"
+          echo ""
+          echo "=== File sizes ==="
+          du -sh sst_data/* 2>/dev/null || true
+
+      # ── 7. Upload as workflow artifacts (90-day retention) ────────────────────
+      - name: Upload SST data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sst-data-${{ steps.date.outputs.date }}
+          path: sst_data/
+          retention-days: 90
+          if-no-files-found: warn
+
+      # ── 8. (Optional) Commit outputs back to repo ─────────────────────────────
+      # Uncomment this block if you want the data committed to a /data branch
+      # so your app can pull it directly from GitHub raw URLs.
+      #
+      # - name: Commit data to repository
+      #   uses: stefanzweifel/git-auto-commit-action@v5
+      #   with:
+      #     commit_message: "data: SST update ${{ steps.date.outputs.date }}"
+      #     branch: data
+      #     file_pattern: sst_data/*.geojson sst_data/*.parquet sst_data/*.csv
+      #     create_branch: true
+
+      # ── 9. (Optional) Push to S3 ──────────────────────────────────────────────
+      # Uncomment if you want data pushed to S3 for your app to consume.
+      # Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as GitHub Secrets.
+      #
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region:            us-east-1
+      #
+      # - name: Push data to S3
+      #   run: |
+      #     DATE="${{ steps.date.outputs.date }}"
+      #     aws s3 sync sst_data/ s3://YOUR_BUCKET/sst/$DATE/ \
+      #       --exclude "*.nc" \
+      #       --content-type "application/json" \
+      #       --cache-control "max-age=86400"
+
+      # ── 10. Notify on failure ─────────────────────────────────────────────────
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::SST fetch failed for ${{ steps.date.outputs.date }}"
+          echo "Check the logs above. Common causes:"
+          echo "  - NOAA/NASA ERDDAP endpoints temporarily down"
+          echo "  - CMEMS credentials expired or not set"
+          echo "  - Network timeout (retry manually via workflow_dispatch)"
