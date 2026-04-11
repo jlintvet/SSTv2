@@ -50,7 +50,17 @@ BBOX = {
 }
 
 # Defaults to yesterday — best data availability across all sources
-TARGET_DATE = datetime.date.today() - datetime.timedelta(days=1)
+# Override via env var TARGET_DATE_OVERRIDE=YYYY-MM-DD (set by GitHub Actions workflow)
+_date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
+TARGET_DATE = (
+    datetime.date.fromisoformat(_date_override)
+    if _date_override
+    else datetime.date.today() - datetime.timedelta(days=1)
+)
+
+# Sources to run — override via SOURCES_OVERRIDE env var (set by GitHub Actions workflow)
+# Values: all | mur_only | viirs_only | cmems_only
+SOURCES_OVERRIDE = os.environ.get("SOURCES_OVERRIDE", "all").strip()
 
 OUTPUT_DIR = Path("sst_data")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -310,11 +320,11 @@ def export_geojson(df: pd.DataFrame, path: Path, max_points: int | None = None):
             "type": "Feature",
             "geometry": {
                 "type": "Point",
-                "coordinates": [round(row.lon, 5), round(row.lat, 5)]
+                "coordinates": [round(float(row.lon), 5), round(float(row.lat), 5)]
             },
             "properties": {
-                "sst_c":   round(row.sst_c, 3),
-                "sst_f":   round(row.sst_c * 9/5 + 32, 2),
+                "sst_c":   round(float(row.sst_c), 3),
+                "sst_f":   round(float(row.sst_c) * 9/5 + 32, 2),
                 "source":  row.source,
                 "date":    row.date,
             }
@@ -358,6 +368,18 @@ def export_parquet(df: pd.DataFrame, path: Path):
         print("    Parquet skipped — run: pip install pyarrow")
 
 
+class _NumpyEncoder(json.JSONEncoder):
+    """Converts numpy scalar types to native Python before JSON serialization."""
+    def default(self, obj):
+        if isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 def export_grid(df: pd.DataFrame, path: Path):
     """
     Compact JSON grid format for WebGL / custom tile renderers.
@@ -369,17 +391,18 @@ def export_grid(df: pd.DataFrame, path: Path):
       "meta": { ... }
     }
     """
-    lats = sorted(df["lat"].unique())
-    lons = sorted(df["lon"].unique())
+    # Cast to native float to avoid numpy type issues throughout
+    lats = sorted(float(v) for v in df["lat"].unique())
+    lons = sorted(float(v) for v in df["lon"].unique())
     lat_idx = {v: i for i, v in enumerate(lats)}
     lon_idx = {v: i for i, v in enumerate(lons)}
 
     grid = [[None] * len(lons) for _ in range(len(lats))]
     for row in df.itertuples(index=False):
-        i = lat_idx.get(row.lat)
-        j = lon_idx.get(row.lon)
+        i = lat_idx.get(float(row.lat))
+        j = lon_idx.get(float(row.lon))
         if i is not None and j is not None:
-            grid[i][j] = round(row.sst_c, 3)
+            grid[i][j] = round(float(row.sst_c), 3)
 
     out = {
         "meta": {
@@ -396,7 +419,7 @@ def export_grid(df: pd.DataFrame, path: Path):
     }
 
     with open(path, "w") as f:
-        json.dump(out, f, separators=(",", ":"))
+        json.dump(out, f, separators=(",", ":"), cls=_NumpyEncoder)
     print(f"    Grid JSON → {path}  ({len(lats)}×{len(lons)} grid, {path.stat().st_size / 1024:.0f} KB)")
 
 
@@ -473,18 +496,21 @@ def main():
     print("=" * 60)
 
     frames = []
+    run_mur   = SOURCES_OVERRIDE in ("all", "mur_only")
+    run_viirs = SOURCES_OVERRIDE in ("all", "viirs_only")
+    run_cmems = SOURCES_OVERRIDE in ("all", "cmems_only")
 
-    df_mur = fetch_mur(TARGET_DATE, BBOX)
+    df_mur = fetch_mur(TARGET_DATE, BBOX) if run_mur else None
     if df_mur is not None:
         frames.append(df_mur)
         _write_all(df_mur, "mur")
 
-    df_viirs = fetch_viirs(TARGET_DATE, BBOX)
+    df_viirs = fetch_viirs(TARGET_DATE, BBOX) if run_viirs else None
     if df_viirs is not None:
         frames.append(df_viirs)
         _write_all(df_viirs, "viirs")
 
-    df_cmems = fetch_cmems(TARGET_DATE, BBOX)
+    df_cmems = fetch_cmems(TARGET_DATE, BBOX) if run_cmems else None
     if df_cmems is not None:
         frames.append(df_cmems)
         _write_all(df_cmems, "cmems")
