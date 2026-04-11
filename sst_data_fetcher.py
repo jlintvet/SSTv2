@@ -62,8 +62,9 @@ TARGET_DATE = (
 # Values: all | mur_only | viirs_only | cmems_only
 SOURCES_OVERRIDE = os.environ.get("SOURCES_OVERRIDE", "all").strip()
 
-OUTPUT_DIR = Path("sst_data")
-OUTPUT_DIR.mkdir(exist_ok=True)
+# Write directly into DailySST/{date}/ — matches GitHub Actions artifact folder
+OUTPUT_DIR = Path("DailySST") / str(TARGET_DATE)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output formats — set to True for whichever your app needs
 EXPORT = {
@@ -128,49 +129,43 @@ def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SOURCE 2: NOAA CoastWatch VIIRS SST (NOAA-20 / S-NPP)
-#   Resolution : 0.0375° (~4 km mapped), native 750 m swath
-#   Latency    : 6–12 hours (near real-time)
-#   Endpoints  : coastwatch.pfeg.noaa.gov and coastwatch.noaa.gov
-#   Dataset IDs: nesdisVHNsstDayNite (daily), nesdisVHNsst3DayNite (3-day composite)
-#   Note       : May have gaps (cloud contamination) — pair with MUR for coverage
+# SOURCE 2: NOAA ACSPO Super-collated SST (AVHRR + VIIRS combined)
+#   Resolution : 0.02° (~2 km) — finer than old VIIRS ERDDAP products
+#   Latency    : ~6–12 hours NRT
+#   Endpoint   : coastwatch.noaa.gov ERDDAP
+#   Dataset ID : noaacwLEOACSPOSSTL3SnrtCDaily  (confirmed active 2025)
+#   Variable   : sst
+#   Note       : May have cloud gaps — blended product fills them below
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date
-    Tries multiple dataset IDs and hosts in priority order.
+    Tries NRT daily first, falls back to alternate hosts.
     """
-    print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~750 m resolution")
+    print(f"\n[2/3] NOAA ACSPO VIIRS SST  ({date})  ~2 km resolution")
 
     endpoints = [
-        # NOAA-20 daily NRT on pfeg (most reliable for CI)
+        # Primary: ACSPO super-collated NRT daily (AVHRR+VIIRS), 0.02 deg
         (
-            "nesdisVHNsstDayNite",
-            "sea_surface_temperature",
-            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
-            f"[({date}T12:00:00Z)]"
-        ),
-        # S-NPP daily on pfeg
-        (
-            "nesdisSSH1day",
-            "sea_surface_temperature",
-            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
-            f"[({date}T12:00:00Z)]"
-        ),
-        # 3-day composite — better cloud coverage
-        (
-            "nesdisVHNsst3DayNite",
-            "sea_surface_temperature",
-            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
-            f"[({date}T12:00:00Z)]"
-        ),
-        # CoastWatch central hub daily
-        (
-            "noaacwVIIRSn20SSTmask1DayNightGapfillNRT",
-            "sea_surface_temperature",
+            "noaacwLEOACSPOSSTL3SnrtCDaily",
+            "sst",
             "https://coastwatch.noaa.gov/erddap/griddap",
-            f"[({date}T00:00:00Z)]"
+            f"[({date}T12:00:00Z)]",
+        ),
+        # Fallback: AOML ERDDAP mirror of same dataset
+        (
+            "noaacwLEOACSPOSSTL3SnrtCDaily",
+            "sst",
+            "https://cwcgom.aoml.noaa.gov/erddap/griddap",
+            f"[({date}T12:00:00Z)]",
+        ),
+        # Second fallback: NEFSC ERDDAP mirror
+        (
+            "noaa_coastwatch_acspo_v2_nrt",
+            "sst",
+            "https://comet.nefsc.noaa.gov/erddap/griddap",
+            f"[({date}T12:00:00Z)]",
         ),
     ]
 
@@ -184,23 +179,64 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
         )
         nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
         try:
-            print(f"  Trying {dataset_id} ...")
+            host = base.split('/')[2]
+            print(f"  Trying {dataset_id} @ {host} ...")
             r = requests.get(url, timeout=180, stream=True)
             r.raise_for_status()
             with open(nc_path, "wb") as f:
                 for chunk in r.iter_content(1 << 20):
                     f.write(chunk)
-
             ds = xr.open_dataset(nc_path)
             df = _ds_to_dataframe(ds, var, "VIIRS", date)
             print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
             return df
-
         except Exception as e:
-            print(f"  ✗ {dataset_id} failed: {e}")
+            print(f"  ✗ Failed: {e}")
             continue
 
+    print("  ✗ All VIIRS endpoints failed")
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE 2b: NOAA Geo-polar Blended SST (gap-fill layer, no auth required)
+#   Resolution : 0.05° (~5 km), fully gap-filled
+#   Latency    : ~1–2 days
+#   Endpoint   : coastwatch.noaa.gov ERDDAP
+#   Dataset ID : noaacwBLENDEDsstDaily  (confirmed active 2025)
+#   Variable   : analysed_sst
+#   Use        : Fill cloud gaps in VIIRS; equivalent to CMEMS if no login
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
+    """
+    NOAA Geo-polar blended gap-free SST. No credentials required.
+    Returns a DataFrame with columns: lat, lon, sst_c, source, date
+    """
+    print(f"\n[2b] NOAA Geo-polar Blended SST  ({date})  ~5 km, gap-filled")
+
+    url = (
+        f"https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc"
+        f"?analysed_sst"
+        f"[({date}T12:00:00Z)]"
+        f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+        f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+    )
+    nc_path = OUTPUT_DIR / f"_blended_{date}.nc"
+    try:
+        print("  Downloading ...")
+        r = requests.get(url, timeout=180, stream=True)
+        r.raise_for_status()
+        with open(nc_path, "wb") as f:
+            for chunk in r.iter_content(1 << 20):
+                f.write(chunk)
+        ds = xr.open_dataset(nc_path)
+        df = _ds_to_dataframe(ds, "analysed_sst", "BLENDED", date)
+        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+        return df
+    except Exception as e:
+        print(f"  ✗ Blended fetch failed: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -518,6 +554,7 @@ def main():
     print("=" * 60)
 
     frames = []
+    df_blended = None  # initialized here so summary block always has it in scope
     run_mur   = SOURCES_OVERRIDE in ("all", "mur_only")
     run_viirs = SOURCES_OVERRIDE in ("all", "viirs_only")
     run_cmems = SOURCES_OVERRIDE in ("all", "cmems_only")
@@ -531,6 +568,12 @@ def main():
     if df_viirs is not None:
         frames.append(df_viirs)
         _write_all(df_viirs, "viirs")
+
+    # Geo-polar blended — always run, no auth, fills cloud gaps in VIIRS
+    df_blended = fetch_blended(TARGET_DATE, BBOX)
+    if df_blended is not None:
+        frames.append(df_blended)
+        _write_all(df_blended, "blended_geopolar")
 
     df_cmems = fetch_cmems(TARGET_DATE, BBOX) if run_cmems else None
     if df_cmems is not None:
@@ -547,9 +590,10 @@ def main():
     # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     all_dfs = {
-        "MUR":     df_mur,
-        "VIIRS":   df_viirs,
-        "CMEMS":   df_cmems,
+        "MUR":          df_mur,
+        "VIIRS(ACSPO)": df_viirs,
+        "BLENDED":      df_blended,
+        "CMEMS":        df_cmems,
     }
     print(f"  {'Source':<10} {'Points':>10}  {'Min °C':>8}  {'Max °C':>8}")
     print(f"  {'-'*10}  {'-'*9}  {'-'*7}  {'-'*7}")
