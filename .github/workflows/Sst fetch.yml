@@ -59,17 +59,29 @@ jobs:
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check credentials and config
+      # ── Credential check — tells you exactly what to fix if secrets are missing
+      - name: Check credentials
         env:
           CMEMS_USER:     ${{ secrets.CMEMS_USER }}
           CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
         run: |
-          echo "CMEMS_USER set:     $( [ -n "$CMEMS_USER" ]     && echo YES || echo NO )"
-          echo "CMEMS_PASSWORD set: $( [ -n "$CMEMS_PASSWORD" ] && echo YES || echo NO )"
-          echo "Target date:        ${{ steps.date.outputs.date }}"
-          echo "Sources:            ${{ github.event.inputs.sources || 'all' }}"
+          echo "Target date : ${{ steps.date.outputs.date }}"
+          echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
+          echo ""
+          if [ -z "$CMEMS_USER" ] || [ -z "$CMEMS_PASSWORD" ]; then
+            echo "⚠️  CMEMS secrets not set — CMEMS source will be skipped."
+            echo "   To fix: repo → Settings → Secrets and variables → Actions"
+            echo "   Add secret: CMEMS_USER     = your Copernicus username"
+            echo "   Add secret: CMEMS_PASSWORD = your Copernicus password"
+            echo "   Register free at https://marine.copernicus.eu"
+          else
+            echo "✓ CMEMS_USER set"
+            echo "✓ CMEMS_PASSWORD set"
+          fi
+          echo ""
+          echo "Note: MUR + ACSPO VIIRS + Geo-polar Blended run without any credentials."
 
-      # Secrets are passed explicitly per-step — this is the reliable pattern
+      # ── Secrets passed explicitly on the step that needs them ─────────────────
       - name: Fetch SST data
         env:
           CMEMS_USER:           ${{ secrets.CMEMS_USER }}
@@ -83,14 +95,11 @@ jobs:
       - name: Debug output
         if: always()
         run: |
-          echo "====== Repo root ======"
-          ls -lah
-          echo ""
           echo "====== sst_data/ ======"
           ls -lah sst_data/ 2>/dev/null || echo "!! sst_data/ does not exist"
           echo ""
-          echo "====== Fetch log (last 150 lines) ======"
-          tail -150 sst_fetch.log 2>/dev/null || echo "!! No log file"
+          echo "====== Fetch log (last 100 lines) ======"
+          tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
 
       - name: Verify outputs exist
         run: |
@@ -101,11 +110,21 @@ jobs:
             exit 1
           fi
 
-      - name: Upload SST data artifacts
+      # Organize into DailySST/{date}/ folder for clean storage
+      - name: Organize into DailySST folder
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          mkdir -p DailySST/$DATE
+          # Copy only data files (not raw .nc scratch files)
+          find sst_data/ -type f \( -name "*.geojson" -o -name "*.csv" -o -name "*.parquet" -o -name "*_grid.json" \)             -exec cp {} DailySST/$DATE/ \;
+          echo "=== DailySST/$DATE/ contents ==="
+          ls -lah DailySST/$DATE/
+
+      - name: Upload SST data to DailySST
         uses: actions/upload-artifact@v4
         with:
-          name: sst-data-${{ steps.date.outputs.date }}
-          path: sst_data/
+          name: DailySST
+          path: DailySST/
           retention-days: 90
           if-no-files-found: error
 
@@ -139,7 +158,6 @@ jobs:
       #   run: |
       #     DATE="${{ steps.date.outputs.date }}"
       #     aws s3 sync sst_data/ s3://YOUR_BUCKET/sst/$DATE/ \
-      #       --exclude "*.nc" \
       #       --content-type "application/json" \
       #       --cache-control "max-age=86400"
 
