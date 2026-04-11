@@ -1,11 +1,9 @@
 name: SST Data Fetch
 
 on:
-  # Runs daily at 10:00 UTC (6am ET) — MUR + VIIRS data for yesterday is available by then
   schedule:
     - cron: '0 10 * * *'
 
-  # Allow manual trigger with optional date override
   workflow_dispatch:
     inputs:
       target_date:
@@ -30,26 +28,21 @@ jobs:
     timeout-minutes: 45
 
     env:
-      # Store CMEMS credentials as GitHub Secrets:
-      #   Settings → Secrets and variables → Actions → New repository secret
       CMEMS_USER:     ${{ secrets.CMEMS_USER }}
       CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
       TARGET_DATE:    ${{ github.event.inputs.target_date }}
       SOURCES:        ${{ github.event.inputs.sources || 'all' }}
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Python setup ──────────────────────────────────────────────────────
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
 
-      # ── 3. Install dependencies ───────────────────────────────────────────────
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -62,7 +55,6 @@ jobs:
             pyarrow \
             copernicusmarine
 
-      # ── 4. Resolve target date ────────────────────────────────────────────────
       - name: Resolve target date
         id: date
         run: |
@@ -72,36 +64,60 @@ jobs:
             echo "date=$TARGET_DATE" >> $GITHUB_OUTPUT
           fi
 
-      # ── 5. Run fetcher ────────────────────────────────────────────────────────
+      - name: Check credentials and config
+        run: |
+          echo "CMEMS_USER set:     $( [ -n "$CMEMS_USER" ]     && echo YES || echo NO )"
+          echo "CMEMS_PASSWORD set: $( [ -n "$CMEMS_PASSWORD" ] && echo YES || echo NO )"
+          echo "Target date:        ${{ steps.date.outputs.date }}"
+          echo "Sources:            $SOURCES"
+
       - name: Fetch SST data
         run: |
-          python sst_data_fetcher.py
+          python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
         env:
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
-          SOURCES_OVERRIDE: ${{ env.SOURCES }}
+          SOURCES_OVERRIDE:     ${{ env.SOURCES }}
+          PYTHONUNBUFFERED:     "1"
 
-      # ── 6. List outputs ───────────────────────────────────────────────────────
-      - name: List output files
+      - name: Debug output
+        if: always()
         run: |
-          echo "=== Generated files ==="
-          ls -lh sst_data/ || echo "No sst_data directory found"
+          echo "====== Repo root ======"
+          ls -lah
           echo ""
-          echo "=== File sizes ==="
-          du -sh sst_data/* 2>/dev/null || true
+          echo "====== sst_data/ ======"
+          ls -lah sst_data/ 2>/dev/null || echo "!! sst_data/ does not exist"
+          echo ""
+          echo "====== Fetch log (last 150 lines) ======"
+          tail -150 sst_fetch.log 2>/dev/null || echo "!! No log file"
 
-      # ── 7. Upload as workflow artifacts (90-day retention) ────────────────────
+      - name: Verify outputs exist
+        run: |
+          count=$(find sst_data/ -type f 2>/dev/null | wc -l)
+          echo "Output file count: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
+            exit 1
+          fi
+
       - name: Upload SST data artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sst-data-${{ steps.date.outputs.date }}
           path: sst_data/
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error
 
-      # ── 8. (Optional) Commit outputs back to repo ─────────────────────────────
-      # Uncomment this block if you want the data committed to a /data branch
-      # so your app can pull it directly from GitHub raw URLs.
-      #
+      - name: Upload fetch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sst-fetch-log-${{ steps.date.outputs.date }}
+          path: sst_fetch.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ── Optional: commit data to a 'data' branch ──────────────────────────────
       # - name: Commit data to repository
       #   uses: stefanzweifel/git-auto-commit-action@v5
       #   with:
@@ -110,10 +126,7 @@ jobs:
       #     file_pattern: sst_data/*.geojson sst_data/*.parquet sst_data/*.csv
       #     create_branch: true
 
-      # ── 9. (Optional) Push to S3 ──────────────────────────────────────────────
-      # Uncomment if you want data pushed to S3 for your app to consume.
-      # Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as GitHub Secrets.
-      #
+      # ── Optional: push to S3 ─────────────────────────────────────────────────
       # - name: Configure AWS credentials
       #   uses: aws-actions/configure-aws-credentials@v4
       #   with:
@@ -129,12 +142,8 @@ jobs:
       #       --content-type "application/json" \
       #       --cache-control "max-age=86400"
 
-      # ── 10. Notify on failure ─────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::SST fetch failed for ${{ steps.date.outputs.date }}"
-          echo "Check the logs above. Common causes:"
-          echo "  - NOAA/NASA ERDDAP endpoints temporarily down"
-          echo "  - CMEMS credentials expired or not set"
-          echo "  - Network timeout (retry manually via workflow_dispatch)"
+          echo "Download the sst-fetch-log artifact for full details."
