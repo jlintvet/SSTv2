@@ -27,12 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    env:
-      CMEMS_USER:     ${{ secrets.CMEMS_USER }}
-      CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
-      TARGET_DATE:    ${{ github.event.inputs.target_date }}
-      SOURCES:        ${{ github.event.inputs.sources || 'all' }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,26 +52,33 @@ jobs:
       - name: Resolve target date
         id: date
         run: |
-          if [ -z "$TARGET_DATE" ]; then
+          INPUT_DATE="${{ github.event.inputs.target_date }}"
+          if [ -z "$INPUT_DATE" ]; then
             echo "date=$(date -u -d 'yesterday' '+%Y-%m-%d')" >> $GITHUB_OUTPUT
           else
-            echo "date=$TARGET_DATE" >> $GITHUB_OUTPUT
+            echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
 
       - name: Check credentials and config
+        env:
+          CMEMS_USER:     ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
         run: |
           echo "CMEMS_USER set:     $( [ -n "$CMEMS_USER" ]     && echo YES || echo NO )"
           echo "CMEMS_PASSWORD set: $( [ -n "$CMEMS_PASSWORD" ] && echo YES || echo NO )"
           echo "Target date:        ${{ steps.date.outputs.date }}"
-          echo "Sources:            $SOURCES"
+          echo "Sources:            ${{ github.event.inputs.sources || 'all' }}"
 
+      # Secrets are passed explicitly per-step — this is the reliable pattern
       - name: Fetch SST data
+        env:
+          CMEMS_USER:           ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD:       ${{ secrets.CMEMS_PASSWORD }}
+          TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
+          SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
+          PYTHONUNBUFFERED:     "1"
         run: |
           python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
-        env:
-          TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
-          SOURCES_OVERRIDE:     ${{ env.SOURCES }}
-          PYTHONUNBUFFERED:     "1"
 
       - name: Debug output
         if: always()
