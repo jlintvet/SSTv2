@@ -1,0 +1,533 @@
+"""
+High-Fidelity SST Data Fetcher — App-Ready Output
+===================================================
+Fetches SST data from the top 3 highest-resolution free sources and exports
+structured data (GeoJSON, CSV, Parquet) for rendering in a web/mobile app.
+
+Sources:
+  1. NASA MUR SST       — 0.01° (~1 km), L4 blended, gap-filled, daily
+  2. NOAA VIIRS NRT     — 0.01° (~750 m native), near-real-time, daily
+  3. Copernicus CMEMS   — 0.05° (~5 km), L4 blended, fully gap-filled
+
+Output formats (your choice):
+  - GeoJSON FeatureCollection  → Mapbox / Leaflet / deck.gl
+  - CSV                        → pandas / PostGIS / any DB ingest
+  - Parquet                    → high-performance columnar (best for large grids)
+  - Raw numpy grid + metadata  → custom tile renderer / WebGL
+
+Dependencies:
+    pip install requests xarray netCDF4 numpy pandas pyarrow copernicusmarine
+
+Usage:
+    python sst_data_fetcher.py
+
+    For CMEMS (optional, best gap-fill):
+        export CMEMS_USER=your_username
+        export CMEMS_PASSWORD=your_password
+"""
+
+import os
+import json
+import datetime
+import warnings
+import numpy as np
+import pandas as pd
+import requests
+import xarray as xr
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+BBOX = {
+    "lon_min": -77.5,
+    "lon_max": -74.0,
+    "lat_min": 33.5,
+    "lat_max": 36.5,
+}
+
+# Defaults to yesterday — best data availability across all sources
+TARGET_DATE = datetime.date.today() - datetime.timedelta(days=1)
+
+OUTPUT_DIR = Path("sst_data")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Output formats — set to True for whichever your app needs
+EXPORT = {
+    "geojson": True,    # Mapbox / Leaflet / deck.gl heatmap
+    "csv":     True,    # DB ingest / pandas analysis
+    "parquet": True,    # Best for large grids / columnar analytics
+    "grid":    True,    # Raw lat/lon/sst arrays as JSON — WebGL / custom tile renderer
+}
+
+# Max data points in GeoJSON export (subsample for very large grids)
+# Set to None to export every point
+GEOJSON_MAX_POINTS = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE 1: NASA MUR SST
+#   Resolution : 0.01° × 0.01° (~1 km)
+#   Latency    : ~1 day
+#   Endpoint   : NOAA CoastWatch ERDDAP (mirrors NASA PO.DAAC, no auth)
+#   Dataset ID : jplMURSST41
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
+    """
+    Returns a DataFrame with columns: lat, lon, sst_c, source, date
+    """
+    print(f"\n[1/3] NASA MUR SST  ({date})  ~1 km resolution")
+
+    url = (
+        "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc"
+        f"?analysed_sst"
+        f"[({date}T09:00:00Z)]"
+        f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+        f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+    )
+
+    nc_path = OUTPUT_DIR / f"_mur_{date}.nc"
+    try:
+        print("  Downloading ...")
+        r = requests.get(url, timeout=180, stream=True)
+        r.raise_for_status()
+        with open(nc_path, "wb") as f:
+            for chunk in r.iter_content(1 << 20):
+                f.write(chunk)
+
+        ds = xr.open_dataset(nc_path)
+        df = _ds_to_dataframe(ds, "analysed_sst", "MUR", date)
+        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+        return df
+
+    except Exception as e:
+        print(f"  ✗ Failed: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE 2: NOAA CoastWatch VIIRS SST (NOAA-20)
+#   Resolution : 0.01° (~750 m native, resampled to 0.01° on ERDDAP)
+#   Latency    : 6–12 hours (near real-time)
+#   Endpoint   : NOAA CoastWatch ERDDAP
+#   Dataset ID : nesdisVHNSQnrtSST
+#   Note       : May have gaps (cloud contamination) — pair with MUR for coverage
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
+    """
+    Returns a DataFrame with columns: lat, lon, sst_c, source, date
+    Tries the daily NRT product first, falls back to 3-day composite.
+    """
+    print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~750 m resolution")
+
+    endpoints = [
+        # Daily NRT — freshest, may have cloud gaps
+        (
+            "nesdisVHNSQnrtSST",
+            "sea_surface_temperature",
+            "https://coastwatch.noaa.gov/erddap/griddap",
+            f"[({date}T00:00:00Z)]"
+        ),
+        # 3-day composite — better coverage, slightly older
+        (
+            "nesdisVHNSQ3nrtSST",
+            "sea_surface_temperature",
+            "https://coastwatch.noaa.gov/erddap/griddap",
+            f"[({date}T00:00:00Z)]"
+        ),
+    ]
+
+    for dataset_id, var, base, time_slice in endpoints:
+        url = (
+            f"{base}/{dataset_id}.nc"
+            f"?{var}"
+            f"{time_slice}"
+            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+        )
+        nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
+        try:
+            print(f"  Trying {dataset_id} ...")
+            r = requests.get(url, timeout=180, stream=True)
+            r.raise_for_status()
+            with open(nc_path, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    f.write(chunk)
+
+            ds = xr.open_dataset(nc_path)
+            df = _ds_to_dataframe(ds, var, "VIIRS", date)
+            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+            return df
+
+        except Exception as e:
+            print(f"  ✗ {dataset_id} failed: {e}")
+            continue
+
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE 3: Copernicus CMEMS L4 Global SST
+#   Resolution : 0.05° (~5 km) — lower res but FULLY gap-filled (no cloud holes)
+#   Latency    : ~1 day
+#   Auth       : Free account at https://marine.copernicus.eu
+#   Dataset    : SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001
+#   Best use   : Fill VIIRS cloud gaps; gradient analysis; fronts
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_cmems(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
+    """
+    Returns a DataFrame with columns: lat, lon, sst_c, source, date
+    Requires CMEMS_USER and CMEMS_PASSWORD environment variables.
+    """
+    print(f"\n[3/3] Copernicus CMEMS L4 SST  ({date})  ~5 km, fully gap-filled")
+
+    user = os.environ.get("CMEMS_USER")
+    pw   = os.environ.get("CMEMS_PASSWORD")
+    if not user or not pw:
+        print("  ✗ Skipped — set CMEMS_USER and CMEMS_PASSWORD env vars")
+        print("    Free registration: https://marine.copernicus.eu")
+        return None
+
+    try:
+        import copernicusmarine as cm
+    except ImportError:
+        print("  ✗ Run: pip install copernicusmarine")
+        return None
+
+    nc_path = OUTPUT_DIR / f"_cmems_{date}.nc"
+    try:
+        print("  Downloading via copernicusmarine client ...")
+        cm.subset(
+            dataset_id="SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001",
+            variables=["analysed_sst"],
+            minimum_longitude=bbox["lon_min"],
+            maximum_longitude=bbox["lon_max"],
+            minimum_latitude=bbox["lat_min"],
+            maximum_latitude=bbox["lat_max"],
+            start_datetime=f"{date}T00:00:00",
+            end_datetime=f"{date}T23:59:59",
+            output_filename=str(nc_path),
+            username=user,
+            password=pw,
+            overwrite_output_data=True,
+            force_download=True,
+        )
+        ds = xr.open_dataset(nc_path)
+        df = _ds_to_dataframe(ds, "analysed_sst", "CMEMS", date)
+        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+        return df
+
+    except Exception as e:
+        print(f"  ✗ CMEMS fetch failed: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BLENDING — combine sources into one best-available dataset
+# ─────────────────────────────────────────────────────────────────────────────
+
+def blend_sources(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """
+    Merges multiple source DataFrames into a single best-available grid.
+
+    Priority order (highest fidelity wins per cell):
+      VIIRS > MUR > CMEMS
+
+    NaN cells from higher-priority sources are filled by the next source.
+    All sources are snapped to a common 0.05° grid for alignment.
+    """
+    if not frames:
+        return pd.DataFrame()
+
+    priority = ["VIIRS", "MUR", "CMEMS"]
+    frames_by_source = {df["source"].iloc[0]: df for df in frames}
+
+    # Snap to common 0.05° grid
+    grid_res = 0.05
+    lons = np.arange(
+        round(min(df["lon"].min() for df in frames)),
+        round(max(df["lon"].max() for df in frames)) + grid_res,
+        grid_res
+    )
+    lats = np.arange(
+        round(min(df["lat"].min() for df in frames)),
+        round(max(df["lat"].max() for df in frames)) + grid_res,
+        grid_res
+    )
+
+    lon2d, lat2d = np.meshgrid(lons, lats)
+    blended = np.full(lon2d.shape, np.nan)
+
+    # Fill from lowest to highest priority so higher priority overwrites
+    for source in reversed(priority):
+        if source not in frames_by_source:
+            continue
+        df = frames_by_source[source]
+        df["lon_snap"] = (df["lon"] / grid_res).round() * grid_res
+        df["lat_snap"] = (df["lat"] / grid_res).round() * grid_res
+        pivot = df.pivot_table(index="lat_snap", columns="lon_snap",
+                               values="sst_c", aggfunc="mean")
+        for i, la in enumerate(lats):
+            for j, lo in enumerate(lons):
+                la_r = round(la, 6)
+                lo_r = round(lo, 6)
+                try:
+                    val = pivot.at[la_r, lo_r]
+                    if not np.isnan(val):
+                        blended[i, j] = val
+                except KeyError:
+                    pass
+
+    # Flatten to DataFrame
+    mask = np.isfinite(blended)
+    out = pd.DataFrame({
+        "lat":    lat2d[mask].round(5),
+        "lon":    lon2d[mask].round(5),
+        "sst_c":  blended[mask].round(3),
+        "source": "blended",
+        "date":   str(TARGET_DATE),
+    })
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPORTERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def export_geojson(df: pd.DataFrame, path: Path, max_points: int | None = None):
+    """GeoJSON FeatureCollection — drop into Mapbox, Leaflet, deck.gl"""
+    if max_points and len(df) > max_points:
+        df = df.sample(max_points, random_state=42)
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [round(row.lon, 5), round(row.lat, 5)]
+            },
+            "properties": {
+                "sst_c":   round(row.sst_c, 3),
+                "sst_f":   round(row.sst_c * 9/5 + 32, 2),
+                "source":  row.source,
+                "date":    row.date,
+            }
+        }
+        for row in df.itertuples(index=False)
+    ]
+
+    fc = {
+        "type": "FeatureCollection",
+        "metadata": {
+            "generated":   str(datetime.datetime.utcnow()),
+            "date":        str(TARGET_DATE),
+            "bbox":        BBOX,
+            "point_count": len(features),
+            "source":      df["source"].iloc[0] if len(df) else "unknown",
+        },
+        "features": features,
+    }
+
+    with open(path, "w") as f:
+        json.dump(fc, f, separators=(",", ":"))  # compact — smaller files
+    print(f"    GeoJSON  → {path}  ({len(features):,} pts, {path.stat().st_size / 1024:.0f} KB)")
+
+
+def export_csv(df: pd.DataFrame, path: Path):
+    """CSV with lat, lon, sst_c, sst_f, source, date"""
+    df = df.copy()
+    df["sst_f"] = (df["sst_c"] * 9/5 + 32).round(2)
+    df.to_csv(path, index=False)
+    print(f"    CSV      → {path}  ({len(df):,} rows, {path.stat().st_size / 1024:.0f} KB)")
+
+
+def export_parquet(df: pd.DataFrame, path: Path):
+    """Parquet — best for large grids, columnar analytics, PostGIS ingest"""
+    try:
+        df = df.copy()
+        df["sst_f"] = (df["sst_c"] * 9/5 + 32).round(2)
+        df.to_parquet(path, index=False, compression="snappy")
+        print(f"    Parquet  → {path}  ({len(df):,} rows, {path.stat().st_size / 1024:.0f} KB)")
+    except ImportError:
+        print("    Parquet skipped — run: pip install pyarrow")
+
+
+def export_grid(df: pd.DataFrame, path: Path):
+    """
+    Compact JSON grid format for WebGL / custom tile renderers.
+    Structure:
+    {
+      "lats": [...],          // 1-D lat array
+      "lons": [...],          // 1-D lon array
+      "sst":  [[...], ...],   // 2-D grid [lat][lon], null where no data
+      "meta": { ... }
+    }
+    """
+    lats = sorted(df["lat"].unique())
+    lons = sorted(df["lon"].unique())
+    lat_idx = {v: i for i, v in enumerate(lats)}
+    lon_idx = {v: i for i, v in enumerate(lons)}
+
+    grid = [[None] * len(lons) for _ in range(len(lats))]
+    for row in df.itertuples(index=False):
+        i = lat_idx.get(row.lat)
+        j = lon_idx.get(row.lon)
+        if i is not None and j is not None:
+            grid[i][j] = round(row.sst_c, 3)
+
+    out = {
+        "meta": {
+            "date":    str(TARGET_DATE),
+            "bbox":    BBOX,
+            "res_deg": round(lats[1] - lats[0], 5) if len(lats) > 1 else None,
+            "n_lats":  len(lats),
+            "n_lons":  len(lons),
+            "source":  df["source"].iloc[0],
+        },
+        "lats": [round(v, 5) for v in lats],
+        "lons": [round(v, 5) for v in lons],
+        "sst":  grid,
+    }
+
+    with open(path, "w") as f:
+        json.dump(out, f, separators=(",", ":"))
+    print(f"    Grid JSON → {path}  ({len(lats)}×{len(lons)} grid, {path.stat().st_size / 1024:.0f} KB)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERNAL HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ds_to_dataframe(ds: xr.Dataset, var: str, source: str,
+                     date: datetime.date) -> pd.DataFrame:
+    """Convert an xarray Dataset to a flat DataFrame, dropping NaNs."""
+    da = ds[var].squeeze()
+
+    # Drop leftover scalar dimensions
+    for dim in list(da.dims):
+        if da.sizes[dim] == 1:
+            da = da.isel({dim: 0})
+
+    # Identify lat/lon coordinate names
+    lat_name = next((c for c in da.coords if "lat" in c.lower()), None)
+    lon_name = next((c for c in da.coords if "lon" in c.lower()), None)
+    if not lat_name or not lon_name:
+        raise ValueError(f"Cannot find lat/lon coords in {list(da.coords)}")
+
+    lats = da[lat_name].values
+    lons = da[lon_name].values
+    vals = da.values
+
+    lon2d, lat2d = np.meshgrid(lons, lats)
+    flat_lat  = lat2d.flatten()
+    flat_lon  = lon2d.flatten()
+    flat_sst  = vals.flatten()
+
+    mask = np.isfinite(flat_sst)
+
+    sst_c = flat_sst[mask]
+    # Convert Kelvin if needed
+    if sst_c.mean() > 200:
+        sst_c = sst_c - 273.15
+
+    return pd.DataFrame({
+        "lat":    flat_lat[mask].round(5),
+        "lon":    flat_lon[mask].round(5),
+        "sst_c":  sst_c.round(3),
+        "source": source,
+        "date":   str(date),
+    })
+
+
+def _write_all(df: pd.DataFrame, label: str):
+    """Run all enabled exporters for a given DataFrame."""
+    date_str = TARGET_DATE.strftime("%Y%m%d")
+    base = OUTPUT_DIR / f"{label}_{date_str}"
+    print(f"  Exporting {label} ({len(df):,} points) ...")
+    if EXPORT["geojson"]:
+        export_geojson(df, base.with_suffix(".geojson"), GEOJSON_MAX_POINTS)
+    if EXPORT["csv"]:
+        export_csv(df, base.with_suffix(".csv"))
+    if EXPORT["parquet"]:
+        export_parquet(df, base.with_suffix(".parquet"))
+    if EXPORT["grid"]:
+        export_grid(df, Path(str(base) + "_grid.json"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 60)
+    print("  High-Fidelity SST Data Fetcher")
+    print(f"  Date : {TARGET_DATE}")
+    print(f"  BBOX : {BBOX}")
+    print(f"  Out  : {OUTPUT_DIR.resolve()}")
+    print("=" * 60)
+
+    frames = []
+
+    df_mur = fetch_mur(TARGET_DATE, BBOX)
+    if df_mur is not None:
+        frames.append(df_mur)
+        _write_all(df_mur, "mur")
+
+    df_viirs = fetch_viirs(TARGET_DATE, BBOX)
+    if df_viirs is not None:
+        frames.append(df_viirs)
+        _write_all(df_viirs, "viirs")
+
+    df_cmems = fetch_cmems(TARGET_DATE, BBOX)
+    if df_cmems is not None:
+        frames.append(df_cmems)
+        _write_all(df_cmems, "cmems")
+
+    # Blended composite — best coverage, fills cloud gaps
+    if len(frames) > 1:
+        print("\n[Blending sources into composite ...]")
+        df_blend = blend_sources(frames)
+        if not df_blend.empty:
+            _write_all(df_blend, "blended")
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    all_dfs = {
+        "MUR":     df_mur,
+        "VIIRS":   df_viirs,
+        "CMEMS":   df_cmems,
+    }
+    print(f"  {'Source':<10} {'Points':>10}  {'Min °C':>8}  {'Max °C':>8}")
+    print(f"  {'-'*10}  {'-'*9}  {'-'*7}  {'-'*7}")
+    for name, df in all_dfs.items():
+        if df is not None:
+            print(f"  {name:<10} {len(df):>10,}  {df['sst_c'].min():>8.2f}  {df['sst_c'].max():>8.2f}")
+        else:
+            print(f"  {name:<10} {'—':>10}")
+    print("=" * 60)
+    print(f"\n  Files written to: {OUTPUT_DIR.resolve()}")
+    print("""
+  Data schema (all formats):
+    lat     — decimal degrees (WGS84)
+    lon     — decimal degrees (WGS84)
+    sst_c   — sea surface temperature, Celsius
+    sst_f   — sea surface temperature, Fahrenheit
+    source  — MUR | VIIRS | CMEMS | blended
+    date    — ISO date string
+
+  Recommended app rendering stack:
+    • deck.gl HeatmapLayer or GridLayer  (WebGL, handles 500k+ pts)
+    • Mapbox GL raster-array source      (feed the grid JSON)
+    • Leaflet canvas renderer            (for the GeoJSON)
+    • PostGIS + ST_PixelAsPoints         (for server-side tile generation)
+""")
+
+
+if __name__ == "__main__":
+    main()
