@@ -146,47 +146,63 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     print(f"\n[2/3] NOAA ACSPO VIIRS SST  ({date})  ~2 km resolution")
 
     endpoints = [
-        # Primary: ACSPO super-collated NRT daily (AVHRR+VIIRS), 0.02 deg
+        # NOAA STAR ACSPO NRT SST — NOAA-20 + S-NPP VIIRS + GOES, 0.02 deg
+        # Served directly from STAR THREDDS, updated daily
+        (
+            "nesdisVHNSSTnrtDaily",
+            "sea_surface_temperature",
+            "https://www.star.nesdis.noaa.gov/thredds/dodsC/CoastWatch/VIIRS/noaa20/sst_acspo/night/DailyGlobal/WW00",
+            "thredds",
+            f"{date}",
+        ),
+        # CoastWatch central hub — blended ACSPO (AVHRR+VIIRS), 0.02 deg NRT
         (
             "noaacwLEOACSPOSSTL3SnrtCDaily",
             "sst",
             "https://coastwatch.noaa.gov/erddap/griddap",
+            "erddap",
             f"[({date}T12:00:00Z)]",
         ),
-        # Fallback: AOML ERDDAP mirror of same dataset
+        # CWCGOM AOML mirror
         (
             "noaacwLEOACSPOSSTL3SnrtCDaily",
             "sst",
             "https://cwcgom.aoml.noaa.gov/erddap/griddap",
-            f"[({date}T12:00:00Z)]",
-        ),
-        # Second fallback: NEFSC ERDDAP mirror
-        (
-            "noaa_coastwatch_acspo_v2_nrt",
-            "sst",
-            "https://comet.nefsc.noaa.gov/erddap/griddap",
+            "erddap",
             f"[({date}T12:00:00Z)]",
         ),
     ]
 
-    for dataset_id, var, base, time_slice in endpoints:
-        url = (
-            f"{base}/{dataset_id}.nc"
-            f"?{var}"
-            f"{time_slice}"
-            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-        )
+    for entry in endpoints:
+        dataset_id, var, base, mode, time_arg = entry
         nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
         try:
             host = base.split('/')[2]
-            print(f"  Trying {dataset_id} @ {host} ...")
-            r = requests.get(url, timeout=180, stream=True)
-            r.raise_for_status()
-            with open(nc_path, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-            ds = xr.open_dataset(nc_path)
+            if mode == "erddap":
+                url = (
+                    f"{base}/{dataset_id}.nc"
+                    f"?{var}"
+                    f"{time_arg}"
+                    f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+                    f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+                )
+                print(f"  Trying {dataset_id} @ {host} ...")
+                r = requests.get(url, timeout=180, stream=True)
+                r.raise_for_status()
+                with open(nc_path, "wb") as f:
+                    for chunk in r.iter_content(1 << 20):
+                        f.write(chunk)
+                ds = xr.open_dataset(nc_path)
+            else:
+                # OPeNDAP/THREDDS — open directly with xarray
+                date_str = time_arg  # YYYY-MM-DD
+                opendap_url = (
+                    f"{base}/{date_str.replace('-', '/')}"
+                    f"/{date_str}000000-STAR-L3S_GHRSST-SSTsubskin-ACSPO_V2.81-NOAA_20-v02.0-fv01.0.nc"
+                )
+                print(f"  Trying STAR THREDDS OPeNDAP ({date_str}) ...")
+                ds = xr.open_dataset(opendap_url, engine="netcdf4")
+
             df = _ds_to_dataframe(ds, var, "VIIRS", date)
             print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
             return df
@@ -216,7 +232,7 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     print(f"\n[2b] NOAA Geo-polar Blended SST  ({date})  ~5 km, gap-filled")
 
     url = (
-        f"https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc"
+        f"https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDLDaily.nc"
         f"?analysed_sst"
         f"[({date}T12:00:00Z)]"
         f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
