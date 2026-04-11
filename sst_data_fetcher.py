@@ -82,70 +82,92 @@ GEOJSON_MAX_POINTS = None
 # SOURCE 1: NASA MUR SST
 #   Resolution : 0.01° × 0.01° (~1 km)
 #   Latency    : ~1 day
-#   Endpoint   : NOAA CoastWatch ERDDAP (mirrors NASA PO.DAAC, no auth)
+#   Endpoints  : Multiple ERDDAP mirrors tried in order (pfeg blocks CI IPs)
 #   Dataset ID : jplMURSST41
 # ─────────────────────────────────────────────────────────────────────────────
+
+MUR_ERDDAP_HOSTS = [
+    "https://polarwatch.noaa.gov/erddap/griddap",    # PolarWatch — CI-friendly
+    "https://erddap.marine.usf.edu/erddap/griddap",  # USF mirror
+    "https://coastwatch.pfeg.noaa.gov/erddap/griddap", # West Coast (may 403 CI)
+]
 
 def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date
+    Tries multiple ERDDAP mirrors in order until one succeeds.
     """
     print(f"\n[1/3] NASA MUR SST  ({date})  ~1 km resolution")
-
-    url = (
-        "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc"
-        f"?analysed_sst"
-        f"[({date}T09:00:00Z)]"
-        f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-        f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-    )
-
     nc_path = OUTPUT_DIR / f"_mur_{date}.nc"
-    try:
-        print("  Downloading ...")
-        r = requests.get(url, timeout=180, stream=True)
-        r.raise_for_status()
-        with open(nc_path, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
 
-        ds = xr.open_dataset(nc_path)
-        df = _ds_to_dataframe(ds, "analysed_sst", "MUR", date)
-        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
-        return df
+    for host in MUR_ERDDAP_HOSTS:
+        url = (
+            f"{host}/jplMURSST41.nc"
+            f"?analysed_sst"
+            f"[({date}T09:00:00Z)]"
+            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+        )
+        try:
+            print(f"  Trying {host.split('/')[2]} ...")
+            r = requests.get(url, timeout=180, stream=True)
+            r.raise_for_status()
+            with open(nc_path, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    f.write(chunk)
+            ds = xr.open_dataset(nc_path)
+            df = _ds_to_dataframe(ds, "analysed_sst", "MUR", date)
+            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+            return df
+        except Exception as e:
+            print(f"  ✗ {host.split('/')[2]} failed: {e}")
+            continue
 
-    except Exception as e:
-        print(f"  ✗ Failed: {e}")
-        return None
+    print("  ✗ All MUR mirrors failed")
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SOURCE 2: NOAA CoastWatch VIIRS SST (NOAA-20)
-#   Resolution : 0.01° (~750 m native, resampled to 0.01° on ERDDAP)
+# SOURCE 2: NOAA CoastWatch VIIRS SST (NOAA-20 / S-NPP)
+#   Resolution : 0.0375° (~4 km mapped), native 750 m swath
 #   Latency    : 6–12 hours (near real-time)
-#   Endpoint   : NOAA CoastWatch ERDDAP
-#   Dataset ID : nesdisVHNSQnrtSST
+#   Endpoints  : coastwatch.pfeg.noaa.gov and coastwatch.noaa.gov
+#   Dataset IDs: nesdisVHNsstDayNite (daily), nesdisVHNsst3DayNite (3-day composite)
 #   Note       : May have gaps (cloud contamination) — pair with MUR for coverage
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date
-    Tries the daily NRT product first, falls back to 3-day composite.
+    Tries multiple dataset IDs and hosts in priority order.
     """
     print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~750 m resolution")
 
     endpoints = [
-        # Daily NRT — freshest, may have cloud gaps
+        # NOAA-20 daily NRT on pfeg (most reliable for CI)
         (
-            "nesdisVHNSQnrtSST",
+            "nesdisVHNsstDayNite",
             "sea_surface_temperature",
-            "https://coastwatch.noaa.gov/erddap/griddap",
-            f"[({date}T00:00:00Z)]"
+            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
+            f"[({date}T12:00:00Z)]"
         ),
-        # 3-day composite — better coverage, slightly older
+        # S-NPP daily on pfeg
         (
-            "nesdisVHNSQ3nrtSST",
+            "nesdisSSH1day",
+            "sea_surface_temperature",
+            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
+            f"[({date}T12:00:00Z)]"
+        ),
+        # 3-day composite — better cloud coverage
+        (
+            "nesdisVHNsst3DayNite",
+            "sea_surface_temperature",
+            "https://coastwatch.pfeg.noaa.gov/erddap/griddap",
+            f"[({date}T12:00:00Z)]"
+        ),
+        # CoastWatch central hub daily
+        (
+            "noaacwVIIRSn20SSTmask1DayNightGapfillNRT",
             "sea_surface_temperature",
             "https://coastwatch.noaa.gov/erddap/griddap",
             f"[({date}T00:00:00Z)]"
