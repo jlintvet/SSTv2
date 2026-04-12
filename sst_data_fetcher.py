@@ -145,16 +145,14 @@ def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
 
 def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
-    Fetches NOAA-20 VIIRS co-gridded daily SST from CoastWatch THREDDS.
-    Uses catalog XML to discover the actual filename for the given date,
-    then subsets via OPeNDAP. Falls back to ERDDAP polarwatch mirror.
+    Fetches NOAA-20 VIIRS co-gridded daily SST.
+    Tries THREDDS catalog discovery first (up to 3 days back),
+    then falls back to ERDDAP mirrors.
     """
-    print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~1–4 km resolution")
-    nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
+    import re
+    print(f"\n[2/3] NOAA VIIRS SST  (target: {date})  ~1–4 km resolution")
 
-    # ── Attempt 1: CoastWatch THREDDS catalog discovery (try up to 3 days back) ──
-    import datetime as _dt
-    thredds_success = False
+    # ── Attempt 1: CoastWatch THREDDS catalog — auto-discovers actual filename ─
     for try_date in _latest_available_date(date):
         doy = try_date.timetuple().tm_yday
         year = try_date.year
@@ -163,72 +161,64 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
             f"/{year}/{doy:03d}/catalog.xml"
         )
         try:
-            print(f"  Discovering file via THREDDS catalog (DOY {doy:03d}, {try_date}) ...")
-        resp = requests.get(catalog_url, timeout=30)
-        resp.raise_for_status()
-        # Parse filename from catalog XML
-        import re
-        matches = re.findall(r'gridN20VIIRSSCIENCEL3UWW00/[^"]+\.nc', resp.text)
-        if not matches:
-            raise ValueError("No .nc files found in catalog")
-        # Take the nighttime composite (last file of day)
-        nc_name = sorted(matches)[-1].split('/')[-1]
-        opendap_url = (
-            f"https://coastwatch.noaa.gov/thredds/dodsC/gridN20VIIRSSCIENCEL3UWW00"
-            f"/{year}/{doy:03d}/{nc_name}"
-        )
-        print(f"  OPeNDAP: {nc_name}")
-        ds = xr.open_dataset(opendap_url, engine="netcdf4")
-        # Subset to bbox
-        lat_name = next(c for c in ds.coords if "lat" in c.lower())
-        lon_name = next(c for c in ds.coords if "lon" in c.lower())
-        ds = ds.sel({
-            lat_name: slice(bbox["lat_min"], bbox["lat_max"]),
-            lon_name: slice(bbox["lon_min"], bbox["lon_max"]),
-        })
-        # Find SST variable
-        var = next((v for v in ds.data_vars if "sst" in v.lower()), None)
-        if var is None:
-            raise ValueError(f"No SST variable found in {list(ds.data_vars)}")
-        df = _ds_to_dataframe(ds, var, "VIIRS", date)
-        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
-        return df
-    except Exception as e:
-            thredds_success = True
-            break
-        except Exception as e:
-            print(f"  ✗ THREDDS catalog failed for {try_date}: {e}")
-            continue
-
-    if thredds_success:
-        pass  # already returned above
-    # ── Attempt 2: PolarWatch ERDDAP (MUR mirror also has VIIRS dataset) ──────
-    erddap_fallbacks = [
-        ("https://polarwatch.noaa.gov/erddap/griddap",   "nesdisVHNSSTnrtDaily",    "sea_surface_temperature"),
-        ("https://coastwatch.pfeg.noaa.gov/erddap/griddap", "erdVHsstaWS1day",       "analysed_sst"),
-    ]
-    for base, dataset_id, var in erddap_fallbacks:
-        url = (
-            f"{base}/{dataset_id}.nc?{var}"
-            f"[({date}T12:00:00Z)]"
-            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-        )
-        try:
-            host = base.split('/')[2]
-            print(f"  Trying {dataset_id} @ {host} ...")
-            r = requests.get(url, timeout=120, stream=True)
-            r.raise_for_status()
-            with open(nc_path, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-            ds = xr.open_dataset(nc_path)
-            df = _ds_to_dataframe(ds, var, "VIIRS", date)
-            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+            print(f"  THREDDS catalog DOY {doy:03d} ({try_date}) ...")
+            resp = requests.get(catalog_url, timeout=30)
+            resp.raise_for_status()
+            matches = re.findall(r'gridN20VIIRSSCIENCEL3UWW00/[^"]+\.nc', resp.text)
+            if not matches:
+                raise ValueError("No .nc files in catalog")
+            nc_name = sorted(matches)[-1].split('/')[-1]
+            opendap_url = (
+                f"https://coastwatch.noaa.gov/thredds/dodsC/gridN20VIIRSSCIENCEL3UWW00"
+                f"/{year}/{doy:03d}/{nc_name}"
+            )
+            print(f"  Opening: {nc_name}")
+            ds = xr.open_dataset(opendap_url, engine="netcdf4")
+            lat_name = next(c for c in ds.coords if "lat" in c.lower())
+            lon_name = next(c for c in ds.coords if "lon" in c.lower())
+            ds = ds.sel({
+                lat_name: slice(bbox["lat_min"], bbox["lat_max"]),
+                lon_name: slice(bbox["lon_min"], bbox["lon_max"]),
+            })
+            var = next((v for v in ds.data_vars if "sst" in v.lower()), None)
+            if var is None:
+                raise ValueError(f"No SST var in {list(ds.data_vars)}")
+            df = _ds_to_dataframe(ds, var, "VIIRS", try_date)
+            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  (date: {try_date})")
             return df
         except Exception as e:
-            print(f"  ✗ {dataset_id} failed: {e}")
+            print(f"  ✗ THREDDS {try_date}: {e}")
             continue
+
+    # ── Attempt 2: ERDDAP fallbacks with date retry ───────────────────────────
+    erddap_fallbacks = [
+        ("https://polarwatch.noaa.gov/erddap/griddap",      "nesdisVHNSSTnrtDaily", "sea_surface_temperature"),
+        ("https://coastwatch.pfeg.noaa.gov/erddap/griddap", "erdVHsstaWS1day",      "analysed_sst"),
+    ]
+    for try_date in _latest_available_date(date):
+        for base, dataset_id, var in erddap_fallbacks:
+            url = (
+                f"{base}/{dataset_id}.nc?{var}"
+                f"[({try_date}T12:00:00Z)]"
+                f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+                f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+            )
+            nc_path = OUTPUT_DIR / f"_viirs_{try_date}.nc"
+            try:
+                host = base.split('/')[2]
+                print(f"  Trying {dataset_id} @ {host} ({try_date}) ...")
+                r = requests.get(url, timeout=120, stream=True)
+                r.raise_for_status()
+                with open(nc_path, "wb") as f:
+                    for chunk in r.iter_content(1 << 20):
+                        f.write(chunk)
+                ds = xr.open_dataset(nc_path)
+                df = _ds_to_dataframe(ds, var, "VIIRS", try_date)
+                print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  (date: {try_date})")
+                return df
+            except Exception as e:
+                print(f"  ✗ {dataset_id} / {try_date}: {e}")
+                continue
 
     print("  ✗ All VIIRS sources failed")
     return None
