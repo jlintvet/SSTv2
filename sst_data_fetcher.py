@@ -93,38 +93,45 @@ MUR_ERDDAP_HOSTS = [
     "https://coastwatch.pfeg.noaa.gov/erddap/griddap", # West Coast (may 403 CI)
 ]
 
+def _latest_available_date(base_date: datetime.date, max_lookback: int = 3) -> list:
+    """Return [base_date, base_date-1, base_date-2, ...] up to max_lookback days."""
+    return [base_date - datetime.timedelta(days=i) for i in range(max_lookback + 1)]
+
+
 def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date
-    Tries multiple ERDDAP mirrors in order until one succeeds.
+    Tries multiple dates (today back to -3 days) across multiple ERDDAP mirrors.
+    MUR has ~1 day latency so today's date will 404 — auto-fallback handles this.
     """
-    print(f"\n[1/3] NASA MUR SST  ({date})  ~1 km resolution")
-    nc_path = OUTPUT_DIR / f"_mur_{date}.nc"
+    print(f"\n[1/3] NASA MUR SST  (target: {date})  ~1 km resolution")
 
-    for host in MUR_ERDDAP_HOSTS:
-        url = (
-            f"{host}/jplMURSST41.nc"
-            f"?analysed_sst"
-            f"[({date}T09:00:00Z)]"
-            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-        )
-        try:
-            print(f"  Trying {host.split('/')[2]} ...")
-            r = requests.get(url, timeout=180, stream=True)
-            r.raise_for_status()
-            with open(nc_path, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-            ds = xr.open_dataset(nc_path)
-            df = _ds_to_dataframe(ds, "analysed_sst", "MUR", date)
-            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
-            return df
-        except Exception as e:
-            print(f"  ✗ {host.split('/')[2]} failed: {e}")
-            continue
+    for try_date in _latest_available_date(date):
+        for host in MUR_ERDDAP_HOSTS:
+            url = (
+                f"{host}/jplMURSST41.nc"
+                f"?analysed_sst"
+                f"[({try_date}T09:00:00Z)]"
+                f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+                f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+            )
+            nc_path = OUTPUT_DIR / f"_mur_{try_date}.nc"
+            try:
+                print(f"  Trying {host.split('/')[2]} for {try_date} ...")
+                r = requests.get(url, timeout=180, stream=True)
+                r.raise_for_status()
+                with open(nc_path, "wb") as f:
+                    for chunk in r.iter_content(1 << 20):
+                        f.write(chunk)
+                ds = xr.open_dataset(nc_path)
+                df = _ds_to_dataframe(ds, "analysed_sst", "MUR", try_date)
+                print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  (date used: {try_date})")
+                return df
+            except Exception as e:
+                print(f"  ✗ {host.split('/')[2]} / {try_date} failed: {e}")
+                continue
 
-    print("  ✗ All MUR mirrors failed")
+    print("  ✗ All MUR mirrors failed across all fallback dates")
     return None
 
 
@@ -145,17 +152,18 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~1–4 km resolution")
     nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
 
-    # ── Attempt 1: CoastWatch THREDDS catalog discovery ───────────────────────
-    # Catalog path uses day-of-year
+    # ── Attempt 1: CoastWatch THREDDS catalog discovery (try up to 3 days back) ──
     import datetime as _dt
-    doy = date.timetuple().tm_yday
-    year = date.year
-    catalog_url = (
-        f"https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00"
-        f"/{year}/{doy:03d}/catalog.xml"
-    )
-    try:
-        print(f"  Discovering file via THREDDS catalog (DOY {doy:03d}) ...")
+    thredds_success = False
+    for try_date in _latest_available_date(date):
+        doy = try_date.timetuple().tm_yday
+        year = try_date.year
+        catalog_url = (
+            f"https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00"
+            f"/{year}/{doy:03d}/catalog.xml"
+        )
+        try:
+            print(f"  Discovering file via THREDDS catalog (DOY {doy:03d}, {try_date}) ...")
         resp = requests.get(catalog_url, timeout=30)
         resp.raise_for_status()
         # Parse filename from catalog XML
@@ -186,8 +194,14 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
         print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
         return df
     except Exception as e:
-        print(f"  ✗ THREDDS catalog failed: {e}")
+            thredds_success = True
+            break
+        except Exception as e:
+            print(f"  ✗ THREDDS catalog failed for {try_date}: {e}")
+            continue
 
+    if thredds_success:
+        pass  # already returned above
     # ── Attempt 2: PolarWatch ERDDAP (MUR mirror also has VIIRS dataset) ──────
     erddap_fallbacks = [
         ("https://polarwatch.noaa.gov/erddap/griddap",   "nesdisVHNSSTnrtDaily",    "sea_surface_temperature"),
@@ -246,39 +260,41 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
         ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDaily",   "analysed_sst"),
     ]
     url = None
-    for _base, _dsid, _var in blended_endpoints:
-        _url = (
-            f"{_base}/{_dsid}.nc?{_var}"
-            f"[({date}T12:00:00Z)]"
-            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-        )
-        try:
-            _r = requests.head(_url, timeout=15)
-            if _r.status_code < 400:
+    _active_var = "analysed_sst"
+    for try_date in _latest_available_date(date):
+        for _base, _dsid, _var in blended_endpoints:
+            _url = (
+                f"{_base}/{_dsid}.nc?{_var}"
+                f"[({try_date}T12:00:00Z)]"
+                f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+                f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+            )
+            try:
+                _r = requests.get(_url, timeout=30, stream=True)
+                _r.raise_for_status()
                 url = _url
                 _active_var = _var
-                print(f"  Using {_dsid}")
-                break
-        except Exception:
-            continue
+                print(f"  Using {_dsid} for {try_date}")
+                # write what we already fetched
+                nc_path = OUTPUT_DIR / f"_blended_{try_date}.nc"
+                with open(nc_path, "wb") as _f:
+                    _f.write(_r.content)
+                    for chunk in _r.iter_content(1 << 20):
+                        _f.write(chunk)
+                ds = xr.open_dataset(nc_path)
+                df = _ds_to_dataframe(ds, _active_var, "BLENDED", try_date)
+                print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  (date used: {try_date})")
+                return df
+            except Exception as _e:
+                print(f"  ✗ {_dsid} / {try_date}: {_e}")
+                continue
+        if url:
+            break
     if url is None:
-        raise ValueError("No blended endpoint responded")
-    nc_path = OUTPUT_DIR / f"_blended_{date}.nc"
-    try:
-        print("  Downloading ...")
-        r = requests.get(url, timeout=180, stream=True)
-        r.raise_for_status()
-        with open(nc_path, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
-        ds = xr.open_dataset(nc_path)
-        df = _ds_to_dataframe(ds, _active_var, "BLENDED", date)
-        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
-        return df
-    except Exception as e:
-        print(f"  ✗ Blended fetch failed: {e}")
+        print("  ✗ No blended endpoint responded for any tried date")
         return None
+    # All dates and endpoints exhausted (return already happened inside loop if successful)
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
