@@ -1,4 +1,88 @@
-  File "/home/runner/work/SSTv2/SSTv2/sst_data_fetcher.py", line 167
-    resp = requests.get(catalog_url, timeout=30)
-    ^^^^
-SyntaxError: expected 'except' or 'finally' block
+============================================================
+  High-Fidelity SST Data Fetcher
+  Date : 2026-04-10
+  BBOX : {'lon_min': -77.5, 'lon_max': -74.0, 'lat_min': 33.5, 'lat_max': 36.5}
+  Out  : /home/runner/work/SSTv2/SSTv2/DailySST/v2
+============================================================
+
+[1/3] NASA MUR SST  (target: 2026-04-10)  ~1 km resolution
+  Trying polarwatch.noaa.gov for 2026-04-10 ...
+  ✓ 81,825 points  |  10.36–23.21 °C  (date used: 2026-04-10)
+  Exporting mur (81,825 points) ...
+    GeoJSON  → DailySST/v2/mur_20260410.geojson  (81,825 pts, 12353 KB)
+    CSV      → DailySST/v2/mur_20260410.csv  (81,825 rows, 3243 KB)
+    Parquet  → DailySST/v2/mur_20260410.parquet  (81,825 rows, 337 KB)
+    Grid JSON → DailySST/v2/mur_20260410_grid.json  (301×351 grid, 672 KB)
+
+[2/3] NOAA VIIRS SST  (target: 2026-04-10)  ~1–4 km resolution
+  THREDDS catalog DOY 100 (2026-04-10) ...
+  ✗ THREDDS 2026-04-10: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/100/catalog.xml
+  THREDDS catalog DOY 099 (2026-04-09) ...
+  ✗ THREDDS 2026-04-09: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/099/catalog.xml
+  THREDDS catalog DOY 098 (2026-04-08) ...
+  ✗ THREDDS 2026-04-08: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/098/catalog.xml
+  THREDDS catalog DOY 097 (2026-04-07) ...
+  ✗ THREDDS 2026-04-07: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/097/catalog.xml
+  Trying nesdisVHNSSTnrtDaily @ polarwatch.noaa.gov (2026-04-10) ...
+  ✗ nesdisVHNSSTnrtDaily / 2026-04-10: 404 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSSTnrtDaily.nc?sea_surface_temperature%5B(2026-04-10T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying erdVHsstaWS1day @ coastwatch.pfeg.noaa.gov (2026-04-10) ...
+  ✗ erdVHsstaWS1day / 2026-04-10: 404 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVHsstaWS1day.nc?analysed_sst%5B(2026-04-10T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying nesdisVHNSSTnrtDaily @ polarwatch.noaa.gov (2026-04-09) ...
+  ✗ nesdisVHNSSTnrtDaily / 2026-04-09: 404 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSSTnrtDaily.nc?sea_surface_temperature%5B(2026-04-09T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying erdVHsstaWS1day @ coastwatch.pfeg.noaa.gov (2026-04-09) ...
+  ✗ erdVHsstaWS1day / 2026-04-09: 404 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVHsstaWS1day.nc?analysed_sst%5B(2026-04-09T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying nesdisVHNSSTnrtDaily @ polarwatch.noaa.gov (2026-04-08) ...
+  ✗ nesdisVHNSSTnrtDaily / 2026-04-08: 404 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSSTnrtDaily.nc?sea_surface_temperature%5B(2026-04-08T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying erdVHsstaWS1day @ coastwatch.pfeg.noaa.gov (2026-04-08) ...
+  ✗ erdVHsstaWS1day / 2026-04-08: 404 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVHsstaWS1day.nc?analysed_sst%5B(2026-04-08T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying nesdisVHNSSTnrtDaily @ polarwatch.noaa.gov (2026-04-07) ...
+  ✗ nesdisVHNSSTnrtDaily / 2026-04-07: 404 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSSTnrtDaily.nc?sea_surface_temperature%5B(2026-04-07T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  Trying erdVHsstaWS1day @ coastwatch.pfeg.noaa.gov (2026-04-07) ...
+  ✗ erdVHsstaWS1day / 2026-04-07: 404 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVHsstaWS1day.nc?analysed_sst%5B(2026-04-07T12:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
+  ✗ All VIIRS sources failed
+
+[2b] NOAA Geo-polar Blended SST  (2026-04-10)  ~5 km, gap-filled
+  ✗ noaacrwsstDaily / 2026-04-10: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDLDaily / 2026-04-10: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDaily / 2026-04-10: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacrwsstDaily / 2026-04-09: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDLDaily / 2026-04-09: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDaily / 2026-04-09: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacrwsstDaily / 2026-04-08: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDLDaily / 2026-04-08: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDaily / 2026-04-08: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacrwsstDaily / 2026-04-07: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDLDaily / 2026-04-07: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ noaacwBLENDEDsstDaily / 2026-04-07: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ✗ No blended endpoint responded for any tried date
+
+[3/3] Copernicus CMEMS L4 SST  (2026-04-10)  ~5 km, fully gap-filled
+  Downloading via copernicusmarine client ...
+WARNING - 2026-04-12T01:47:46Z - 'force_download' has been deprecated.
+  ✗ CMEMS fetch failed: subset() got an unexpected keyword argument 'overwrite_output_data'
+
+============================================================
+  Source         Points    Min °C    Max °C
+  ----------  ---------  -------  -------
+  MUR            81,825     10.36     23.21
+  VIIRS(ACSPO)          —
+  BLENDED             —
+  CMEMS               —
+============================================================
+
+  Files written to: /home/runner/work/SSTv2/SSTv2/DailySST/v2
+
+  Data schema (all formats):
+    lat     — decimal degrees (WGS84)
+    lon     — decimal degrees (WGS84)
+    sst_c   — sea surface temperature, Celsius
+    sst_f   — sea surface temperature, Fahrenheit
+    source  — MUR | VIIRS | CMEMS | blended
+    date    — ISO date string
+
+  Recommended app rendering stack:
+    • deck.gl HeatmapLayer or GridLayer  (WebGL, handles 500k+ pts)
+    • Mapbox GL raster-array source      (feed the grid JSON)
+    • Leaflet canvas renderer            (for the GeoJSON)
+    • PostGIS + ST_PixelAsPoints         (for server-side tile generation)
+
