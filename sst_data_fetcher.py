@@ -101,12 +101,37 @@ def _latest_available_date(base_date: datetime.date, max_lookback: int = 3) -> l
 def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date
-    Tries multiple dates (today back to -3 days) across multiple ERDDAP mirrors.
-    MUR has ~1 day latency so today's date will 404 — auto-fallback handles this.
+    Primary: NASA PO.DAAC OPeNDAP (no IP blocking, no auth required)
+    Fallback: ERDDAP mirrors
     """
     print(f"\n[1/3] NASA MUR SST  (target: {date})  ~1 km resolution")
 
     for try_date in _latest_available_date(date):
+        # ── Primary: NASA PO.DAAC OPeNDAP — most reliable for CI runners ──────
+        date_str = try_date.strftime("%Y%m%d")
+        opendap_url = (
+            f"https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections"
+            f"/MUR-JPL-L4-GLOB-v4.1/granules"
+            f"/{date_str}090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1"
+        )
+        nc_path = OUTPUT_DIR / f"_mur_{try_date}.nc"
+        try:
+            print(f"  Trying NASA OPeNDAP for {try_date} ...")
+            # Subset via OPeNDAP constraint expression
+            ce = (
+                f"?analysed_sst"
+                f"[0:1:0]"
+                f"[{_lat_idx(bbox['lat_min'])}:{_lat_idx(bbox['lat_max'])}]"
+                f"[{_lon_idx(bbox['lon_min'])}:{_lon_idx(bbox['lon_max'])}]"
+            )
+            ds = xr.open_dataset(opendap_url + ".nc4" + ce, engine="netcdf4")
+            df = _ds_to_dataframe(ds, "analysed_sst", "MUR", try_date)
+            print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  (date used: {try_date})")
+            return df
+        except Exception as e:
+            print(f"  ✗ NASA OPeNDAP {try_date}: {e}")
+
+        # ── Fallback: ERDDAP mirrors ───────────────────────────────────────────
         for host in MUR_ERDDAP_HOSTS:
             url = (
                 f"{host}/jplMURSST41.nc"
@@ -115,7 +140,6 @@ def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
                 f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
                 f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
             )
-            nc_path = OUTPUT_DIR / f"_mur_{try_date}.nc"
             try:
                 print(f"  Trying {host.split('/')[2]} for {try_date} ...")
                 r = requests.get(url, timeout=180, stream=True)
@@ -131,8 +155,17 @@ def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
                 print(f"  ✗ {host.split('/')[2]} / {try_date} failed: {e}")
                 continue
 
-    print("  ✗ All MUR mirrors failed across all fallback dates")
+    print("  ✗ All MUR sources failed across all fallback dates")
     return None
+
+
+def _lat_idx(lat: float) -> int:
+    """MUR grid: lat from -89.99 at 0.01 deg resolution"""
+    return int(round((lat + 89.99) / 0.01))
+
+def _lon_idx(lon: float) -> int:
+    """MUR grid: lon from -179.99 at 0.01 deg resolution"""
+    return int(round((lon + 179.99) / 0.01))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
