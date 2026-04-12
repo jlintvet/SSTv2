@@ -21,6 +21,9 @@ on:
           - viirs_only
           - cmems_only
 
+permissions:
+  contents: write
+
 jobs:
   fetch-sst:
     name: Fetch SST Data
@@ -30,6 +33,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -96,14 +102,14 @@ jobs:
         if: always()
         run: |
           echo "====== sst_data/ ======"
-          ls -lah DailySST/ 2>/dev/null || echo "!! DailySST/ does not exist"
+          find DailySST/v2/ -type f 2>/dev/null | sort || echo "!! DailySST/v2/ does not exist"
           echo ""
           echo "====== Fetch log (last 100 lines) ======"
           tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
 
       - name: Verify outputs exist
         run: |
-          count=$(find DailySST/ -type f 2>/dev/null | wc -l)
+          count=$(find DailySST/v2/ -type f -not -name "*.nc" -not -name "*.log" 2>/dev/null | wc -l)
           echo "Output file count: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
@@ -118,22 +124,24 @@ jobs:
           echo ""
           du -sh DailySST/ 2>/dev/null || true
 
-      - name: Upload SST data to DailySST
-        uses: actions/upload-artifact@v4
-        with:
-          name: DailySST
-          path: DailySST/
-          retention-days: 90
-          if-no-files-found: error
+      - name: Commit files to DailySST/v2/ in repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add DailySST/v2/
+          git diff --cached --quiet && echo "No changes to commit" ||             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
+          git push origin HEAD
 
-      - name: Upload fetch log
+      - name: Commit fetch log to repo
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sst-fetch-log-${{ steps.date.outputs.date }}
-          path: sst_fetch.log
-          retention-days: 7
-          if-no-files-found: ignore
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p DailySST/v2/logs
+          cp sst_fetch.log DailySST/v2/logs/sst_fetch_${{ steps.date.outputs.date }}.log 2>/dev/null || true
+          git add DailySST/v2/logs/ 2>/dev/null || true
+          git diff --cached --quiet && echo "No log changes" ||             git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
+          git push origin HEAD 2>/dev/null || true
 
       # ── Optional: commit data to a 'data' branch ──────────────────────────────
       # - name: Commit data to repository
