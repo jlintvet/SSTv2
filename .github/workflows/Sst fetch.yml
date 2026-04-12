@@ -54,7 +54,7 @@ jobs:
         run: |
           INPUT_DATE="${{ github.event.inputs.target_date }}"
           if [ -z "$INPUT_DATE" ]; then
-            echo "date=$(date -u -d 'yesterday' '+%Y-%m-%d')" >> $GITHUB_OUTPUT
+            echo "date=$(date -u -d '2 days ago' '+%Y-%m-%d')" >> $GITHUB_OUTPUT
           else
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
@@ -96,29 +96,27 @@ jobs:
         if: always()
         run: |
           echo "====== sst_data/ ======"
-          ls -lah sst_data/ 2>/dev/null || echo "!! sst_data/ does not exist"
+          ls -lah DailySST/ 2>/dev/null || echo "!! DailySST/ does not exist"
           echo ""
           echo "====== Fetch log (last 100 lines) ======"
           tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
 
       - name: Verify outputs exist
         run: |
-          count=$(find sst_data/ -type f 2>/dev/null | wc -l)
+          count=$(find DailySST/ -type f 2>/dev/null | wc -l)
           echo "Output file count: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
             exit 1
           fi
 
-      # Organize into DailySST/{date}/ folder for clean storage
-      - name: Organize into DailySST folder
+      # Files are already written to DailySST/{date}/ by the fetcher
+      - name: List DailySST contents
         run: |
-          DATE="${{ steps.date.outputs.date }}"
-          mkdir -p DailySST/$DATE
-          # Copy only data files (not raw .nc scratch files)
-          find sst_data/ -type f \( -name "*.geojson" -o -name "*.csv" -o -name "*.parquet" -o -name "*_grid.json" \)             -exec cp {} DailySST/$DATE/ \;
-          echo "=== DailySST/$DATE/ contents ==="
-          ls -lah DailySST/$DATE/
+          echo "=== DailySST/ contents ==="
+          find DailySST/ -type f | sort
+          echo ""
+          du -sh DailySST/ 2>/dev/null || true
 
       - name: Upload SST data to DailySST
         uses: actions/upload-artifact@v4
