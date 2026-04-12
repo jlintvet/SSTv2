@@ -190,10 +190,11 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
             print(f"  ✗ THREDDS {try_date}: {e}")
             continue
 
-    # ── Attempt 2: ERDDAP fallbacks with date retry ───────────────────────────
+    # ── Attempt 2: ERDDAP fallbacks — AOML mirror avoids coastwatch.noaa.gov IT issues
     erddap_fallbacks = [
-        ("https://polarwatch.noaa.gov/erddap/griddap",      "nesdisVHNSSTnrtDaily", "sea_surface_temperature"),
-        ("https://coastwatch.pfeg.noaa.gov/erddap/griddap", "erdVHsstaWS1day",      "analysed_sst"),
+        ("https://cwcgom.aoml.noaa.gov/erddap/griddap",    "noaacwBLENDEDsstDLDaily", "analysed_sst"),
+        ("https://cwcgom.aoml.noaa.gov/erddap/griddap",    "noaacrwsstDaily",         "analysed_sst"),
+        ("https://polarwatch.noaa.gov/erddap/griddap",      "jplMURSST41",             "analysed_sst"),
     ]
     for try_date in _latest_available_date(date):
         for base, dataset_id, var in erddap_fallbacks:
@@ -243,11 +244,13 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
 
     # Try multiple gap-filled blended products in order
     blended_endpoints = [
-        # NOAA CoralTemp — gap-free 5km, confirmed current 2026
-        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacrwsstDaily", "analysed_sst"),
-        # NOAA Geo-polar blended day+night — try both ID variants
-        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDLDaily", "analysed_sst"),
-        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDaily",   "analysed_sst"),
+        # AOML mirror — avoids coastwatch.noaa.gov timeouts
+        ("https://cwcgom.aoml.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDLDaily", "analysed_sst"),
+        # CoralTemp on AOML mirror — gap-free 5km, 1985-present
+        ("https://cwcgom.aoml.noaa.gov/erddap/griddap", "noaacrwsstDaily",         "analysed_sst"),
+        # Fallback to coastwatch.noaa.gov if AOML is down
+        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacwBLENDEDsstDLDaily", "analysed_sst"),
+        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacrwsstDaily",         "analysed_sst"),
     ]
     url = None
     _active_var = "analysed_sst"
@@ -319,8 +322,10 @@ def fetch_cmems(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     nc_path = OUTPUT_DIR / f"_cmems_{date}.nc"
     try:
         print("  Downloading via copernicusmarine client ...")
+        # v2.0.0+ API: overwrite_output_data -> overwrite, force_download removed
+        # Credentials read from env vars COPERNICUSMARINE_SERVICE_USERNAME/PASSWORD
         cm.subset(
-            dataset_id="SST_GLO_SST_L4_NRT_OBSERVATIONS_010_001",
+            dataset_id="cmems_obs-sst_glo_phy_nrt_l4_P1D-m",
             variables=["analysed_sst"],
             minimum_longitude=bbox["lon_min"],
             maximum_longitude=bbox["lon_max"],
@@ -331,8 +336,7 @@ def fetch_cmems(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
             output_filename=str(nc_path),
             username=user,
             password=pw,
-            overwrite_output_data=True,
-            force_download=True,
+            overwrite=True,
         )
         ds = xr.open_dataset(nc_path)
         df = _ds_to_dataframe(ds, "analysed_sst", "CMEMS", date)
