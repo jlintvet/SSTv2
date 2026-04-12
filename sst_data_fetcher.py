@@ -129,88 +129,94 @@ def fetch_mur(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SOURCE 2: NOAA ACSPO Super-collated SST (AVHRR + VIIRS combined)
-#   Resolution : 0.02° (~2 km) — finer than old VIIRS ERDDAP products
+# SOURCE 2: NOAA CoastWatch Co-gridded VIIRS SST (NOAA-20, daily composite)
+#   Resolution : ~1.2 km (sector) / 4 km (global WW00)
 #   Latency    : ~6–12 hours NRT
-#   Endpoint   : coastwatch.noaa.gov ERDDAP
-#   Dataset ID : noaacwLEOACSPOSSTL3SnrtCDaily  (confirmed active 2025)
+#   Endpoint   : coastwatch.noaa.gov THREDDS catalog — dynamic file discovery
 #   Variable   : sst
-#   Note       : May have cloud gaps — blended product fills them below
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
-    Returns a DataFrame with columns: lat, lon, sst_c, source, date
-    Tries NRT daily first, falls back to alternate hosts.
+    Fetches NOAA-20 VIIRS co-gridded daily SST from CoastWatch THREDDS.
+    Uses catalog XML to discover the actual filename for the given date,
+    then subsets via OPeNDAP. Falls back to ERDDAP polarwatch mirror.
     """
-    print(f"\n[2/3] NOAA ACSPO VIIRS SST  ({date})  ~2 km resolution")
+    print(f"\n[2/3] NOAA VIIRS SST  ({date})  ~1–4 km resolution")
+    nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
 
-    endpoints = [
-        # NOAA STAR ACSPO NRT SST — NOAA-20 + S-NPP VIIRS + GOES, 0.02 deg
-        # Served directly from STAR THREDDS, updated daily
-        (
-            "nesdisVHNSSTnrtDaily",
-            "sea_surface_temperature",
-            "https://www.star.nesdis.noaa.gov/thredds/dodsC/CoastWatch/VIIRS/noaa20/sst_acspo/night/DailyGlobal/WW00",
-            "thredds",
-            f"{date}",
-        ),
-        # CoastWatch central hub — blended ACSPO (AVHRR+VIIRS), 0.02 deg NRT
-        (
-            "noaacwLEOACSPOSSTL3SnrtCDaily",
-            "sst",
-            "https://coastwatch.noaa.gov/erddap/griddap",
-            "erddap",
-            f"[({date}T12:00:00Z)]",
-        ),
-        # CWCGOM AOML mirror
-        (
-            "noaacwLEOACSPOSSTL3SnrtCDaily",
-            "sst",
-            "https://cwcgom.aoml.noaa.gov/erddap/griddap",
-            "erddap",
-            f"[({date}T12:00:00Z)]",
-        ),
+    # ── Attempt 1: CoastWatch THREDDS catalog discovery ───────────────────────
+    # Catalog path uses day-of-year
+    import datetime as _dt
+    doy = date.timetuple().tm_yday
+    year = date.year
+    catalog_url = (
+        f"https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00"
+        f"/{year}/{doy:03d}/catalog.xml"
+    )
+    try:
+        print(f"  Discovering file via THREDDS catalog (DOY {doy:03d}) ...")
+        resp = requests.get(catalog_url, timeout=30)
+        resp.raise_for_status()
+        # Parse filename from catalog XML
+        import re
+        matches = re.findall(r'gridN20VIIRSSCIENCEL3UWW00/[^"]+\.nc', resp.text)
+        if not matches:
+            raise ValueError("No .nc files found in catalog")
+        # Take the nighttime composite (last file of day)
+        nc_name = sorted(matches)[-1].split('/')[-1]
+        opendap_url = (
+            f"https://coastwatch.noaa.gov/thredds/dodsC/gridN20VIIRSSCIENCEL3UWW00"
+            f"/{year}/{doy:03d}/{nc_name}"
+        )
+        print(f"  OPeNDAP: {nc_name}")
+        ds = xr.open_dataset(opendap_url, engine="netcdf4")
+        # Subset to bbox
+        lat_name = next(c for c in ds.coords if "lat" in c.lower())
+        lon_name = next(c for c in ds.coords if "lon" in c.lower())
+        ds = ds.sel({
+            lat_name: slice(bbox["lat_min"], bbox["lat_max"]),
+            lon_name: slice(bbox["lon_min"], bbox["lon_max"]),
+        })
+        # Find SST variable
+        var = next((v for v in ds.data_vars if "sst" in v.lower()), None)
+        if var is None:
+            raise ValueError(f"No SST variable found in {list(ds.data_vars)}")
+        df = _ds_to_dataframe(ds, var, "VIIRS", date)
+        print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
+        return df
+    except Exception as e:
+        print(f"  ✗ THREDDS catalog failed: {e}")
+
+    # ── Attempt 2: PolarWatch ERDDAP (MUR mirror also has VIIRS dataset) ──────
+    erddap_fallbacks = [
+        ("https://polarwatch.noaa.gov/erddap/griddap",   "nesdisVHNSSTnrtDaily",    "sea_surface_temperature"),
+        ("https://coastwatch.pfeg.noaa.gov/erddap/griddap", "erdVHsstaWS1day",       "analysed_sst"),
     ]
-
-    for entry in endpoints:
-        dataset_id, var, base, mode, time_arg = entry
-        nc_path = OUTPUT_DIR / f"_viirs_{date}.nc"
+    for base, dataset_id, var in erddap_fallbacks:
+        url = (
+            f"{base}/{dataset_id}.nc?{var}"
+            f"[({date}T12:00:00Z)]"
+            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+        )
         try:
             host = base.split('/')[2]
-            if mode == "erddap":
-                url = (
-                    f"{base}/{dataset_id}.nc"
-                    f"?{var}"
-                    f"{time_arg}"
-                    f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-                    f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-                )
-                print(f"  Trying {dataset_id} @ {host} ...")
-                r = requests.get(url, timeout=180, stream=True)
-                r.raise_for_status()
-                with open(nc_path, "wb") as f:
-                    for chunk in r.iter_content(1 << 20):
-                        f.write(chunk)
-                ds = xr.open_dataset(nc_path)
-            else:
-                # OPeNDAP/THREDDS — open directly with xarray
-                date_str = time_arg  # YYYY-MM-DD
-                opendap_url = (
-                    f"{base}/{date_str.replace('-', '/')}"
-                    f"/{date_str}000000-STAR-L3S_GHRSST-SSTsubskin-ACSPO_V2.81-NOAA_20-v02.0-fv01.0.nc"
-                )
-                print(f"  Trying STAR THREDDS OPeNDAP ({date_str}) ...")
-                ds = xr.open_dataset(opendap_url, engine="netcdf4")
-
+            print(f"  Trying {dataset_id} @ {host} ...")
+            r = requests.get(url, timeout=120, stream=True)
+            r.raise_for_status()
+            with open(nc_path, "wb") as f:
+                for chunk in r.iter_content(1 << 20):
+                    f.write(chunk)
+            ds = xr.open_dataset(nc_path)
             df = _ds_to_dataframe(ds, var, "VIIRS", date)
             print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
             return df
         except Exception as e:
-            print(f"  ✗ Failed: {e}")
+            print(f"  ✗ {dataset_id} failed: {e}")
             continue
 
-    print("  ✗ All VIIRS endpoints failed")
+    print("  ✗ All VIIRS sources failed")
     return None
 
 
@@ -231,13 +237,33 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     """
     print(f"\n[2b] NOAA Geo-polar Blended SST  ({date})  ~5 km, gap-filled")
 
-    url = (
-        f"https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDLDaily.nc"
-        f"?analysed_sst"
-        f"[({date}T12:00:00Z)]"
-        f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
-        f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
-    )
+    # Try multiple gap-filled blended products in order
+    blended_endpoints = [
+        # NOAA CoralTemp — gap-free 5km, confirmed current 2026
+        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacrwsstDaily", "analysed_sst"),
+        # NOAA Geo-polar blended day+night — try both ID variants
+        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDLDaily", "analysed_sst"),
+        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDaily",   "analysed_sst"),
+    ]
+    url = None
+    for _base, _dsid, _var in blended_endpoints:
+        _url = (
+            f"{_base}/{_dsid}.nc?{_var}"
+            f"[({date}T12:00:00Z)]"
+            f"[({bbox['lat_min']}):1:({bbox['lat_max']})]"
+            f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
+        )
+        try:
+            _r = requests.head(_url, timeout=15)
+            if _r.status_code < 400:
+                url = _url
+                _active_var = _var
+                print(f"  Using {_dsid}")
+                break
+        except Exception:
+            continue
+    if url is None:
+        raise ValueError("No blended endpoint responded")
     nc_path = OUTPUT_DIR / f"_blended_{date}.nc"
     try:
         print("  Downloading ...")
@@ -247,7 +273,7 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
             for chunk in r.iter_content(1 << 20):
                 f.write(chunk)
         ds = xr.open_dataset(nc_path)
-        df = _ds_to_dataframe(ds, "analysed_sst", "BLENDED", date)
+        df = _ds_to_dataframe(ds, _active_var, "BLENDED", date)
         print(f"  ✓ {len(df):,} points  |  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C")
         return df
     except Exception as e:
