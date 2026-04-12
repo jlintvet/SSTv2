@@ -190,11 +190,13 @@ def fetch_viirs(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
             print(f"  ✗ THREDDS {try_date}: {e}")
             continue
 
-    # ── Attempt 2: ERDDAP fallbacks — AOML mirror avoids coastwatch.noaa.gov IT issues
+    # ── Attempt 2: ERDDAP fallbacks — real alternative SST products ─────────────
+    # Note: jplMURSST41 is excluded here (already fetched as source 1)
     erddap_fallbacks = [
-        ("https://cwcgom.aoml.noaa.gov/erddap/griddap",    "noaacwBLENDEDsstDLDaily", "analysed_sst"),
-        ("https://cwcgom.aoml.noaa.gov/erddap/griddap",    "noaacrwsstDaily",         "analysed_sst"),
-        ("https://polarwatch.noaa.gov/erddap/griddap",      "jplMURSST41",             "analysed_sst"),
+        # NOAA CoralTemp 5km gap-free — different data from MUR
+        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacrwsstDaily",  "analysed_sst"),
+        # Geo-polar blended — multi-sensor gap-free
+        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacwBLENDEDsstDLDaily", "analysed_sst"),
     ]
     for try_date in _latest_available_date(date):
         for base, dataset_id, var in erddap_fallbacks:
@@ -243,14 +245,10 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
     print(f"\n[2b] NOAA Geo-polar Blended SST  ({date})  ~5 km, gap-filled")
 
     # Try multiple gap-filled blended products in order
+    # coastwatch.noaa.gov is slow but confirmed up — use long timeout
     blended_endpoints = [
-        # AOML mirror — avoids coastwatch.noaa.gov timeouts
-        ("https://cwcgom.aoml.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDLDaily", "analysed_sst"),
-        # CoralTemp on AOML mirror — gap-free 5km, 1985-present
-        ("https://cwcgom.aoml.noaa.gov/erddap/griddap", "noaacrwsstDaily",         "analysed_sst"),
-        # Fallback to coastwatch.noaa.gov if AOML is down
-        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacwBLENDEDsstDLDaily", "analysed_sst"),
-        ("https://coastwatch.noaa.gov/erddap/griddap",  "noaacrwsstDaily",         "analysed_sst"),
+        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacrwsstDaily",         "analysed_sst"),
+        ("https://coastwatch.noaa.gov/erddap/griddap", "noaacwBLENDEDsstDLDaily", "analysed_sst"),
     ]
     url = None
     _active_var = "analysed_sst"
@@ -263,7 +261,7 @@ def fetch_blended(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
                 f"[({bbox['lon_min']}):1:({bbox['lon_max']})]"
             )
             try:
-                _r = requests.get(_url, timeout=30, stream=True)
+                _r = requests.get(_url, timeout=120, stream=True)
                 _r.raise_for_status()
                 url = _url
                 _active_var = _var
@@ -325,7 +323,7 @@ def fetch_cmems(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
         # v2.0.0+ API: overwrite_output_data -> overwrite, force_download removed
         # Credentials read from env vars COPERNICUSMARINE_SERVICE_USERNAME/PASSWORD
         cm.subset(
-            dataset_id="cmems_obs-sst_glo_phy_nrt_l4_P1D-m",
+            dataset_id="METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2",
             variables=["analysed_sst"],
             minimum_longitude=bbox["lon_min"],
             maximum_longitude=bbox["lon_max"],
@@ -344,7 +342,12 @@ def fetch_cmems(date: datetime.date, bbox: dict) -> pd.DataFrame | None:
         return df
 
     except Exception as e:
-        print(f"  ✗ CMEMS fetch failed: {e}")
+        err_str = str(e)
+        if "credential" in err_str.lower() or "password" in err_str.lower() or "username" in err_str.lower():
+            print(f"  ✗ CMEMS auth failed — check CMEMS_USER/CMEMS_PASSWORD secrets in GitHub")
+            print(f"    Error: {e}")
+        else:
+            print(f"  ✗ CMEMS fetch failed: {e}")
         return None
 
 
