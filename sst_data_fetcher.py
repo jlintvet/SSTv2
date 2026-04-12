@@ -22,8 +22,8 @@ Usage:
     python sst_data_fetcher.py
 
     For CMEMS (optional, best gap-fill):
-        export CMEMS_USER=jlintvet
-        export CMEMS_PASSWORD=CMDesmoDog1!
+        export CMEMS_USER=your_username
+        export CMEMS_PASSWORD=your_password
 """
 
 import os
@@ -62,8 +62,8 @@ TARGET_DATE = (
 # Values: all | mur_only | viirs_only | cmems_only
 SOURCES_OVERRIDE = os.environ.get("SOURCES_OVERRIDE", "all").strip()
 
-# Write directly into DailySST/{date}/ — matches GitHub Actions artifact folder
-OUTPUT_DIR = Path("DailySST") / str(TARGET_DATE)
+# Write directly into DailySST/v2/ — files committed individually to repo
+OUTPUT_DIR = Path("DailySST") / "v2"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output formats — set to True for whichever your app needs
