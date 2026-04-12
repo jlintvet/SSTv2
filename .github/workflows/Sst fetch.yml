@@ -50,6 +50,8 @@ jobs:
             requests \
             xarray \
             netCDF4 \
+            h5py \
+            h5netcdf \
             numpy \
             pandas \
             pyarrow \
@@ -87,6 +89,25 @@ jobs:
           echo ""
           echo "Note: MUR + ACSPO VIIRS + Geo-polar Blended run without any credentials."
 
+      # ── Write NASA Earthdata .netrc for OPeNDAP access ──────────────────────────
+      - name: Configure NASA Earthdata credentials
+        run: |
+          # NASA OPeNDAP requires Earthdata login via .netrc
+          # Register free at https://urs.earthdata.nasa.gov
+          if [ -n "$NASA_EARTHDATA_USER" ] && [ -n "$NASA_EARTHDATA_PASSWORD" ]; then
+            echo "machine urs.earthdata.nasa.gov login $NASA_EARTHDATA_USER password $NASA_EARTHDATA_PASSWORD" >> ~/.netrc
+            echo "machine opendap.earthdata.nasa.gov login $NASA_EARTHDATA_USER password $NASA_EARTHDATA_PASSWORD" >> ~/.netrc
+            chmod 600 ~/.netrc
+            echo "✓ NASA Earthdata credentials configured"
+          else
+            echo "⚠️  NASA_EARTHDATA_USER/PASSWORD not set — MUR OPeNDAP will use anonymous access"
+            echo "   Register free at https://urs.earthdata.nasa.gov"
+            echo "   Add secrets: NASA_EARTHDATA_USER and NASA_EARTHDATA_PASSWORD"
+          fi
+        env:
+          NASA_EARTHDATA_USER:     ${{ secrets.NASA_EARTHDATA_USER }}
+          NASA_EARTHDATA_PASSWORD: ${{ secrets.NASA_EARTHDATA_PASSWORD }}
+
       # ── Secrets passed explicitly on the step that needs them ─────────────────
       - name: Fetch SST data
         env:
@@ -94,6 +115,8 @@ jobs:
           CMEMS_PASSWORD:                       ${{ secrets.CMEMS_PASSWORD }}
           COPERNICUSMARINE_SERVICE_USERNAME:    ${{ secrets.CMEMS_USER }}
           COPERNICUSMARINE_SERVICE_PASSWORD:    ${{ secrets.CMEMS_PASSWORD }}
+          NASA_EARTHDATA_USER:                  ${{ secrets.NASA_EARTHDATA_USER }}
+          NASA_EARTHDATA_PASSWORD:              ${{ secrets.NASA_EARTHDATA_PASSWORD }}
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
           SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
           PYTHONUNBUFFERED:     "1"
@@ -119,8 +142,10 @@ jobs:
           fi
 
       # Files are already written to DailySST/{date}/ by the fetcher
-      - name: List DailySST contents
+      - name: Clean scratch files and list outputs
         run: |
+          # Remove raw .nc scratch files — not needed in repo
+          find DailySST/ -name "_*.nc" -delete 2>/dev/null || true
           echo "=== DailySST/ contents ==="
           find DailySST/ -type f | sort
           echo ""
