@@ -100,16 +100,23 @@ SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ERDDAP bathymetry sources — tried in order until one succeeds
 #
 # Priority rationale:
-#   1. GEBCO_2023 via NCEI  — most accurate (incorporated recent multibeam surveys,
-#      especially in coastal Mid-Atlantic); NCEI is CI-runner friendly
-#   2. GEBCO_2020 via coastwatch.pfeg  — previous version, good fallback; pfeg
-#      occasionally blocks cloud/CI runner IPs
-#   3. ETOPO_2022 via NCEI  — different source, reliable last resort
+#   1. GEBCO_2020 via coastwatch.pfeg  — 15 arc-second (~450 m), confirmed reliable.
+#      GEBCO_2023/2024/2025 are not hosted on any public ERDDAP griddap server as of
+#      April 2026; they are only available as direct downloads from gebco.net.
+#      GEBCO_2020 remains the highest-resolution GEBCO version on ERDDAP.
+#   2. ETOPO_2022 (15 arc-sec) via oceanwatch.pifsc.noaa.gov  — NOAA's own 2022
+#      topography model, same 15 arc-second resolution as GEBCO, different server.
+#      Incorporates updated multibeam surveys through 2022.
+#   3. ETOPO_2022 (60 arc-sec) via NCEI  — lower resolution last resort (~1800 m).
+#      Use only if both higher-resolution sources fail.
+#
+# Note: To upgrade to a newer GEBCO grid when it becomes available on ERDDAP,
+# add it as the first entry. Check: https://coastwatch.pfeg.noaa.gov/erddap/griddap/
 # ---------------------------------------------------------------------------
 BATHY_SOURCES = [
-    ("https://www.ncei.noaa.gov/erddap/griddap/GEBCO_2023.csvp",        "elevation"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp", "elevation"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp", "z"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),  # 15 arc-sec
+    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z"),          # 15 arc-sec
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",           "z"),          # 60 arc-sec (lower res)
 ]
 
 # ---------------------------------------------------------------------------
@@ -412,7 +419,7 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
             "generated_utc":       (datetime.datetime.now(datetime.timezone.utc)
                                     .isoformat(timespec="seconds")
                                     .replace("+00:00", "Z")),
-            "source":              "GEBCO_2023 (primary) | GEBCO_2020 | ETOPO_2022",
+            "source":              "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
             "stride":              BATHY_STRIDE,
             "res_lat_deg":         res_lat,
             "res_lon_deg":         res_lon,
