@@ -46,9 +46,14 @@ context: HTTP^ Basic: Access denied.
 
 [3/3] Copernicus CMEMS L4 SST  (2026-04-13)  ~5 km, fully gap-filled
   Downloading via copernicusmarine client ...
-INFO - 2026-04-15T11:00:11Z - Selected dataset version: "default"
-INFO - 2026-04-15T11:00:11Z - Selected dataset part: "default"
-  ✗ CMEMS fetch failed: No module named 'h5py', backend not available. Please install 'h5py' into your Python environment.
+INFO - 2026-04-15T11:03:31Z - Selected dataset version: "default"
+INFO - 2026-04-15T11:03:31Z - Selected dataset part: "default"
+  ✓ 3,364 points  |  9.73–25.43 °C
+  Exporting cmems (3,364 points) ...
+    GeoJSON  → DailySST/v2/cmems_20260413.geojson  (3,364 pts, 519 KB)
+    CSV      → DailySST/v2/cmems_20260413.csv  (3,364 rows, 144 KB)
+    Parquet  → DailySST/v2/cmems_20260413.parquet  (3,364 rows, 23 KB)
+    Grid JSON → DailySST/v2/cmems_20260413_grid.json  (60×70 grid, 25 KB)
 
 [Blending sources into composite ...]
   Exporting blended (1,827 points) ...
@@ -63,7 +68,7 @@ INFO - 2026-04-15T11:00:11Z - Selected dataset part: "default"
   MUR            81,825     10.61     25.34
   VIIRS(ACSPO)      3,466     11.01     24.93
   BLENDED         3,466     11.01     24.93
-  CMEMS               —
+  CMEMS           3,364      9.73     25.43
 ============================================================
 
   Files written to: /home/runner/work/SSTv2/SSTv2/DailySST/v2
