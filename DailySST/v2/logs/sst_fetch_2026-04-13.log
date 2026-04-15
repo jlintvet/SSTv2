@@ -1,0 +1,84 @@
+============================================================
+  High-Fidelity SST Data Fetcher
+  Date : 2026-04-13
+  BBOX : {'lon_min': -77.5, 'lon_max': -74.0, 'lat_min': 33.5, 'lat_max': 36.5}
+  Out  : /home/runner/work/SSTv2/SSTv2/DailySST/v2
+============================================================
+
+[1/3] NASA MUR SST  (target: 2026-04-13)  ~1 km resolution
+  Trying NASA OPeNDAP for 2026-04-13 ...
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+  ✗ NASA OPeNDAP 2026-04-13: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260413090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12349:12649][10249:10599]'
+  Trying polarwatch.noaa.gov for 2026-04-13 ...
+  ✓ 81,825 points  |  10.61–25.34 °C  (date used: 2026-04-13)
+  Exporting mur (81,825 points) ...
+    GeoJSON  → DailySST/v2/mur_20260413.geojson  (81,825 pts, 12353 KB)
+    CSV      → DailySST/v2/mur_20260413.csv  (81,825 rows, 3243 KB)
+    Parquet  → DailySST/v2/mur_20260413.parquet  (81,825 rows, 355 KB)
+    Grid JSON → DailySST/v2/mur_20260413_grid.json  (301×351 grid, 672 KB)
+
+[2/3] NOAA VIIRS SST  (target: 2026-04-13)  ~1–4 km resolution
+  THREDDS catalog DOY 103 (2026-04-13) ...
+  ✗ THREDDS 2026-04-13: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/103/catalog.xml
+  THREDDS catalog DOY 102 (2026-04-12) ...
+  ✗ THREDDS 2026-04-12: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/102/catalog.xml
+  THREDDS catalog DOY 101 (2026-04-11) ...
+  ✗ THREDDS 2026-04-11: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/101/catalog.xml
+  THREDDS catalog DOY 100 (2026-04-10) ...
+  ✗ THREDDS 2026-04-10: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/100/catalog.xml
+  Trying noaacrwsstDaily @ coastwatch.noaa.gov (2026-04-13) ...
+  ✓ 3,466 points  |  11.01–24.93 °C  (date: 2026-04-13)
+  Exporting viirs (3,466 points) ...
+    GeoJSON  → DailySST/v2/viirs_20260413.geojson  (3,466 pts, 534 KB)
+    CSV      → DailySST/v2/viirs_20260413.csv  (3,466 rows, 148 KB)
+    Parquet  → DailySST/v2/viirs_20260413.parquet  (3,466 rows, 23 KB)
+    Grid JSON → DailySST/v2/viirs_20260413_grid.json  (61×71 grid, 25 KB)
+
+[2b] NOAA Geo-polar Blended SST  (2026-04-13)  ~5 km, gap-filled
+  Using noaacrwsstDaily for 2026-04-13
+  ✓ 3,466 points  |  11.01–24.93 °C  (date used: 2026-04-13)
+  Exporting blended_geopolar (3,466 points) ...
+    GeoJSON  → DailySST/v2/blended_geopolar_20260413.geojson  (3,466 pts, 541 KB)
+    CSV      → DailySST/v2/blended_geopolar_20260413.csv  (3,466 rows, 155 KB)
+    Parquet  → DailySST/v2/blended_geopolar_20260413.parquet  (3,466 rows, 23 KB)
+    Grid JSON → DailySST/v2/blended_geopolar_20260413_grid.json  (61×71 grid, 25 KB)
+
+[3/3] Copernicus CMEMS L4 SST  (2026-04-13)  ~5 km, fully gap-filled
+  Downloading via copernicusmarine client ...
+INFO - 2026-04-15T11:00:11Z - Selected dataset version: "default"
+INFO - 2026-04-15T11:00:11Z - Selected dataset part: "default"
+  ✗ CMEMS fetch failed: No module named 'h5py', backend not available. Please install 'h5py' into your Python environment.
+
+[Blending sources into composite ...]
+  Exporting blended (1,827 points) ...
+    GeoJSON  → DailySST/v2/blended_20260413.geojson  (1,827 pts, 281 KB)
+    CSV      → DailySST/v2/blended_20260413.csv  (1,827 rows, 78 KB)
+    Parquet  → DailySST/v2/blended_20260413.parquet  (1,827 rows, 23 KB)
+    Grid JSON → DailySST/v2/blended_20260413_grid.json  (41×57 grid, 15 KB)
+
+============================================================
+  Source         Points    Min °C    Max °C
+  ----------  ---------  -------  -------
+  MUR            81,825     10.61     25.34
+  VIIRS(ACSPO)      3,466     11.01     24.93
+  BLENDED         3,466     11.01     24.93
+  CMEMS               —
+============================================================
+
+  Files written to: /home/runner/work/SSTv2/SSTv2/DailySST/v2
+
+  Data schema (all formats):
+    lat     — decimal degrees (WGS84)
+    lon     — decimal degrees (WGS84)
+    sst_c   — sea surface temperature, Celsius
+    sst_f   — sea surface temperature, Fahrenheit
+    source  — MUR | VIIRS | CMEMS | blended
+    date    — ISO date string
+
+  Recommended app rendering stack:
+    • deck.gl HeatmapLayer or GridLayer  (WebGL, handles 500k+ pts)
+    • Mapbox GL raster-array source      (feed the grid JSON)
+    • Leaflet canvas renderer            (for the GeoJSON)
+    • PostGIS + ST_PixelAsPoints         (for server-side tile generation)
+
