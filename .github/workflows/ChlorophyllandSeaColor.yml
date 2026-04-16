@@ -75,6 +75,7 @@ jobs:
           CMEMS_PASSWORD:        ${{ secrets.CMEMS_PASSWORD }}
           TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
           SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
+        run: python DailyChlorophyllandSeaColorRetrieval.py
 
       # ── 5. Commit & push output files ────────────────────────────────────
       # Only commits if files actually changed (git diff --staged --quiet guard).
