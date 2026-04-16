@@ -126,14 +126,16 @@ CMEMS_ENABLED  = bool(CMEMS_USERNAME and CMEMS_PASSWORD)
 # CHL: Global OLCI 300m — OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
 CMEMS_CHL_DATASET_ID = "cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D"
 
-# Kd490: The global 300m product has no transparency dataset; Kd490 is only
-# available globally at 4 km.  However, the North Atlantic regional product
-# (OCEANCOLOUR_ATL_BGC_L3_NRT_009_111) provides OLCI 300 m transparency data
-# that covers the Mid-Atlantic Bight fishing grounds (33–39 N, 72–79 W).
-# Try ATL 300 m first; fall back to GLO 4 km if the ATL subset returns nothing.
+# Kd490: The global product has no 300m transparency dataset (only 4km).
+# The North Atlantic regional product (OCEANCOLOUR_ATL_BGC_L3_NRT_009_111)
+# covers the Mid-Atlantic Bight fishing grounds (33–39 N, 72–79 W) and
+# provides both OLCI 300m and 1km multi-sensor transparency (KD490).
+# Confirmed naming pattern from CMEMS MY dataset: bgc-transp + multi-1km.
+# Try in priority order: ATL 300m OLCI → ATL 1km multi → GLO 4km multi.
 CMEMS_KD490_SOURCES = [
     # (dataset_id, variable_name, label)
-    ("cmems_obs-oc_atl_bgc-transp_nrt_l3-olci-300m_P1D",  "KD490", "CMEMS_ATL_300m"),
+    ("cmems_obs-oc_atl_bgc-transp_nrt_l3-olci-300m_P1D",  "KD490", "CMEMS_ATL_OLCI_300m"),
+    ("cmems_obs-oc_atl_bgc-transp_nrt_l3-multi-1km_P1D",  "KD490", "CMEMS_ATL_1km"),
     ("cmems_obs-oc_glo_bgc-transp_nrt_l3-multi-4km_P1D",  "KD490", "CMEMS_GLO_4km"),
 ]
 
