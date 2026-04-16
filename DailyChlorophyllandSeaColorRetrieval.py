@@ -6,15 +6,15 @@ Retrieves the last three days of:
   1. Chlorophyll-a (CHL)
      ─────────────────────────────────────────────────────────────────────
      Daily L3 4 km composite — cloud pixels are null (visible-band sensor).
-     Sources tried in order:
-       VIIRS SNPP      (nesdisVHNSQchlaDaily)   — primary NRT ocean color sensor
-       PolarWatch      (same dataset, alt host)
-       MODIS Aqua      (erdMH1chla1day)          — archive; hardware issues ~2022-23
-       OceanWatch      (aqua_chla_1d_2018_0)     — third fallback, variable: chlor_a
+     Sources tried in order (all on coastwatch.noaa.gov directly — pfeg/polarwatch redirect there):
+       VIIRS SNPP NRT  (noaacwNPPVIIRSchlaDaily)   — same-day processing, confirmed 2026
+       VIIRS SNPP SQ   (noaacwNPPVIIRSSQchlaDaily) — science quality, ~3-day lag
+       MODIS Aqua SQ   (erdMH1chla1day)             — archive fallback, coastwatch.pfeg
 
      8-day composite — gap-filled, better spatial coverage:
-       MODIS Aqua 8day (erdMH1chla8day)
-       VIIRS SNPP 8day (nesdisVHNSQchlaWeekly)
+       MODIS Aqua 8day (erdMH1chla8day)             — polarwatch.noaa.gov (no redirect)
+       VIIRS SNPP SQ   (noaacwNPPVIIRSSQchlaWeekly) — coastwatch.noaa.gov
+       VIIRS SNPP NRT  (noaacwNPPVIIRSchlaWeekly)   — coastwatch.noaa.gov
 
      Per-cell color classification from chlorophyll-a (mg/m³):
        blue_water  : chl < 0.15   — oligotrophic / Gulf Stream
@@ -37,9 +37,9 @@ Retrieves the last three days of:
      The blue/green boundary identified by Kd490 is the primary search cue
      for offshore pelagic species (mahi-mahi, tuna, billfish, wahoo).
 
-     Sources tried in order:
-       VIIRS SNPP Kd490 (nesdisVHNSQkd490Daily, variable: kd490) — primary NRT
-       PolarWatch       (same dataset, alternate host)
+     Sources tried in order (direct to coastwatch.noaa.gov — no redirect overhead):
+       VIIRS SNPP NRT   (noaacwNPPVIIRSkd490Daily)   — NRT daily if published globally
+       VIIRS SNPP SQ    (noaacwNPPVIIRSSQkd490Daily) — science quality, confirmed ID from redirect logs
 
      Per-cell color classification from Kd490 (m⁻¹):
        blue_water  : kd490 < 0.06    — clear, oligotrophic
@@ -93,9 +93,9 @@ STRIDE  = 1
 
 RETENTION_DAYS = 3
 SEARCH_WINDOW  = 7      # days back to search if latest dates unavailable
-TIMEOUT        = 300    # seconds
-MAX_RETRIES    = 3
-BACKOFF_FACTOR = 2
+TIMEOUT        = 60     # seconds — short; ERDDAP 500/404 errors are persistent, not transient
+MAX_RETRIES    = 2      # retries only on network-level errors (429, 502, 503, 504)
+BACKOFF_FACTOR = 1      # 1 s, 2 s between retries
 
 # Output directories (relative to script location)
 _SCRIPT_DIR         = pathlib.Path(__file__).resolve().parent
@@ -125,39 +125,51 @@ CHL_GREEN_THRESHOLD = 0.50      # > 0.50  → green water
 # Each entry: (base_url, erddap_variable_name, source_label)
 # ---------------------------------------------------------------------------
 
+# ── Background: server consolidation ─────────────────────────────────────────
+# As of 2025-2026 both coastwatch.pfeg.noaa.gov AND polarwatch.noaa.gov issue
+# HTTP 301/302 redirects for all VIIRS griddap requests, landing at
+# coastwatch.noaa.gov with renamed dataset IDs (noaacwNPP* prefix).
+# Querying the pfeg/polarwatch hostnames therefore doubles latency and still
+# hits the same backend.  Sources below target coastwatch.noaa.gov directly.
+#
+# Naming convention at coastwatch.noaa.gov:
+#   noaacwNPPVIIRS<product>Daily   — Near Real-Time  (NRT, same-day processing)
+#   noaacwNPPVIIRSSQ<product>Daily — Science Quality (SQ, reprocessed, ~3-day lag)
+# NRT is listed first: it is more likely to have yesterday's data ready in time
+# for the morning cron run.  SQ is retained as a fallback for higher quality.
+#
+# coastwatch.pfeg.noaa.gov is kept only for MODIS Aqua products where no
+# canonical coastwatch.noaa.gov equivalent has been confirmed.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Chlorophyll-a daily L3 4 km
-# VIIRS SNPP (nesdisVHNSQchlaDaily) — primary NRT ocean color sensor, confirmed on
-#   coastwatch.pfeg.noaa.gov and polarwatch.noaa.gov.
-# MODIS Aqua (erdMH1chla1day) — confirmed on coastwatch.pfeg; rich archive, hardware
-#   issues ~2022-23 reduced NRT reliability; kept as fallback.
-# OceanWatch MODIS Aqua (aqua_chla_1d_2018_0) — third fallback; variable name is
-#   "chlor_a" but normalised to "chlorophyll" in _build_chl_payload().
 CHL_DAILY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQchlaDaily.csvp",  "chlorophyll", "VIIRS_SNPP"),
-    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQchlaDaily.csvp",       "chlorophyll", "VIIRS_SNPP"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla1day.csvp",        "chlorophyll", "MODIS_Aqua"),
-    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/aqua_chla_1d_2018_0.csvp", "chlor_a",     "MODIS_Aqua_OW"),
+    # VIIRS NRT — confirmed working 2026-04-08, direct (no redirect)
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSchlaDaily.csvp",   "chlorophyll", "VIIRS_SNPP_NRT"),
+    # VIIRS SQ  — higher quality but may lag; 500 errors possible during outages
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaDaily.csvp", "chlorophyll", "VIIRS_SNPP_SQ"),
+    # MODIS Aqua SQ — pfeg may redirect, but kept as independent fallback source
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla1day.csvp",       "chlorophyll", "MODIS_Aqua"),
 ]
 
 # Chlorophyll-a 8-day composite L3 4 km (gap-filled)
-# MODIS Aqua 8-day (erdMH1chla8day) — confirmed on coastwatch.pfeg.
-# VIIRS SNPP weekly (nesdisVHNSQchlaWeekly) — VIIRS equivalent; confirmed on
-#   coastwatch.pfeg.  Listed after MODIS to preserve historical consistency.
+# erdMH1chla8day confirmed on polarwatch.noaa.gov (serves directly, no redirect).
+# VIIRS weekly equivalent at coastwatch.noaa.gov follows the same noaacwNPP* prefix.
 CHL_8DAY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",         "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://polarwatch.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",              "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQchlaWeekly.csvp", "chlorophyll", "VIIRS_SNPP_8day"),
-    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQchlaWeekly.csvp",      "chlorophyll", "VIIRS_SNPP_8day"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",                "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",           "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaWeekly.csvp",   "chlorophyll", "VIIRS_SNPP_SQ_8day"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSchlaWeekly.csvp",     "chlorophyll", "VIIRS_SNPP_NRT_8day"),
 ]
 
 # Kd490 daily L3 4 km
-# VIIRS SNPP (nesdisVHNSQkd490Daily) — confirmed on coastwatch.pfeg.
-# PolarWatch mirror of the same dataset as secondary host.
-# MODIS Aqua Kd490 dataset ID unconfirmed on public ERDDAP servers; omitted to
-# avoid guaranteed 404 on each run.  Re-add if a confirmed ID is located.
+# NRT daily Kd490: noaacwNPPVIIRSkd490Daily (naming mirrors the CHL NRT pattern).
+# SQ daily Kd490:  noaacwNPPVIIRSSQkd490Daily (redirect target confirmed in logs).
+# Global NRT daily Kd490 may not be published separately from NRT CHL; if
+# noaacwNPPVIIRSkd490Daily returns 404 the SQ version is the sole daily product.
 KD490_DAILY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQkd490Daily.csvp", "kd490", "VIIRS_SNPP"),
-    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQkd490Daily.csvp",      "kd490", "VIIRS_SNPP"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSkd490Daily.csvp",   "kd490", "VIIRS_SNPP_NRT"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQkd490Daily.csvp", "kd490", "VIIRS_SNPP_SQ"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -168,7 +180,10 @@ def _make_session() -> requests.Session:
     retry   = Retry(
         total             = MAX_RETRIES,
         backoff_factor    = BACKOFF_FACTOR,
-        status_forcelist  = [429, 500, 502, 503, 504],
+        # 500 intentionally excluded: ERDDAP server errors are persistent (wrong ID,
+        # server outage).  Retrying a 500 just wastes minutes per source.
+        # Retry only on transient gateway/rate-limit errors.
+        status_forcelist  = [429, 502, 503, 504],
         allowed_methods   = ["GET"],
     )
     adapter = HTTPAdapter(max_retries=retry)
