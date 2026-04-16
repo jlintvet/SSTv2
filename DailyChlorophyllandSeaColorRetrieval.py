@@ -6,15 +6,20 @@ Retrieves the last three days of:
   1. Chlorophyll-a (CHL)
      ─────────────────────────────────────────────────────────────────────
      Daily L3 4 km composite — cloud pixels are null (visible-band sensor).
-     Sources tried in order (all on coastwatch.noaa.gov directly — pfeg/polarwatch redirect there):
-       VIIRS SNPP NRT  (noaacwNPPVIIRSchlaDaily)   — same-day processing, confirmed 2026
-       VIIRS SNPP SQ   (noaacwNPPVIIRSSQchlaDaily) — science quality, ~3-day lag
-       MODIS Aqua SQ   (erdMH1chla1day)             — archive fallback, coastwatch.pfeg
+     Sources tried in order:
+       1. Blended SNPP+NOAA-20 VIIRS (nesdisVHNnoaaSNPPnoaa20chlaDaily) — pfeg-hosted,
+          may bypass the coastwatch.noaa.gov griddap backend
+       2. NOAA-20 VIIRS NRT (noaacwNPPN20VIIRSchlociDaily) — separate satellite pipeline,
+          may succeed when S-NPP pipeline is 500ing
+       3. VIIRS S-NPP NRT  (noaacwNPPVIIRSchlaDaily)   — same-day, coastwatch.noaa.gov
+       4. VIIRS S-NPP SQ   (noaacwNPPVIIRSSQchlaDaily) — science quality, ~3-day lag
+       5. MODIS Aqua SQ    (erdMH1chla1day)             — archive fallback (MODIS Aqua
+          hardware issues since 2022; may not have recent data)
 
      8-day composite — gap-filled, better spatial coverage:
-       MODIS Aqua 8day (erdMH1chla8day)             — polarwatch.noaa.gov (no redirect)
-       VIIRS SNPP SQ   (noaacwNPPVIIRSSQchlaWeekly) — coastwatch.noaa.gov
-       VIIRS SNPP NRT  (noaacwNPPVIIRSchlaWeekly)   — coastwatch.noaa.gov
+       VIIRS SNPP+NOAA-20 DINEOF  (noaacwNPPN20VIIRSDINEOFDaily) — cloud gap-filled, 9km
+       VIIRS+S3A DINEOF SQ        (nesdisNPPN20S3ASCIDINEOFDaily) — polarwatch, gap-filled
+       MODIS Aqua 8day            (erdMH1chla8day)  — polarwatch.noaa.gov
 
      Per-cell color classification from chlorophyll-a (mg/m³):
        blue_water  : chl < 0.15   — oligotrophic / Gulf Stream
@@ -37,9 +42,10 @@ Retrieves the last three days of:
      The blue/green boundary identified by Kd490 is the primary search cue
      for offshore pelagic species (mahi-mahi, tuna, billfish, wahoo).
 
-     Sources tried in order (direct to coastwatch.noaa.gov — no redirect overhead):
-       VIIRS SNPP NRT   (noaacwNPPVIIRSkd490Daily)   — NRT daily if published globally
-       VIIRS SNPP SQ    (noaacwNPPVIIRSSQkd490Daily) — science quality, confirmed ID from redirect logs
+     Sources tried in order:
+       VIIRS NOAA-20 NRT (noaacwNPPN20VIIRSkd490Daily)  — separate satellite pipeline, tried first
+       VIIRS SNPP NRT    (noaacwNPPVIIRSkd490Daily)     — NRT daily
+       VIIRS SNPP SQ     (noaacwNPPVIIRSSQkd490Daily)   — science quality, ID confirmed from redirect logs
 
      Per-cell color classification from Kd490 (m⁻¹):
        blue_water  : kd490 < 0.06    — clear, oligotrophic
@@ -76,7 +82,9 @@ import io
 import json
 import logging
 import datetime
+import os
 import pathlib
+import tempfile
 import time
 import requests
 from requests.adapters import HTTPAdapter
@@ -96,6 +104,32 @@ SEARCH_WINDOW  = 7      # days back to search if latest dates unavailable
 TIMEOUT        = 60     # seconds — short; ERDDAP 500/404 errors are persistent, not transient
 MAX_RETRIES    = 2      # retries only on network-level errors (429, 502, 503, 504)
 BACKOFF_FACTOR = 1      # 1 s, 2 s between retries
+
+# ---------------------------------------------------------------------------
+# CMEMS (Copernicus Marine Service) — Sentinel-3 OLCI, 300m, primary source
+# ---------------------------------------------------------------------------
+# Set CMEMS_USERNAME and CMEMS_PASSWORD as GitHub repository secrets.
+# When credentials are present, CMEMS is tried first (before ERDDAP).
+# Sentinel-3 OLCI delivers chlorophyll and Kd490 at 300m native resolution —
+# higher fidelity than 4km VIIRS L3 global products.
+#
+# CMEMS product: OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
+#   Chlorophyll : cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D  var: CHL
+#   Kd490       : cmems_obs-oc_glo_bgc-optics_nrt_l3-olci-300m_P1D    var: KD490
+#
+# Latency: ~3–6 hours after overpass (NRT). Both Sentinel-3A and 3B contribute.
+# ---------------------------------------------------------------------------
+CMEMS_USERNAME = os.environ.get("CMEMS_USERNAME", "")
+CMEMS_PASSWORD = os.environ.get("CMEMS_PASSWORD", "")
+CMEMS_ENABLED  = bool(CMEMS_USERNAME and CMEMS_PASSWORD)
+
+# Dataset IDs within OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
+CMEMS_CHL_DATASET_ID   = "cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D"
+CMEMS_KD490_DATASET_ID = "cmems_obs-oc_glo_bgc-optics_nrt_l3-olci-300m_P1D"
+
+# Stride applied when reading the 300m NetCDF to keep output file size
+# manageable.  stride=4 → ~1.2 km effective resolution, ~250k cells in bbox.
+CMEMS_STRIDE = 4
 
 # Output directories (relative to script location)
 _SCRIPT_DIR         = pathlib.Path(__file__).resolve().parent
@@ -142,34 +176,49 @@ CHL_GREEN_THRESHOLD = 0.50      # > 0.50  → green water
 # canonical coastwatch.noaa.gov equivalent has been confirmed.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Chlorophyll-a daily L3 4 km
+# ── Chlorophyll-a daily ───────────────────────────────────────────────────────
+# Source priority rationale:
+# 1. Blended SNPP+NOAA-20 on pfeg: uses old "nesdis" naming, may be locally
+#    served on coastwatch.pfeg.noaa.gov without redirecting to coastwatch.noaa.gov.
+#    If pfeg now proxies all griddap to coastwatch.noaa.gov this will also 500,
+#    but it's worth trying first since pfeg has historically kept some datasets local.
+# 2. NOAA-20 VIIRS (OCI algorithm): separate satellite, separate processing
+#    pipeline on coastwatch.noaa.gov.  Variable name is chlor_a.
+# 3+4. S-NPP NRT and SQ: both on coastwatch.noaa.gov; these are the canonical
+#    sources but currently 500-ing during server outage.
+# 5. MODIS Aqua: hardware issues since 2022; recent data may be absent (404).
 CHL_DAILY_SOURCES = [
-    # VIIRS NRT — confirmed working 2026-04-08, direct (no redirect)
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSchlaDaily.csvp",   "chlorophyll", "VIIRS_SNPP_NRT"),
-    # VIIRS SQ  — higher quality but may lag; 500 errors possible during outages
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaDaily.csvp", "chlorophyll", "VIIRS_SNPP_SQ"),
-    # MODIS Aqua SQ — pfeg may redirect, but kept as independent fallback source
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla1day.csvp",       "chlorophyll", "MODIS_Aqua"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNnoaaSNPPnoaa20chlaDaily.csvp", "chlorophyll", "VIIRS_SNPP_N20_Blend"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSchlociDaily.csvp",          "chlor_a",     "VIIRS_NOAA20_NRT"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSchlaDaily.csvp",               "chlorophyll", "VIIRS_SNPP_NRT"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaDaily.csvp",             "chlorophyll", "VIIRS_SNPP_SQ"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla1day.csvp",                   "chlorophyll", "MODIS_Aqua"),
 ]
 
-# Chlorophyll-a 8-day composite L3 4 km (gap-filled)
-# erdMH1chla8day confirmed on polarwatch.noaa.gov (serves directly, no redirect).
-# VIIRS weekly equivalent at coastwatch.noaa.gov follows the same noaacwNPP* prefix.
+# ── Chlorophyll-a 8-day / gap-filled composite ────────────────────────────────
+# DINEOF (Data Interpolating Empirical Orthogonal Functions) gap-fills cloud
+# pixels using spatiotemporal interpolation — far better spatial coverage than
+# a raw 8-day max composite.  9km resolution is coarser but cloud-free.
+# Blended VIIRS+Sentinel-3A DINEOF on polarwatch is the best available gap-fill.
 CHL_8DAY_SOURCES = [
-    ("https://polarwatch.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",                "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",           "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaWeekly.csvp",   "chlorophyll", "VIIRS_SNPP_SQ_8day"),
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSchlaWeekly.csvp",     "chlorophyll", "VIIRS_SNPP_NRT_8day"),
+    # DINEOF gap-filled — best cloud coverage, variable name is chlor_a
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily.csvp",     "chlor_a",     "VIIRS_N20_DINEOF_9km"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisNPPN20S3ASCIDINEOFDaily.csvp",    "chlor_a",     "VIIRS_S3A_DINEOF_SQ"),
+    # Standard 8-day composites
+    ("https://polarwatch.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",                   "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",              "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQchlaWeekly.csvp",      "chlorophyll", "VIIRS_SNPP_SQ_8day"),
 ]
 
-# Kd490 daily L3 4 km
-# NRT daily Kd490: noaacwNPPVIIRSkd490Daily (naming mirrors the CHL NRT pattern).
-# SQ daily Kd490:  noaacwNPPVIIRSSQkd490Daily (redirect target confirmed in logs).
-# Global NRT daily Kd490 may not be published separately from NRT CHL; if
-# noaacwNPPVIIRSkd490Daily returns 404 the SQ version is the sole daily product.
+# ── Kd490 daily L3 4 km ───────────────────────────────────────────────────────
+# Same rationale as CHL: NOAA-20 tried first (separate satellite pipeline),
+# then S-NPP NRT and SQ.  SQ dataset ID confirmed from redirect logs.
+# If noaacwNPPN20VIIRSkd490Daily does not exist (404), script falls through
+# to S-NPP sources gracefully.
 KD490_DAILY_SOURCES = [
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSkd490Daily.csvp",   "kd490", "VIIRS_SNPP_NRT"),
-    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQkd490Daily.csvp", "kd490", "VIIRS_SNPP_SQ"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSkd490Daily.csvp",   "kd490", "VIIRS_NOAA20_NRT"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSkd490Daily.csvp",      "kd490", "VIIRS_SNPP_NRT"),
+    ("https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPVIIRSSQkd490Daily.csvp",    "kd490", "VIIRS_SNPP_SQ"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -312,6 +361,104 @@ def _fetch_day(session: requests.Session, sources: list[tuple],
             log.warning("    ✗ Request error — %s: %s", label, exc)
     return None
 
+# ---------------------------------------------------------------------------
+# CMEMS fetch — Sentinel-3 OLCI NetCDF subset via copernicusmarine client
+# ---------------------------------------------------------------------------
+def _fetch_cmems_subset(dataset_id: str, variable: str,
+                        date: datetime.date) -> "list[dict] | None":
+    """
+    Download one day of data from CMEMS via the copernicusmarine Python client.
+
+    Returns a list of {lat, lon, <variable>} dicts (same shape as ERDDAP rows),
+    or None on any failure.  The variable name matches what the NetCDF file
+    contains (e.g. 'CHL', 'KD490') — callers normalise it downstream.
+
+    Soft dependencies: copernicusmarine, xarray.  If either is missing the
+    function logs a warning and returns None so the ERDDAP fallback is used.
+    """
+    if not CMEMS_ENABLED:
+        return None
+
+    try:
+        import copernicusmarine          # pip install copernicusmarine
+    except ImportError:
+        log.warning("  copernicusmarine not installed — skipping CMEMS source.")
+        return None
+
+    try:
+        import xarray as xr              # pip install xarray
+    except ImportError:
+        log.warning("  xarray not installed — skipping CMEMS source.")
+        return None
+
+    log.info("    [CMEMS Sentinel-3 OLCI 300m] %s  var=%s", date.isoformat(), variable)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = pathlib.Path(tmpdir) / "cmems_subset.nc"
+
+            copernicusmarine.subset(
+                dataset_id           = dataset_id,
+                variables            = [variable],
+                minimum_longitude    = LON_MIN,
+                maximum_longitude    = LON_MAX,
+                minimum_latitude     = LAT_MIN,
+                maximum_latitude     = LAT_MAX,
+                start_datetime       = f"{date.isoformat()}T00:00:00",
+                end_datetime         = f"{date.isoformat()}T23:59:59",
+                output_filename      = str(out_path),
+                username             = CMEMS_USERNAME,
+                password             = CMEMS_PASSWORD,
+                overwrite            = True,
+                disable_progress_bar = True,
+            )
+
+            if not out_path.exists() or out_path.stat().st_size == 0:
+                log.warning("    CMEMS: empty output for %s", date.isoformat())
+                return None
+
+            ds = xr.open_dataset(str(out_path))
+
+            # Sentinel-3 OLCI NetCDF uses 'latitude'/'longitude' coordinate names.
+            # Some products use 'lat'/'lon' — fall back gracefully.
+            lat_key = "latitude" if "latitude" in ds.coords else "lat"
+            lon_key = "longitude" if "longitude" in ds.coords else "lon"
+            lats = ds[lat_key].values
+            lons = ds[lon_key].values
+
+            # Shape may be (time, lat, lon) or (lat, lon); squeeze time dim.
+            vals = ds[variable].values
+            if vals.ndim == 3:
+                vals = vals[0]
+
+            rows = []
+            s = CMEMS_STRIDE
+            for i in range(0, len(lats), s):
+                for j in range(0, len(lons), s):
+                    v   = vals[i, j]
+                    val = None if (v != v) else float(v)   # NaN → None
+                    rows.append({
+                        "lat": round(float(lats[i]), 5),
+                        "lon": round(float(lons[j]), 5),
+                        variable: val,
+                    })
+
+            ds.close()
+
+            ocean = sum(1 for r in rows if r[variable] is not None)
+            if ocean == 0:
+                log.warning("    CMEMS: all cells cloud/null for %s", date.isoformat())
+                return None
+
+            log.info("    ✓ CMEMS %d rows, %d ocean cells (stride=%d, ~%.0fm res)",
+                     len(rows), ocean, s, 300 * s)
+            return rows
+
+    except Exception as exc:
+        log.warning("    ✗ CMEMS error (%s): %s", dataset_id, exc)
+        return None
+
+
 # ===========================================================================
 # CHLOROPHYLL PIPELINE
 # ===========================================================================
@@ -371,12 +518,23 @@ def fetch_chl_daily(session: requests.Session, date: datetime.date,
                     output_dir: pathlib.Path) -> "dict | None":
     """Fetch one day of chlorophyll-a. Returns manifest entry dict or None."""
     log.info("  CHL daily  %s", date.isoformat())
-    result = _fetch_day(session, CHL_DAILY_SOURCES, date)
-    if result is None:
-        log.warning("  No CHL daily data for %s.", date.isoformat())
-        return None
 
-    rows, label, base_url, variable = result
+    # ── 1. Try CMEMS Sentinel-3 OLCI 300m (primary — highest resolution) ──
+    cmems_rows = _fetch_cmems_subset(CMEMS_CHL_DATASET_ID, "CHL", date)
+    if cmems_rows is not None:
+        rows, label, base_url, variable = (
+            cmems_rows,
+            "CMEMS_Sentinel3_OLCI",
+            "https://marine.copernicus.eu",
+            "CHL",
+        )
+    else:
+        # ── 2. Fall back to ERDDAP sources ────────────────────────────────
+        result = _fetch_day(session, CHL_DAILY_SOURCES, date)
+        if result is None:
+            log.warning("  No CHL daily data for %s.", date.isoformat())
+            return None
+        rows, label, base_url, variable = result
     payload = _build_chl_payload(
         rows, variable,
         date_key    = "date",
@@ -543,12 +701,23 @@ def fetch_seacolor_day(session: requests.Session, date: datetime.date,
     Returns manifest entry dict or None.
     """
     log.info("  SEACOLOR (Kd490)  %s", date.isoformat())
-    result = _fetch_day(session, KD490_DAILY_SOURCES, date)
-    if result is None:
-        log.warning("  No SEACOLOR data for %s.", date.isoformat())
-        return None
 
-    rows, label, base_url, variable = result
+    # ── 1. Try CMEMS Sentinel-3 OLCI 300m (primary) ───────────────────────
+    cmems_rows = _fetch_cmems_subset(CMEMS_KD490_DATASET_ID, "KD490", date)
+    if cmems_rows is not None:
+        rows, label, base_url, variable = (
+            cmems_rows,
+            "CMEMS_Sentinel3_OLCI",
+            "https://marine.copernicus.eu",
+            "KD490",
+        )
+    else:
+        # ── 2. Fall back to ERDDAP sources ────────────────────────────────
+        result = _fetch_day(session, KD490_DAILY_SOURCES, date)
+        if result is None:
+            log.warning("  No SEACOLOR data for %s.", date.isoformat())
+            return None
+        rows, label, base_url, variable = result
 
     # Classify and normalise key name (k490 or kd490 → kd490)
     for r in rows:
