@@ -52,7 +52,7 @@ Retrieves the last three days of:
        mixed       : 0.06 – 0.12     — transitional zone
        green_water : kd490 > 0.12    — turbid, productive
 
-     Output folder  : DailySST/v2/SeaColor/
+     Output folder  : DailySST/SeaColor/
      Files          : SEACOLOR_YYYYMMDD.json
                       seacolor_latest.json
                       seacolor_manifest.json
@@ -125,7 +125,7 @@ CMEMS_ENABLED  = bool(CMEMS_USERNAME and CMEMS_PASSWORD)
 
 # Dataset IDs within OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
 CMEMS_CHL_DATASET_ID   = "cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D"
-CMEMS_KD490_DATASET_ID = "cmems_obs-oc_glo_bgc-optics_nrt_l3-olci-300m_P1D"
+CMEMS_KD490_DATASET_ID = "cmems_obs-oc_glo_bgc-transp_nrt_l3-olci-300m_P1D"
 
 # Stride applied when reading the 300m NetCDF to keep output file size
 # manageable.  stride=4 → ~1.2 km effective resolution, ~250k cells in bbox.
@@ -134,7 +134,7 @@ CMEMS_STRIDE = 4
 # Output directories (relative to script location)
 _SCRIPT_DIR         = pathlib.Path(__file__).resolve().parent
 CHL_OUTPUT_DIR      = _SCRIPT_DIR / "DailySST" / "Chlorophyll"
-SEACOLOR_OUTPUT_DIR = _SCRIPT_DIR / "DailySST" / "v2" / "SeaColor"
+SEACOLOR_OUTPUT_DIR = _SCRIPT_DIR / "DailySST" / "SeaColor"
 
 logging.basicConfig(
     level=logging.INFO,
