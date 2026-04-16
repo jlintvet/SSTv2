@@ -86,8 +86,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add \
-            DailySST/Chlorophyll/ \
-            DailySST/v2/SeaColor/
+            SSTv2/Chlorophyll/ \
+            SSTv2/SeaColor/
 
           if git diff --staged --quiet; then
             echo "No file changes — nothing to commit."
@@ -105,6 +105,6 @@ jobs:
         with:
           name: chlorophyll-seacolor-partial-output
           path: |
-            DailySST/Chlorophyll/
-            DailySST/v2/SeaColor/
+            SSTv2/Chlorophyll/
+            SSTv2/SeaColor/
           retention-days: 3
