@@ -123,9 +123,19 @@ CMEMS_USERNAME = os.environ.get("CMEMS_USER", "")
 CMEMS_PASSWORD = os.environ.get("CMEMS_PASSWORD", "")
 CMEMS_ENABLED  = bool(CMEMS_USERNAME and CMEMS_PASSWORD)
 
-# Dataset IDs within OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
-CMEMS_CHL_DATASET_ID   = "cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D"
-CMEMS_KD490_DATASET_ID = "cmems_obs-oc_glo_bgc-transp_nrt_l3-olci-300m_P1D"
+# CHL: Global OLCI 300m — OCEANCOLOUR_GLO_BGC_L3_NRT_009_101
+CMEMS_CHL_DATASET_ID = "cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D"
+
+# Kd490: The global 300m product has no transparency dataset; Kd490 is only
+# available globally at 4 km.  However, the North Atlantic regional product
+# (OCEANCOLOUR_ATL_BGC_L3_NRT_009_111) provides OLCI 300 m transparency data
+# that covers the Mid-Atlantic Bight fishing grounds (33–39 N, 72–79 W).
+# Try ATL 300 m first; fall back to GLO 4 km if the ATL subset returns nothing.
+CMEMS_KD490_SOURCES = [
+    # (dataset_id, variable_name, label)
+    ("cmems_obs-oc_atl_bgc-transp_nrt_l3-olci-300m_P1D",  "KD490", "CMEMS_ATL_300m"),
+    ("cmems_obs-oc_glo_bgc-transp_nrt_l3-multi-4km_P1D",  "KD490", "CMEMS_GLO_4km"),
+]
 
 # Stride applied when reading the 300m NetCDF to keep output file size
 # manageable.  stride=4 → ~1.2 km effective resolution, ~250k cells in bbox.
@@ -702,12 +712,18 @@ def fetch_seacolor_day(session: requests.Session, date: datetime.date,
     """
     log.info("  SEACOLOR (Kd490)  %s", date.isoformat())
 
-    # ── 1. Try CMEMS Sentinel-3 OLCI 300m (primary) ───────────────────────
-    cmems_rows = _fetch_cmems_subset(CMEMS_KD490_DATASET_ID, "KD490", date)
+    # ── 1. Try CMEMS sources in priority order (ATL 300m, then GLO 4km) ───
+    cmems_rows = None
+    cmems_label = "CMEMS_Sentinel3_OLCI"
+    for _ds_id, _var, _label in CMEMS_KD490_SOURCES:
+        cmems_rows = _fetch_cmems_subset(_ds_id, _var, date)
+        if cmems_rows is not None:
+            cmems_label = _label
+            break
     if cmems_rows is not None:
         rows, label, base_url, variable = (
             cmems_rows,
-            "CMEMS_Sentinel3_OLCI",
+            cmems_label,
             "https://marine.copernicus.eu",
             "KD490",
         )
