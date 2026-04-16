@@ -51,21 +51,30 @@ jobs:
           cache: pip
 
       # ── 3. Install dependencies ──────────────────────────────────────────
-      # requests + urllib3 are the only non-stdlib dependencies.
-      # Pin requests to avoid unexpected breaking changes.
+      # copernicusmarine : Copernicus Marine Service Python client (CMEMS)
+      # xarray           : NetCDF parsing for CMEMS OLCI output files
+      # requests         : ERDDAP fallback sources
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install "requests>=2.31,<3"
+          pip install "requests>=2.31,<3" copernicusmarine xarray
 
       # ── 4. Run retrieval script ──────────────────────────────────────────
+      # CMEMS credentials are stored as repository secrets:
+      #   Settings → Secrets and variables → Actions → New repository secret
+      #   Name: CMEMS_USERNAME   Value: your Copernicus Marine account email
+      #   Name: CMEMS_PASSWORD   Value: your Copernicus Marine account password
+      #
+      # The script checks for these env vars at startup and enables the
+      # Sentinel-3 OLCI (300m) primary source when they are present.
+      # If credentials are missing or the CMEMS download fails, the script
+      # automatically falls back to ERDDAP sources.
       - name: Run DailyChlorophyllandSeaColorRetrieval.py
         env:
-          # Pass optional workflow_dispatch overrides into the script via env vars.
-          # The script reads these if present; ignored on scheduled runs.
+          CMEMS_USERNAME:        ${{ secrets.CMEMS_USERNAME }}
+          CMEMS_PASSWORD:        ${{ secrets.CMEMS_PASSWORD }}
           TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
           SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
-        run: python DailyChlorophyllandSeaColorRetrieval.py
 
       # ── 5. Commit & push output files ────────────────────────────────────
       # Only commits if files actually changed (git diff --staged --quiet guard).
