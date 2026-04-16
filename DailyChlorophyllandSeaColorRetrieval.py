@@ -1,1 +1,767 @@
+"""
+DailyChlorophyllandSeaColorRetrieval.py
+========================================
+Retrieves the last three days of:
 
+  1. Chlorophyll-a (CHL)
+     ─────────────────────────────────────────────────────────────────────
+     Daily L3 4 km composite — cloud pixels are null (visible-band sensor).
+     Sources tried in order:
+       VIIRS SNPP      (erdVH3chlora)   — primary NRT ocean color sensor
+       MODIS Aqua      (erdMH1chlora)   — archive; hardware issues ~2022-23
+       upwell mirrors  (same datasets)  — alternate ERDDAP hosts
+
+     8-day composite — gap-filled, better spatial coverage:
+       MODIS Aqua 8day (erdMH1chla8day)
+       VIIRS SNPP 8day (erdVH3chla8day)
+
+     Per-cell color classification from chlorophyll-a (mg/m³):
+       blue_water  : chl < 0.15   — oligotrophic / Gulf Stream
+       mixed       : 0.15 – 0.50  — transitional
+       green_water : chl > 0.50   — productive shelf water
+
+     Output folder  : DailySST/Chlorophyll/
+     Files          : CHL_YYYYMMDD.json
+                      CHL_8day_YYYYMMDD.json
+                      chl_latest.json
+                      chl_8day_latest.json
+                      chl_manifest.json
+
+  2. Sea Color / Water Clarity (SEACOLOR)
+     ─────────────────────────────────────────────────────────────────────
+     Primary metric: Kd490 — diffuse attenuation coefficient at 490 nm (m⁻¹)
+       Low Kd490  → clear blue water (Gulf Stream, oligotrophic)
+       High Kd490 → turbid green water (shelf, productive, sediment-loaded)
+
+     The blue/green boundary identified by Kd490 is the primary search cue
+     for offshore pelagic species (mahi-mahi, tuna, billfish, wahoo).
+
+     Sources tried in order:
+       MODIS Aqua Kd490 (erdMH1kd490, variable: k490)
+       VIIRS SNPP Kd490 (erdVH3kd490, variable: kd490) — if available
+       upwell mirrors   (same datasets)
+
+     Per-cell color classification from Kd490 (m⁻¹):
+       blue_water  : kd490 < 0.06    — clear, oligotrophic
+       mixed       : 0.06 – 0.12     — transitional zone
+       green_water : kd490 > 0.12    — turbid, productive
+
+     Output folder  : DailySST/v2/SeaColor/
+     Files          : SEACOLOR_YYYYMMDD.json
+                      seacolor_latest.json
+                      seacolor_manifest.json
+
+Cloud note
+──────────
+Chlorophyll and Kd490 are both derived from visible-band radiometry.
+Cloud-covered and sun-glint pixels are null in all daily products.
+The 8-day chlorophyll composite significantly reduces cloud gaps.
+No gap-filled product is generated for Kd490 — cloud gaps are
+preserved as null and excluded from rendering and feature detection.
+
+Thresholds reference
+────────────────────
+Chlorophyll classification adapted from:
+  NOAA CoastWatch OceanWatch product documentation
+  Hooker et al. (1992) — SeaWiFS ocean color classification
+
+Kd490 classification adapted from:
+  Lee et al. (2005) — Remote sensing of inherent optical properties
+  NOAA CoralTemp water clarity methodology
+"""
+
+import csv
+import hashlib
+import io
+import json
+import logging
+import datetime
+import pathlib
+import time
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+LAT_MIN = 33.70
+LAT_MAX = 39.00
+LON_MIN = -78.89
+LON_MAX = -72.21
+STRIDE  = 1
+
+RETENTION_DAYS = 3
+SEARCH_WINDOW  = 7      # days back to search if latest dates unavailable
+TIMEOUT        = 300    # seconds
+MAX_RETRIES    = 3
+BACKOFF_FACTOR = 2
+
+# Output directories (relative to script location)
+_SCRIPT_DIR         = pathlib.Path(__file__).resolve().parent
+CHL_OUTPUT_DIR      = _SCRIPT_DIR / "DailySST" / "Chlorophyll"
+SEACOLOR_OUTPUT_DIR = _SCRIPT_DIR / "DailySST" / "v2" / "SeaColor"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Sea color classification thresholds
+# ---------------------------------------------------------------------------
+# Kd490 (m⁻¹) — diffuse attenuation at 490 nm
+KD490_BLUE_THRESHOLD  = 0.06    # < 0.06  → blue water
+KD490_GREEN_THRESHOLD = 0.12    # > 0.12  → green water
+
+# Chlorophyll-a (mg/m³)
+CHL_BLUE_THRESHOLD  = 0.15      # < 0.15  → blue water
+CHL_GREEN_THRESHOLD = 0.50      # > 0.50  → green water
+
+# ---------------------------------------------------------------------------
+# ERDDAP source lists
+# Each entry: (base_url, erddap_variable_name, source_label)
+# ---------------------------------------------------------------------------
+
+# Chlorophyll-a daily L3 4 km
+# VIIRS SNPP listed first — most reliable NRT source as of 2024+
+# MODIS Aqua retained as fallback (rich historical archive)
+CHL_DAILY_SOURCES = [
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3chlora.csvp",  "chlorophyll", "VIIRS_SNPP"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3chlora.csvp",      "chlorophyll", "VIIRS_SNPP"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chlora.csvp",  "chlorophyll", "MODIS_Aqua"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1chlora.csvp",      "chlorophyll", "MODIS_Aqua"),
+]
+
+# Chlorophyll-a 8-day composite L3 4 km (gap-filled)
+CHL_8DAY_SOURCES = [
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp", "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",     "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3chla8day.csvp", "chlorophyll", "VIIRS_SNPP_8day"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3chla8day.csvp",     "chlorophyll", "VIIRS_SNPP_8day"),
+]
+
+# Kd490 daily L3 4 km
+# MODIS Aqua Kd490 variable is "k490"; VIIRS may differ — handled in parser.
+# Note: erdVH3kd490 existence on coastwatch.pfeg is not guaranteed;
+# it will fail gracefully and fall through to MODIS if unavailable.
+KD490_DAILY_SOURCES = [
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1kd490.csvp",  "k490",  "MODIS_Aqua"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1kd490.csvp",      "k490",  "MODIS_Aqua"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3kd490.csvp",  "kd490", "VIIRS_SNPP"),
+    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3kd490.csvp",      "kd490", "VIIRS_SNPP"),
+]
+
+# ---------------------------------------------------------------------------
+# HTTP session
+# ---------------------------------------------------------------------------
+def _make_session() -> requests.Session:
+    session = requests.Session()
+    retry   = Retry(
+        total             = MAX_RETRIES,
+        backoff_factor    = BACKOFF_FACTOR,
+        status_forcelist  = [429, 500, 502, 503, 504],
+        allowed_methods   = ["GET"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://",  adapter)
+    return session
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+def _now_utc() -> str:
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z"))
+
+def _sha256(path: pathlib.Path, chunk: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+def _parse_float(val: str) -> "float | None":
+    try:
+        f = float(val)
+        return None if f != f else f    # NaN → None
+    except (ValueError, TypeError):
+        return None
+
+# ---------------------------------------------------------------------------
+# Color classifiers
+# ---------------------------------------------------------------------------
+def _classify_kd490(kd490: "float | None") -> "str | None":
+    if kd490 is None:
+        return None
+    if kd490 < KD490_BLUE_THRESHOLD:
+        return "blue_water"
+    if kd490 > KD490_GREEN_THRESHOLD:
+        return "green_water"
+    return "mixed"
+
+def _classify_chl(chl: "float | None") -> "str | None":
+    if chl is None:
+        return None
+    if chl < CHL_BLUE_THRESHOLD:
+        return "blue_water"
+    if chl > CHL_GREEN_THRESHOLD:
+        return "green_water"
+    return "mixed"
+
+# ---------------------------------------------------------------------------
+# ERDDAP csvp parser
+# Handles any 2-variable griddap response: time, latitude, longitude, value.
+# ---------------------------------------------------------------------------
+def _parse_erddap_csvp(text: str, value_col: str) -> list[dict]:
+    """
+    Parse ERDDAP csvp response for a single value column.
+    Returns list of {lat, lon, <value_col>} dicts.
+    Cloud/invalid pixels → value_col = None (preserved, not dropped).
+    """
+    reader   = csv.reader(io.StringIO(text))
+    rows_raw = list(reader)
+    if len(rows_raw) < 3:
+        return []
+
+    # Strip units from headers: "chlorophyll (mg m-3)" → "chlorophyll"
+    headers = [h.split(" (")[0].strip() for h in rows_raw[0]]
+    idx     = {name: i for i, name in enumerate(headers)}
+
+    missing = [c for c in ("latitude", "longitude", value_col) if c not in idx]
+    if missing:
+        log.warning("  CSV missing expected columns %s — found: %s", missing, headers)
+        return []
+
+    rows = []
+    for raw in rows_raw[2:]:
+        if len(raw) < len(headers):
+            continue
+        lat = _parse_float(raw[idx["latitude"]])
+        lon = _parse_float(raw[idx["longitude"]])
+        if lat is None or lon is None:
+            continue
+        val_str = raw[idx[value_col]]
+        val     = _parse_float(val_str) if val_str not in ("", "NaN") else None
+        rows.append({"lat": lat, "lon": lon, value_col: val})
+    return rows
+
+# ---------------------------------------------------------------------------
+# ERDDAP URL builder
+# ---------------------------------------------------------------------------
+def _build_url(base_url: str, variable: str,
+               date: datetime.date, time_str: str = "12:00:00Z") -> str:
+    ts        = f"{date.isoformat()}T{time_str}"
+    time_part = f"[({ts}):1:({ts})]"
+    lat_part  = f"[({LAT_MIN}):{STRIDE}:({LAT_MAX})]"
+    lon_part  = f"[({LON_MIN}):{STRIDE}:({LON_MAX})]"
+    return f"{base_url}?{variable}{time_part}{lat_part}{lon_part}"
+
+# ---------------------------------------------------------------------------
+# Generic day fetcher — tries all sources for a given date
+# ---------------------------------------------------------------------------
+def _fetch_day(session: requests.Session, sources: list[tuple],
+               date: datetime.date,
+               time_str: str = "12:00:00Z") -> "tuple | None":
+    """
+    Try each (base_url, variable, label) source for `date`.
+    Returns (rows, source_label, base_url, variable) on first success, or None.
+    """
+    for base_url, variable, label in sources:
+        url  = _build_url(base_url, variable, date, time_str)
+        host = base_url.split("/")[2]
+        log.info("    [%s] %s @ %s", label, date.isoformat(), host)
+        try:
+            r = session.get(url, timeout=TIMEOUT)
+            r.raise_for_status()
+            rows = _parse_erddap_csvp(r.text, variable)
+            if rows:
+                ocean = sum(1 for row in rows if row[variable] is not None)
+                log.info("    ✓ %d rows, %d ocean cells", len(rows), ocean)
+                return rows, label, base_url, variable
+            log.warning("    ✗ Empty response from %s", label)
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else "?"
+            log.warning("    ✗ HTTP %s — %s", code, label)
+        except requests.RequestException as exc:
+            log.warning("    ✗ Request error — %s: %s", label, exc)
+    return None
+
+# ===========================================================================
+# CHLOROPHYLL PIPELINE
+# ===========================================================================
+
+def _build_chl_payload(rows: list[dict], variable: str, date_key: str,
+                       date_val: str, source_label: str, base_url: str,
+                       product: str, cloud_note: str) -> dict:
+    """Normalise rows, classify color, and build the JSON payload dict."""
+    for r in rows:
+        chl = r.get(variable)
+        r["color_class"] = _classify_chl(chl)
+        # Normalise key → always "chlorophyll"
+        if variable != "chlorophyll":
+            r["chlorophyll"] = r.pop(variable)
+        if r["chlorophyll"] is not None:
+            r["chlorophyll"] = round(r["chlorophyll"], 4)
+
+    ocean = sum(1 for r in rows if r["chlorophyll"] is not None)
+    cloud = len(rows) - ocean
+
+    return {
+        date_key:        date_val,
+        "generated_utc": _now_utc(),
+        "dataset":       source_label,
+        "source_url":    base_url,
+        "product":       product,
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+            "stride":  STRIDE,
+        },
+        "units": {
+            "chlorophyll": "mg_m3",
+            "color_class": "categorical: blue_water | mixed | green_water",
+        },
+        "thresholds": {
+            "blue_water_max_chl_mg_m3":  CHL_BLUE_THRESHOLD,
+            "green_water_min_chl_mg_m3": CHL_GREEN_THRESHOLD,
+        },
+        "cloud_note":   cloud_note,
+        "row_count":    len(rows),
+        "ocean_count":  ocean,
+        "cloud_count":  cloud,
+        "coverage_pct": round(ocean / len(rows) * 100, 1) if rows else 0.0,
+        "rows":         rows,
+    }
+
+
+def _save_json(payload: dict, dest: pathlib.Path) -> None:
+    tmp = dest.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"))
+    tmp.rename(dest)
+
+
+def fetch_chl_daily(session: requests.Session, date: datetime.date,
+                    output_dir: pathlib.Path) -> "dict | None":
+    """Fetch one day of chlorophyll-a. Returns manifest entry dict or None."""
+    log.info("  CHL daily  %s", date.isoformat())
+    result = _fetch_day(session, CHL_DAILY_SOURCES, date)
+    if result is None:
+        log.warning("  No CHL daily data for %s.", date.isoformat())
+        return None
+
+    rows, label, base_url, variable = result
+    payload = _build_chl_payload(
+        rows, variable,
+        date_key    = "date",
+        date_val    = date.isoformat(),
+        source_label= label,
+        base_url    = base_url,
+        product     = "chlorophyll_a_daily_L3_4km",
+        cloud_note  = (
+            "chlorophyll=null means cloud-covered or sun-glint pixel. "
+            "No gap fill applied to daily product. Use 8-day composite for gap-filled view."
+        ),
+    )
+
+    date_str      = date.strftime("%Y%m%d")
+    json_filename = f"CHL_{date_str}.json"
+    dest          = output_dir / json_filename
+    _save_json(payload, dest)
+    log.info("  Saved %s  (%.0f%% coverage, %.1f KB)",
+             json_filename, payload["coverage_pct"], dest.stat().st_size / 1024)
+
+    return {
+        "filename":     json_filename,
+        "date":         date.isoformat(),
+        "source":       label,
+        "sha256":       _sha256(dest),
+        "row_count":    payload["row_count"],
+        "ocean_count":  payload["ocean_count"],
+        "cloud_count":  payload["cloud_count"],
+        "coverage_pct": payload["coverage_pct"],
+    }
+
+
+def fetch_chl_8day(session: requests.Session, date: datetime.date,
+                   output_dir: pathlib.Path) -> "dict | None":
+    """
+    Fetch the 8-day chlorophyll composite that covers `date`.
+    ERDDAP snaps the time constraint to the nearest valid composite period.
+    Tries the target date first; falls back one 8-day step (~8 days prior)
+    if the latest composite is not yet published.
+    """
+    log.info("  CHL 8-day composite near %s", date.isoformat())
+
+    # Try target date, then one period back (8 days), then two periods back
+    result = None
+    actual_date = date
+    for offset in [0, 8, 16]:
+        try_date = date - datetime.timedelta(days=offset)
+        result   = _fetch_day(session, CHL_8DAY_SOURCES, try_date)
+        if result is not None:
+            actual_date = try_date
+            break
+
+    if result is None:
+        log.warning("  No CHL 8-day data near %s.", date.isoformat())
+        return None
+
+    rows, label, base_url, variable = result
+    payload = _build_chl_payload(
+        rows, variable,
+        date_key    = "composite_center_date",
+        date_val    = actual_date.isoformat(),
+        source_label= label,
+        base_url    = base_url,
+        product     = "chlorophyll_a_8day_composite_L3_4km",
+        cloud_note  = (
+            "8-day composite significantly reduces cloud gaps. "
+            "Residual nulls indicate persistent cloud cover across the full 8-day window."
+        ),
+    )
+    payload["requested_date"] = date.isoformat()
+
+    date_str      = date.strftime("%Y%m%d")
+    json_filename = f"CHL_8day_{date_str}.json"
+    dest          = output_dir / json_filename
+    _save_json(payload, dest)
+    log.info("  Saved %s  (%.0f%% coverage, %.1f KB)",
+             json_filename, payload["coverage_pct"], dest.stat().st_size / 1024)
+
+    return {
+        "filename":     json_filename,
+        "date":         date.isoformat(),
+        "source":       label,
+        "sha256":       _sha256(dest),
+        "row_count":    payload["row_count"],
+        "ocean_count":  payload["ocean_count"],
+        "coverage_pct": payload["coverage_pct"],
+    }
+
+
+def _purge_chl(output_dir: pathlib.Path, cutoff: datetime.date) -> None:
+    for pattern in ("CHL_????????.json", "CHL_8day_????????.json"):
+        for f in sorted(output_dir.glob(pattern)):
+            date_str = f.stem.split("_")[-1]
+            try:
+                file_date = datetime.date(
+                    int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+            except ValueError:
+                continue
+            if file_date < cutoff:
+                log.info("Purging %s", f.name)
+                f.unlink()
+
+
+def _write_chl_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    date_str = newest_date.strftime("%Y%m%d")
+    for src_name, dst_name in [
+        (f"CHL_{date_str}.json",      "chl_latest.json"),
+        (f"CHL_8day_{date_str}.json", "chl_8day_latest.json"),
+    ]:
+        src = output_dir / src_name
+        dst = output_dir / dst_name
+        if src.exists():
+            dst.write_bytes(src.read_bytes())
+            log.info("  %s → %s", src_name, dst_name)
+
+
+def _write_chl_manifest(output_dir: pathlib.Path, fetched: list) -> None:
+    files = []
+    for f in sorted(output_dir.glob("CHL_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        meta     = next((x for x in fetched if x.get("filename") == f.name), None)
+        files.append({
+            "filename":     f.name,
+            "date":         iso_date,
+            "size_bytes":   f.stat().st_size,
+            "sha256":       meta["sha256"] if meta else _sha256(f),
+            "row_count":    meta.get("row_count") if meta else None,
+            "ocean_count":  meta.get("ocean_count") if meta else None,
+            "coverage_pct": meta.get("coverage_pct") if meta else None,
+            "source":       meta.get("source") if meta else None,
+        })
+
+    manifest = {
+        "generated_utc":  _now_utc(),
+        "product":        "chlorophyll_a_daily_L3_4km",
+        "retention_days": RETENTION_DAYS,
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+        },
+        "units":     {"chlorophyll": "mg_m3"},
+        "thresholds": {
+            "blue_water_max_mg_m3":  CHL_BLUE_THRESHOLD,
+            "green_water_min_mg_m3": CHL_GREEN_THRESHOLD,
+        },
+        "file_count": len(files),
+        "files":      files,
+    }
+    dest = output_dir / "chl_manifest.json"
+    with open(dest, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    log.info("CHL manifest written: %d file(s)", len(files))
+
+# ===========================================================================
+# SEA COLOR (Kd490) PIPELINE
+# ===========================================================================
+
+def fetch_seacolor_day(session: requests.Session, date: datetime.date,
+                       output_dir: pathlib.Path) -> "dict | None":
+    """
+    Fetch one day of Kd490 sea color / water clarity data.
+    Normalises variable key to 'kd490' regardless of source (k490 or kd490).
+    Returns manifest entry dict or None.
+    """
+    log.info("  SEACOLOR (Kd490)  %s", date.isoformat())
+    result = _fetch_day(session, KD490_DAILY_SOURCES, date)
+    if result is None:
+        log.warning("  No SEACOLOR data for %s.", date.isoformat())
+        return None
+
+    rows, label, base_url, variable = result
+
+    # Classify and normalise key name (k490 or kd490 → kd490)
+    for r in rows:
+        raw_val = r.get(variable)
+        r["color_class"] = _classify_kd490(raw_val)
+        if variable != "kd490":
+            r["kd490"] = r.pop(variable)
+        if r["kd490"] is not None:
+            r["kd490"] = round(r["kd490"], 5)
+
+    ocean  = sum(1 for r in rows if r["kd490"] is not None)
+    cloud  = len(rows) - ocean
+    blue   = sum(1 for r in rows if r["color_class"] == "blue_water")
+    mixed  = sum(1 for r in rows if r["color_class"] == "mixed")
+    green  = sum(1 for r in rows if r["color_class"] == "green_water")
+
+    date_str      = date.strftime("%Y%m%d")
+    json_filename = f"SEACOLOR_{date_str}.json"
+    dest          = output_dir / json_filename
+
+    payload = {
+        "date":          date.isoformat(),
+        "generated_utc": _now_utc(),
+        "dataset":       label,
+        "source_url":    base_url,
+        "product":       "kd490_daily_L3_4km",
+        "metric":        "Kd490 — diffuse attenuation coefficient at 490 nm",
+        "fishing_note": (
+            "The blue_water / green_water boundary identified by Kd490 is a primary "
+            "search cue for offshore pelagic species. Blue water (Gulf Stream) vs. "
+            "green water (shelf) edges align with thermal breaks and bathymetric features."
+        ),
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+            "stride":  STRIDE,
+        },
+        "units": {
+            "kd490":      "m-1 (inverse metres)",
+            "color_class": "categorical: blue_water | mixed | green_water",
+        },
+        "thresholds": {
+            "blue_water":  f"kd490 < {KD490_BLUE_THRESHOLD} m-1",
+            "mixed":       f"{KD490_BLUE_THRESHOLD} <= kd490 <= {KD490_GREEN_THRESHOLD} m-1",
+            "green_water": f"kd490 > {KD490_GREEN_THRESHOLD} m-1",
+        },
+        "cloud_note": (
+            "kd490=null means cloud-covered, sun-glint, or invalid pixel. "
+            "No gap fill applied. Null cells are excluded from color boundary rendering."
+        ),
+        "row_count":    len(rows),
+        "ocean_count":  ocean,
+        "cloud_count":  cloud,
+        "coverage_pct": round(ocean / len(rows) * 100, 1) if rows else 0.0,
+        "color_distribution": {
+            "blue_water":  blue,
+            "mixed":       mixed,
+            "green_water": green,
+            "cloud_null":  cloud,
+        },
+        "rows": rows,
+    }
+
+    _save_json(payload, dest)
+    log.info("  Saved %s  (%.0f%% coverage — B:%d M:%d G:%d, %.1f KB)",
+             json_filename, payload["coverage_pct"],
+             blue, mixed, green, dest.stat().st_size / 1024)
+
+    return {
+        "filename":           json_filename,
+        "date":               date.isoformat(),
+        "source":             label,
+        "sha256":             _sha256(dest),
+        "row_count":          payload["row_count"],
+        "ocean_count":        ocean,
+        "cloud_count":        cloud,
+        "coverage_pct":       payload["coverage_pct"],
+        "color_distribution": payload["color_distribution"],
+    }
+
+
+def _purge_seacolor(output_dir: pathlib.Path, cutoff: datetime.date) -> None:
+    for f in sorted(output_dir.glob("SEACOLOR_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        try:
+            file_date = datetime.date(
+                int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            log.info("Purging %s", f.name)
+            f.unlink()
+
+
+def _write_seacolor_latest(output_dir: pathlib.Path, newest_date: datetime.date) -> None:
+    date_str = newest_date.strftime("%Y%m%d")
+    src = output_dir / f"SEACOLOR_{date_str}.json"
+    dst = output_dir / "seacolor_latest.json"
+    if src.exists():
+        dst.write_bytes(src.read_bytes())
+        log.info("  seacolor_latest.json → %s", src.name)
+
+
+def _write_seacolor_manifest(output_dir: pathlib.Path, fetched: list) -> None:
+    files = []
+    for f in sorted(output_dir.glob("SEACOLOR_????????.json")):
+        date_str = f.stem.split("_")[-1]
+        iso_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        meta     = next((x for x in fetched if x.get("filename") == f.name), None)
+
+        # Load color_distribution from disk if not in fetched list
+        color_dist = meta.get("color_distribution") if meta else None
+        if color_dist is None and f.exists():
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    color_dist = json.load(fh).get("color_distribution")
+            except Exception:
+                pass
+
+        files.append({
+            "filename":           f.name,
+            "date":               iso_date,
+            "size_bytes":         f.stat().st_size,
+            "sha256":             meta["sha256"] if meta else _sha256(f),
+            "row_count":          meta.get("row_count") if meta else None,
+            "ocean_count":        meta.get("ocean_count") if meta else None,
+            "coverage_pct":       meta.get("coverage_pct") if meta else None,
+            "source":             meta.get("source") if meta else None,
+            "color_distribution": color_dist,
+        })
+
+    manifest = {
+        "generated_utc":  _now_utc(),
+        "product":        "sea_color_kd490_daily_L3_4km",
+        "metric":         "Kd490 (diffuse attenuation at 490 nm) — water clarity / color proxy",
+        "retention_days": RETENTION_DAYS,
+        "region": {
+            "lat_min": LAT_MIN, "lat_max": LAT_MAX,
+            "lon_min": LON_MIN, "lon_max": LON_MAX,
+        },
+        "units": {"kd490": "m-1"},
+        "thresholds": {
+            "blue_water":  f"< {KD490_BLUE_THRESHOLD} m-1",
+            "mixed":       f"{KD490_BLUE_THRESHOLD}–{KD490_GREEN_THRESHOLD} m-1",
+            "green_water": f"> {KD490_GREEN_THRESHOLD} m-1",
+        },
+        "file_count": len(files),
+        "files":      files,
+    }
+    dest = output_dir / "seacolor_manifest.json"
+    with open(dest, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    log.info("SEACOLOR manifest written: %d file(s)", len(files))
+
+# ===========================================================================
+# MAIN
+# ===========================================================================
+
+def main() -> None:
+    today_utc   = datetime.datetime.now(datetime.timezone.utc).date()
+    cutoff_date = today_utc - datetime.timedelta(days=RETENTION_DAYS)
+
+    log.info("=== Chlorophyll + Sea Color Daily Retrieval ===")
+    log.info("Today (UTC): %s  |  Retention cutoff: %s", today_utc, cutoff_date)
+
+    CHL_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    SEACOLOR_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    session = _make_session()
+
+    # Candidate dates — search backwards from yesterday
+    candidate_dates = [
+        today_utc - datetime.timedelta(days=d) for d in range(1, SEARCH_WINDOW + 1)
+    ]
+
+    # ── Chlorophyll daily ────────────────────────────────────────────────────
+    log.info("--- Chlorophyll-a daily ---")
+    _purge_chl(CHL_OUTPUT_DIR, cutoff_date)
+
+    chl_fetched: list[dict] = []
+    chl_dates:   list[datetime.date] = []
+
+    for d in candidate_dates:
+        if len(chl_dates) == RETENTION_DAYS:
+            break
+        meta = fetch_chl_daily(session, d, CHL_OUTPUT_DIR)
+        if meta:
+            chl_fetched.append(meta)
+            chl_dates.append(d)
+        time.sleep(0.5)
+
+    if not chl_dates:
+        log.error("CHL: No data found within %d-day search window.", SEARCH_WINDOW)
+    else:
+        _write_chl_latest(CHL_OUTPUT_DIR, max(chl_dates))
+
+    # ── Chlorophyll 8-day composite ──────────────────────────────────────────
+    log.info("--- Chlorophyll-a 8-day composite ---")
+    if chl_dates:
+        meta_8day = fetch_chl_8day(session, max(chl_dates), CHL_OUTPUT_DIR)
+        if meta_8day:
+            chl_fetched.append(meta_8day)
+
+    _write_chl_manifest(CHL_OUTPUT_DIR, chl_fetched)
+
+    # ── Sea Color (Kd490) ────────────────────────────────────────────────────
+    log.info("--- Sea Color (Kd490) ---")
+    _purge_seacolor(SEACOLOR_OUTPUT_DIR, cutoff_date)
+
+    sc_fetched: list[dict] = []
+    sc_dates:   list[datetime.date] = []
+
+    for d in candidate_dates:
+        if len(sc_dates) == RETENTION_DAYS:
+            break
+        meta = fetch_seacolor_day(session, d, SEACOLOR_OUTPUT_DIR)
+        if meta:
+            sc_fetched.append(meta)
+            sc_dates.append(d)
+        time.sleep(0.5)
+
+    if not sc_dates:
+        log.error("SEACOLOR: No data found within %d-day search window.", SEARCH_WINDOW)
+    else:
+        _write_seacolor_latest(SEACOLOR_OUTPUT_DIR, max(sc_dates))
+
+    _write_seacolor_manifest(SEACOLOR_OUTPUT_DIR, sc_fetched)
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    chl_daily_count = len([f for f in chl_fetched if "8day" not in f["filename"]])
+    log.info("=== Done. CHL daily %d/%d | SEACOLOR %d/%d day(s) retrieved. ===",
+             chl_daily_count, RETENTION_DAYS,
+             len(sc_fetched), RETENTION_DAYS)
+
+
+if __name__ == "__main__":
+    main()
