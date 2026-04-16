@@ -1,1 +1,98 @@
+name: Daily Chlorophyll & Sea Color Retrieval
 
+# ─── Triggers ────────────────────────────────────────────────────────────────
+# Runs daily at 14:00 UTC (10 AM Eastern).
+# Ocean color daily composites (MODIS Aqua, VIIRS SNPP) are typically published
+# 12–18 hours after the observation date. 14:00 UTC reliably captures data
+# from the prior day across all source ERDDAP servers.
+#
+# The retrieval script searches back up to 7 days so missed runs self-recover.
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      date_override:
+        description: 'Force a specific target date (YYYY-MM-DD). Leave blank for auto.'
+        required: false
+        default: ''
+      sources_override:
+        description: 'Limit sources: all | chl_only | seacolor_only'
+        required: false
+        default: 'all'
+
+# ─── Concurrency ─────────────────────────────────────────────────────────────
+# Prevent overlapping runs. If a run is in progress when a new one triggers,
+# cancel the old one so files are always written by the most recent run.
+concurrency:
+  group: chlorophyll-seacolor-retrieval
+  cancel-in-progress: true
+
+jobs:
+  retrieve:
+    name: Fetch Chlorophyll & Sea Color
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1   # shallow clone — we only need latest state
+
+      # ── 2. Python setup ─────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      # ── 3. Install dependencies ──────────────────────────────────────────
+      # requests + urllib3 are the only non-stdlib dependencies.
+      # Pin requests to avoid unexpected breaking changes.
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install "requests>=2.31,<3"
+
+      # ── 4. Run retrieval script ──────────────────────────────────────────
+      - name: Run DailyChlorophyllandSeaColorRetrieval.py
+        env:
+          # Pass optional workflow_dispatch overrides into the script via env vars.
+          # The script reads these if present; ignored on scheduled runs.
+          TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
+          SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
+        run: python DailyChlorophyllandSeaColorRetrieval.py
+
+      # ── 5. Commit & push output files ────────────────────────────────────
+      # Only commits if files actually changed (git diff --staged --quiet guard).
+      # Uses github-actions bot identity to keep commit history clean.
+      - name: Commit and push updated data files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            DailySST/Chlorophyll/ \
+            DailySST/v2/SeaColor/
+
+          if git diff --staged --quiet; then
+            echo "No file changes — nothing to commit."
+          else
+            git commit -m "data: chlorophyll + sea color $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      # ── 6. Upload artifacts on failure ───────────────────────────────────
+      # If the run fails, upload whatever partial output was written so you
+      # can inspect the JSON files and logs without re-running manually.
+      - name: Upload output artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chlorophyll-seacolor-partial-output
+          path: |
+            DailySST/Chlorophyll/
+            DailySST/v2/SeaColor/
+          retention-days: 3
