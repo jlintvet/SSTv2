@@ -119,7 +119,7 @@ BACKOFF_FACTOR = 1      # 1 s, 2 s between retries
 #
 # Latency: ~3–6 hours after overpass (NRT). Both Sentinel-3A and 3B contribute.
 # ---------------------------------------------------------------------------
-CMEMS_USERNAME = os.environ.get("CMEMS_USERNAME", "")
+CMEMS_USERNAME = os.environ.get("CMEMS_USER", "")
 CMEMS_PASSWORD = os.environ.get("CMEMS_PASSWORD", "")
 CMEMS_ENABLED  = bool(CMEMS_USERNAME and CMEMS_PASSWORD)
 
