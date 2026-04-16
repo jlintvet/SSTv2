@@ -62,7 +62,7 @@ jobs:
       # ── 4. Run retrieval script ──────────────────────────────────────────
       # CMEMS credentials are stored as repository secrets:
       #   Settings → Secrets and variables → Actions → New repository secret
-      #   Name: CMEMS_USERNAME   Value: your Copernicus Marine account email
+      #   Name: CMEMS_USER       Value: your Copernicus Marine account email
       #   Name: CMEMS_PASSWORD   Value: your Copernicus Marine account password
       #
       # The script checks for these env vars at startup and enables the
@@ -71,7 +71,7 @@ jobs:
       # automatically falls back to ERDDAP sources.
       - name: Run DailyChlorophyllandSeaColorRetrieval.py
         env:
-          CMEMS_USERNAME:        ${{ secrets.CMEMS_USER }}
+          CMEMS_USER:            ${{ secrets.CMEMS_USER }}
           CMEMS_PASSWORD:        ${{ secrets.CMEMS_PASSWORD }}
           TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
           SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
