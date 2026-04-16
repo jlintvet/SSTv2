@@ -7,13 +7,14 @@ Retrieves the last three days of:
      ─────────────────────────────────────────────────────────────────────
      Daily L3 4 km composite — cloud pixels are null (visible-band sensor).
      Sources tried in order:
-       VIIRS SNPP      (erdVH3chlora)   — primary NRT ocean color sensor
-       MODIS Aqua      (erdMH1chlora)   — archive; hardware issues ~2022-23
-       upwell mirrors  (same datasets)  — alternate ERDDAP hosts
+       VIIRS SNPP      (nesdisVHNSQchlaDaily)   — primary NRT ocean color sensor
+       PolarWatch      (same dataset, alt host)
+       MODIS Aqua      (erdMH1chla1day)          — archive; hardware issues ~2022-23
+       OceanWatch      (aqua_chla_1d_2018_0)     — third fallback, variable: chlor_a
 
      8-day composite — gap-filled, better spatial coverage:
        MODIS Aqua 8day (erdMH1chla8day)
-       VIIRS SNPP 8day (erdVH3chla8day)
+       VIIRS SNPP 8day (nesdisVHNSQchlaWeekly)
 
      Per-cell color classification from chlorophyll-a (mg/m³):
        blue_water  : chl < 0.15   — oligotrophic / Gulf Stream
@@ -37,9 +38,8 @@ Retrieves the last three days of:
      for offshore pelagic species (mahi-mahi, tuna, billfish, wahoo).
 
      Sources tried in order:
-       MODIS Aqua Kd490 (erdMH1kd490, variable: k490)
-       VIIRS SNPP Kd490 (erdVH3kd490, variable: kd490) — if available
-       upwell mirrors   (same datasets)
+       VIIRS SNPP Kd490 (nesdisVHNSQkd490Daily, variable: kd490) — primary NRT
+       PolarWatch       (same dataset, alternate host)
 
      Per-cell color classification from Kd490 (m⁻¹):
        blue_water  : kd490 < 0.06    — clear, oligotrophic
@@ -126,32 +126,38 @@ CHL_GREEN_THRESHOLD = 0.50      # > 0.50  → green water
 # ---------------------------------------------------------------------------
 
 # Chlorophyll-a daily L3 4 km
-# VIIRS SNPP listed first — most reliable NRT source as of 2024+
-# MODIS Aqua retained as fallback (rich historical archive)
+# VIIRS SNPP (nesdisVHNSQchlaDaily) — primary NRT ocean color sensor, confirmed on
+#   coastwatch.pfeg.noaa.gov and polarwatch.noaa.gov.
+# MODIS Aqua (erdMH1chla1day) — confirmed on coastwatch.pfeg; rich archive, hardware
+#   issues ~2022-23 reduced NRT reliability; kept as fallback.
+# OceanWatch MODIS Aqua (aqua_chla_1d_2018_0) — third fallback; variable name is
+#   "chlor_a" but normalised to "chlorophyll" in _build_chl_payload().
 CHL_DAILY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3chlora.csvp",  "chlorophyll", "VIIRS_SNPP"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3chlora.csvp",      "chlorophyll", "VIIRS_SNPP"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chlora.csvp",  "chlorophyll", "MODIS_Aqua"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1chlora.csvp",      "chlorophyll", "MODIS_Aqua"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQchlaDaily.csvp",  "chlorophyll", "VIIRS_SNPP"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQchlaDaily.csvp",       "chlorophyll", "VIIRS_SNPP"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla1day.csvp",        "chlorophyll", "MODIS_Aqua"),
+    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/aqua_chla_1d_2018_0.csvp", "chlor_a",     "MODIS_Aqua_OW"),
 ]
 
 # Chlorophyll-a 8-day composite L3 4 km (gap-filled)
+# MODIS Aqua 8-day (erdMH1chla8day) — confirmed on coastwatch.pfeg.
+# VIIRS SNPP weekly (nesdisVHNSQchlaWeekly) — VIIRS equivalent; confirmed on
+#   coastwatch.pfeg.  Listed after MODIS to preserve historical consistency.
 CHL_8DAY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp", "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",     "chlorophyll", "MODIS_Aqua_8day"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3chla8day.csvp", "chlorophyll", "VIIRS_SNPP_8day"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3chla8day.csvp",     "chlorophyll", "VIIRS_SNPP_8day"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",         "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/erdMH1chla8day.csvp",              "chlorophyll", "MODIS_Aqua_8day"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQchlaWeekly.csvp", "chlorophyll", "VIIRS_SNPP_8day"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQchlaWeekly.csvp",      "chlorophyll", "VIIRS_SNPP_8day"),
 ]
 
 # Kd490 daily L3 4 km
-# MODIS Aqua Kd490 variable is "k490"; VIIRS may differ — handled in parser.
-# Note: erdVH3kd490 existence on coastwatch.pfeg is not guaranteed;
-# it will fail gracefully and fall through to MODIS if unavailable.
+# VIIRS SNPP (nesdisVHNSQkd490Daily) — confirmed on coastwatch.pfeg.
+# PolarWatch mirror of the same dataset as secondary host.
+# MODIS Aqua Kd490 dataset ID unconfirmed on public ERDDAP servers; omitted to
+# avoid guaranteed 404 on each run.  Re-add if a confirmed ID is located.
 KD490_DAILY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMH1kd490.csvp",  "k490",  "MODIS_Aqua"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdMH1kd490.csvp",      "k490",  "MODIS_Aqua"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3kd490.csvp",  "kd490", "VIIRS_SNPP"),
-    ("https://upwell.pfeg.noaa.gov/erddap/griddap/erdVH3kd490.csvp",      "kd490", "VIIRS_SNPP"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQkd490Daily.csvp", "kd490", "VIIRS_SNPP"),
+    ("https://polarwatch.noaa.gov/erddap/griddap/nesdisVHNSQkd490Daily.csvp",      "kd490", "VIIRS_SNPP"),
 ]
 
 # ---------------------------------------------------------------------------
