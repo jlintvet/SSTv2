@@ -219,18 +219,36 @@ def fetch_mur(date: datetime.date, bbox: dict) -> "pd.DataFrame | None":
     """
     Returns a DataFrame with columns: lat, lon, sst_c, source, date.
 
-    Attempt order:
-      1. NASA PO.DAAC OPeNDAP (no IP blocking, no auth)
-      2. ERDDAP mirrors — .nc format (polarwatch, USF, upwell, ifremer, pfeg)
-      3. ERDDAP mirrors — csvp format with mask-based land filtering
-         (upwell, ifremer, pfeg — from DailySSTRetrieval pipeline)
+    Attempt order per date:
+      1. ERDDAP csvp — upwell + ifremer (confirmed CI-friendly per DailySSTRetrieval)
+         Uses mask field to precisely remove land/lake/ice/tidal cells.
+      2. NASA PO.DAAC OPeNDAP (requires Earthdata login from CI — often 401)
+      3. ERDDAP mirrors — .nc format (polarwatch, USF, upwell, ifremer, pfeg)
     """
     print(f"\n[1/3] NASA MUR SST  (target: {date})  ~1 km resolution")
 
     for try_date in _latest_available_dates(date):
 
-        # ── 1a. NASA PO.DAAC OPeNDAP ─────────────────────────────────────────
-        date_str   = try_date.strftime("%Y%m%d")
+        # ── 1a. ERDDAP csvp — upwell / ifremer (most reliable from CI) ───────
+        for base_url in MUR_ERDDAP_HOSTS_CSVP:
+            url = _build_mur_csvp_url(base_url, try_date, bbox)
+            try:
+                host_label = base_url.split("/")[2]
+                print(f"  Trying {host_label} csvp for {try_date} ...")
+                r = _SESSION.get(url, timeout=TIMEOUT_SECONDS)
+                r.raise_for_status()
+                df = _parse_mur_csvp(r.text, bbox)
+                if df.empty:
+                    print(f"  ✗ {host_label} csvp: no rows parsed")
+                    continue
+                print(f"  ✓ {len(df):,} pts  {df['sst_c'].min():.2f}–{df['sst_c'].max():.2f} °C  ({host_label} csvp, {try_date})")
+                return df
+            except Exception as e:
+                print(f"  ✗ {base_url.split('/')[2]} csvp / {try_date}: {e}")
+                continue
+
+        # ── 1b. NASA PO.DAAC OPeNDAP ─────────────────────────────────────────
+        date_str    = try_date.strftime("%Y%m%d")
         opendap_url = (
             f"https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections"
             f"/MUR-JPL-L4-GLOB-v4.1/granules"
@@ -251,7 +269,7 @@ def fetch_mur(date: datetime.date, bbox: dict) -> "pd.DataFrame | None":
         except Exception as e:
             print(f"  ✗ NASA OPeNDAP {try_date}: {e}")
 
-        # ── 1b. ERDDAP mirrors — NetCDF (.nc) ────────────────────────────────
+        # ── 1c. ERDDAP mirrors — NetCDF (.nc) ────────────────────────────────
         for host in MUR_ERDDAP_HOSTS_NC:
             url = (
                 f"{host}/jplMURSST41.nc"
