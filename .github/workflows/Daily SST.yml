@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       target_date:
-        description: 'Date to fetch (YYYY-MM-DD). Defaults to yesterday if blank.'
+        description: 'Most recent date to fetch (YYYY-MM-DD). Script collects the 5 days ending on this date. Defaults to yesterday if blank.'
         required: false
         default: ''
       sources:
@@ -15,8 +15,9 @@ on:
         type: choice
         options:
           - all
-          - mur_only
+          - goes19_only
           - viirs_only
+          - mur_only
           - cmems_only
 permissions:
   contents: write
@@ -24,7 +25,7 @@ jobs:
   fetch-sst:
     name: Fetch SST Data
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
