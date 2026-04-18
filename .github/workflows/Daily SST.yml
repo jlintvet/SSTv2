@@ -1,9 +1,7 @@
 name: SST Data Fetch
-
 on:
   schedule:
     - cron: '0 10 * * *'
-
   workflow_dispatch:
     inputs:
       target_date:
@@ -20,16 +18,13 @@ on:
           - mur_only
           - viirs_only
           - cmems_only
-
 permissions:
   contents: write
-
 jobs:
   fetch-sst:
     name: Fetch SST Data
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,7 +80,7 @@ jobs:
             echo "✓ CMEMS_PASSWORD set"
           fi
           echo ""
-          echo "Note: MUR + ACSPO VIIRS + Geo-polar Blended run without any credentials."
+          echo "Note: MUR + VIIRS run without any credentials."
 
       # ── Secrets passed explicitly on the step that needs them ─────────────────
       - name: Fetch SST data
@@ -103,37 +98,37 @@ jobs:
       - name: Debug output
         if: always()
         run: |
-          echo "====== sst_data/ ======"
-          find DailySST/v2/ -type f 2>/dev/null | sort || echo "!! DailySST/v2/ does not exist"
+          echo "====== SSTv2/DailySST/ ======"
+          find SSTv2/DailySST/ -type f 2>/dev/null | sort || echo "!! SSTv2/DailySST/ does not exist"
           echo ""
           echo "====== Fetch log (last 100 lines) ======"
           tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
 
       - name: Verify outputs exist
         run: |
-          count=$(find DailySST/v2/ -type f -not -name "*.nc" -not -name "*.log" 2>/dev/null | wc -l)
+          count=$(find SSTv2/DailySST/ -type f -not -name "*.nc" -not -name "*.log" 2>/dev/null | wc -l)
           echo "Output file count: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
             exit 1
           fi
 
-      # Files are already written to DailySST/{date}/ by the fetcher
       - name: Clean scratch files and list outputs
         run: |
           # Remove raw .nc scratch files — not needed in repo
-          find DailySST/ -name "_*.nc" -delete 2>/dev/null || true
-          echo "=== DailySST/ contents ==="
-          find DailySST/ -type f | sort
+          find SSTv2/DailySST/ -name "_*.nc" -delete 2>/dev/null || true
+          echo "=== SSTv2/DailySST/ contents ==="
+          find SSTv2/DailySST/ -type f | sort
           echo ""
-          du -sh DailySST/ 2>/dev/null || true
+          du -sh SSTv2/DailySST/ 2>/dev/null || true
 
-      - name: Commit files to DailySST/v2/ in repo
+      - name: Commit files to SSTv2/DailySST/ in repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add DailySST/v2/
-          git diff --cached --quiet && echo "No changes to commit" ||             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
+          git add SSTv2/DailySST/
+          git diff --cached --quiet && echo "No changes to commit" || \
+            git commit -m "data: SST update ${{ steps.date.outputs.date }}"
           git push origin HEAD
 
       - name: Commit fetch log to repo
@@ -141,20 +136,12 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          mkdir -p DailySST/v2/logs
-          cp sst_fetch.log DailySST/v2/logs/sst_fetch_${{ steps.date.outputs.date }}.log 2>/dev/null || true
-          git add DailySST/v2/logs/ 2>/dev/null || true
-          git diff --cached --quiet && echo "No log changes" ||             git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
+          mkdir -p SSTv2/DailySST/logs
+          cp sst_fetch.log SSTv2/DailySST/logs/sst_fetch_${{ steps.date.outputs.date }}.log 2>/dev/null || true
+          git add SSTv2/DailySST/logs/ 2>/dev/null || true
+          git diff --cached --quiet && echo "No log changes" || \
+            git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
           git push origin HEAD 2>/dev/null || true
-
-      # ── Optional: commit data to a 'data' branch ──────────────────────────────
-      # - name: Commit data to repository
-      #   uses: stefanzweifel/git-auto-commit-action@v5
-      #   with:
-      #     commit_message: "data: SST update ${{ steps.date.outputs.date }}"
-      #     branch: data
-      #     file_pattern: sst_data/*.geojson sst_data/*.parquet sst_data/*.csv
-      #     create_branch: true
 
       # ── Optional: push to S3 ─────────────────────────────────────────────────
       # - name: Configure AWS credentials
@@ -167,7 +154,7 @@ jobs:
       # - name: Push data to S3
       #   run: |
       #     DATE="${{ steps.date.outputs.date }}"
-      #     aws s3 sync sst_data/ s3://YOUR_BUCKET/sst/$DATE/ \
+      #     aws s3 sync SSTv2/DailySST/ s3://YOUR_BUCKET/sst/$DATE/ \
       #       --content-type "application/json" \
       #       --cache-control "max-age=86400"
 
