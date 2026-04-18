@@ -1,52 +1,23 @@
 ============================================================
   High-Fidelity SST Data Fetcher
-  Date : 2026-04-16
-  BBOX : {'lon_min': -77.5, 'lon_max': -74.0, 'lat_min': 33.5, 'lat_max': 36.5}
-  Out  : /home/runner/work/SSTv2/SSTv2/DailySST/v2
+  Date      : 2026-04-16
+  BBOX      : {'lon_min': -78.89, 'lon_max': -72.21, 'lat_min': 33.7, 'lat_max': 39.0}
+  Output    : /home/runner/work/SSTv2/SSTv2/SSTv2/DailySST
+  Sources   : all
 ============================================================
 
 [1/3] NASA MUR SST  (target: 2026-04-16)  ~1 km resolution
   Trying NASA OPeNDAP for 2026-04-16 ...
 syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
 context: HTTP^ Basic: Access denied.
-  ✗ NASA OPeNDAP 2026-04-16: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260416090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12349:12649][10249:10599]'
-  Trying polarwatch.noaa.gov for 2026-04-16 ...
-  ✗ polarwatch.noaa.gov / 2026-04-16 failed: 403 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-16T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying erddap.marine.usf.edu for 2026-04-16 ...
-  ✗ erddap.marine.usf.edu / 2026-04-16 failed: HTTPSConnectionPool(host='erddap.marine.usf.edu', port=443): Max retries exceeded with url: /erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-16T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1016)')))
-  Trying coastwatch.pfeg.noaa.gov for 2026-04-16 ...
-  ✗ coastwatch.pfeg.noaa.gov / 2026-04-16 failed: 403 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-16T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying NASA OPeNDAP for 2026-04-15 ...
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-  ✗ NASA OPeNDAP 2026-04-15: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260415090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12349:12649][10249:10599]'
-  Trying polarwatch.noaa.gov for 2026-04-15 ...
-  ✗ polarwatch.noaa.gov / 2026-04-15 failed: 403 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-15T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying erddap.marine.usf.edu for 2026-04-15 ...
-  ✗ erddap.marine.usf.edu / 2026-04-15 failed: HTTPSConnectionPool(host='erddap.marine.usf.edu', port=443): Max retries exceeded with url: /erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-15T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1016)')))
-  Trying coastwatch.pfeg.noaa.gov for 2026-04-15 ...
-  ✗ coastwatch.pfeg.noaa.gov / 2026-04-15 failed: 403 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-15T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying NASA OPeNDAP for 2026-04-14 ...
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-  ✗ NASA OPeNDAP 2026-04-14: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260414090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12349:12649][10249:10599]'
-  Trying polarwatch.noaa.gov for 2026-04-14 ...
-  ✗ polarwatch.noaa.gov / 2026-04-14 failed: 403 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-14T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying erddap.marine.usf.edu for 2026-04-14 ...
-  ✗ erddap.marine.usf.edu / 2026-04-14 failed: HTTPSConnectionPool(host='erddap.marine.usf.edu', port=443): Max retries exceeded with url: /erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-14T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1016)')))
-  Trying coastwatch.pfeg.noaa.gov for 2026-04-14 ...
-  ✗ coastwatch.pfeg.noaa.gov / 2026-04-14 failed: 403 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-14T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying NASA OPeNDAP for 2026-04-13 ...
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-  ✗ NASA OPeNDAP 2026-04-13: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260413090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12349:12649][10249:10599]'
-  Trying polarwatch.noaa.gov for 2026-04-13 ...
-  ✗ polarwatch.noaa.gov / 2026-04-13 failed: 403 Client Error:  for url: https://polarwatch.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-13T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  Trying erddap.marine.usf.edu for 2026-04-13 ...
-  ✗ erddap.marine.usf.edu / 2026-04-13 failed: HTTPSConnectionPool(host='erddap.marine.usf.edu', port=443): Max retries exceeded with url: /erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-13T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1016)')))
-  Trying coastwatch.pfeg.noaa.gov for 2026-04-13 ...
-  ✗ coastwatch.pfeg.noaa.gov / 2026-04-13 failed: 403 Client Error:  for url: https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.nc?analysed_sst%5B(2026-04-13T09:00:00Z)%5D%5B(33.5):1:(36.5)%5D%5B(-77.5):1:(-74.0)%5D
-  ✗ All MUR sources failed across all fallback dates
+  ✗ NASA OPeNDAP 2026-04-16: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/collections/MUR-JPL-L4-GLOB-v4.1/granules/20260416090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc4?analysed_sst[0:1:0][12369:12899][10110:10778]'
+  Trying polarwatch.noaa.gov .nc for 2026-04-16 ...
+  ✓ 223,103 pts  9.27–25.73 °C  (polarwatch.noaa.gov, 2026-04-16)
+  Exporting mur (223,103 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260416.geojson  (223,103 pts, 33677 KB)
+    CSV      → SSTv2/DailySST/mur_20260416.csv  (223,103 rows, 8838 KB)
+    Parquet  → SSTv2/DailySST/mur_20260416.parquet  (223,103 rows, 830 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260416_grid.json  (531×666, 2143 KB)
 
 [2/3] NOAA VIIRS SST  (target: 2026-04-16)  ~1–4 km resolution
   THREDDS catalog DOY 106 (2026-04-16) ...
@@ -57,59 +28,34 @@ context: HTTP^ Basic: Access denied.
   ✗ THREDDS 2026-04-14: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/104/catalog.xml
   THREDDS catalog DOY 103 (2026-04-13) ...
   ✗ THREDDS 2026-04-13: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/103/catalog.xml
-  Trying noaacrwsstDaily @ coastwatch.noaa.gov (2026-04-16) ...
-  ✓ 3,466 points  |  12.73–25.12 °C  (date: 2026-04-16)
-  Exporting viirs (3,466 points) ...
-    GeoJSON  → DailySST/v2/viirs_20260416.geojson  (3,466 pts, 534 KB)
-    CSV      → DailySST/v2/viirs_20260416.csv  (3,466 rows, 148 KB)
-    Parquet  → DailySST/v2/viirs_20260416.parquet  (3,466 rows, 22 KB)
-    Grid JSON → DailySST/v2/viirs_20260416_grid.json  (61×71 grid, 25 KB)
-
-[2b] NOAA Geo-polar Blended SST  (2026-04-16)  ~5 km, gap-filled
-  Using noaacrwsstDaily for 2026-04-16
-  ✓ 3,466 points  |  12.73–25.12 °C  (date used: 2026-04-16)
-  Exporting blended_geopolar (3,466 points) ...
-    GeoJSON  → DailySST/v2/blended_geopolar_20260416.geojson  (3,466 pts, 541 KB)
-    CSV      → DailySST/v2/blended_geopolar_20260416.csv  (3,466 rows, 155 KB)
-    Parquet  → DailySST/v2/blended_geopolar_20260416.parquet  (3,466 rows, 22 KB)
-    Grid JSON → DailySST/v2/blended_geopolar_20260416_grid.json  (61×71 grid, 25 KB)
+  Trying noaacrwsstDaily (2026-04-16) ...
+  ✓ 9,284 pts  9.43–25.12 °C  (noaacrwsstDaily, 2026-04-16)
+  Exporting viirs (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260416.geojson  (9,284 pts, 1431 KB)
+    CSV      → SSTv2/DailySST/viirs_20260416.csv  (9,284 rows, 397 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260416.parquet  (9,284 rows, 43 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260416_grid.json  (107×133, 80 KB)
 
 [3/3] Copernicus CMEMS L4 SST  (2026-04-16)  ~5 km, fully gap-filled
   Downloading via copernicusmarine client ...
-INFO - 2026-04-18T03:59:13Z - Selected dataset version: "default"
-INFO - 2026-04-18T03:59:13Z - Selected dataset part: "default"
-WARNING - 2026-04-18T03:59:13Z - Some of your subset selection [2026-04-16 00:00:00+00:00, 2026-04-16 23:59:59+00:00] for the time dimension exceed the dataset coordinates [2024-01-17 00:00:00+00:00, 2026-04-16 00:00:00+00:00]
+INFO - 2026-04-18T04:03:50Z - Selected dataset version: "default"
+INFO - 2026-04-18T04:03:50Z - Selected dataset part: "default"
+WARNING - 2026-04-18T04:03:50Z - Some of your subset selection [2026-04-16 00:00:00+00:00, 2026-04-16 23:59:59+00:00] for the time dimension exceed the dataset coordinates [2024-01-17 00:00:00+00:00, 2026-04-16 00:00:00+00:00]
   ✗ CMEMS fetch failed: No module named 'h5py', backend not available. Please install 'h5py' into your Python environment.
 
 [Blending sources into composite ...]
-  Exporting blended (696 points) ...
-    GeoJSON  → DailySST/v2/blended_20260416.geojson  (696 pts, 107 KB)
-    CSV      → DailySST/v2/blended_20260416.csv  (696 rows, 29 KB)
-    Parquet  → DailySST/v2/blended_20260416.parquet  (696 rows, 11 KB)
-    Grid JSON → DailySST/v2/blended_20260416_grid.json  (26×31 grid, 5 KB)
+  Exporting blended (5,628 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260416.geojson  (5,628 pts, 866 KB)
+    CSV      → SSTv2/DailySST/blended_20260416.csv  (5,628 rows, 240 KB)
+    Parquet  → SSTv2/DailySST/blended_20260416.parquet  (5,628 rows, 52 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260416_grid.json  (81×104, 52 KB)
 
 ============================================================
-  Source         Points    Min °C    Max °C
-  ----------  ---------  -------  -------
-  MUR                 —
-  VIIRS(ACSPO)      3,466     12.73     25.12
-  BLENDED         3,466     12.73     25.12
-  CMEMS               —
+  Source       Points    Min °C    Max °C
+  --------  ---------  -------  -------
+  MUR         223,103      9.27     25.73
+  VIIRS         9,284      9.43     25.12
+  CMEMS             —
 ============================================================
 
-  Files written to: /home/runner/work/SSTv2/SSTv2/DailySST/v2
-
-  Data schema (all formats):
-    lat     — decimal degrees (WGS84)
-    lon     — decimal degrees (WGS84)
-    sst_c   — sea surface temperature, Celsius
-    sst_f   — sea surface temperature, Fahrenheit
-    source  — MUR | VIIRS | CMEMS | blended
-    date    — ISO date string
-
-  Recommended app rendering stack:
-    • deck.gl HeatmapLayer or GridLayer  (WebGL, handles 500k+ pts)
-    • Mapbox GL raster-array source      (feed the grid JSON)
-    • Leaflet canvas renderer            (for the GeoJSON)
-    • PostGIS + ST_PixelAsPoints         (for server-side tile generation)
-
+  Files written to: /home/runner/work/SSTv2/SSTv2/SSTv2/DailySST
