@@ -1,0 +1,247 @@
+============================================================
+  High-Fidelity SST Data Fetcher
+  Date      : 2026-04-17
+  BBOX      : {'lon_min': -78.89, 'lon_max': -72.21, 'lat_min': 33.7, 'lat_max': 39.0}
+  Output    : /home/runner/work/SSTv2/SSTv2/SSTv2/DailySST
+  Sources   : all
+  Datasets  : up to 5 per source
+============================================================
+
+[1/4] GOES-19 ABI SST  (target: 2026-04-17, collecting up to 5 hourly snapshots)  ~2 km
+  Probing cwcgom.aoml.noaa.gov ...
+  Trying 2026-04-17 14:00Z ...
+  ✓ 40,306 pts  10.61–25.14 °C  (2026-04-17 14:00Z)
+  Trying 2026-04-17 15:00Z ...
+  ✓ 42,922 pts  10.46–25.83 °C  (2026-04-17 15:00Z)
+  Trying 2026-04-17 13:00Z ...
+  ✓ 35,844 pts  10.36–25.11 °C  (2026-04-17 13:00Z)
+  Trying 2026-04-17 16:00Z ...
+  ✓ 43,828 pts  10.24–26.46 °C  (2026-04-17 16:00Z)
+  Trying 2026-04-17 12:00Z ...
+  ✓ 33,012 pts  10.60–25.04 °C  (2026-04-17 12:00Z)
+  GOES-19: 5/5 hourly snapshots retrieved
+
+[2/4] NOAA VIIRS SST  (target: 2026-04-17, all hourly passes across last 5 days)  ~1–4 km
+  Date 2026-04-17:
+    THREDDS catalog DOY 107 (2026-04-17) ...
+    ✗ THREDDS catalog 2026-04-17: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/107/catalog.xml
+    No THREDDS passes — trying ERDDAP fallback ...
+    noaacrwsstDaily (2026-04-17) ...
+    ✓ 9,284 pts  9.62–25.07 °C  (noaacrwsstDaily)
+  Date 2026-04-16:
+    THREDDS catalog DOY 106 (2026-04-16) ...
+    ✗ THREDDS catalog 2026-04-16: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/106/catalog.xml
+    No THREDDS passes — trying ERDDAP fallback ...
+    noaacrwsstDaily (2026-04-16) ...
+    ✓ 9,284 pts  9.43–25.12 °C  (noaacrwsstDaily)
+  Date 2026-04-15:
+    THREDDS catalog DOY 105 (2026-04-15) ...
+    ✗ THREDDS catalog 2026-04-15: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/105/catalog.xml
+    No THREDDS passes — trying ERDDAP fallback ...
+    noaacrwsstDaily (2026-04-15) ...
+    ✓ 9,284 pts  8.69–25.07 °C  (noaacrwsstDaily)
+  Date 2026-04-14:
+    THREDDS catalog DOY 104 (2026-04-14) ...
+    ✗ THREDDS catalog 2026-04-14: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/104/catalog.xml
+    No THREDDS passes — trying ERDDAP fallback ...
+    noaacrwsstDaily (2026-04-14) ...
+    ✓ 9,284 pts  8.59–25.13 °C  (noaacrwsstDaily)
+  Date 2026-04-13:
+    THREDDS catalog DOY 103 (2026-04-13) ...
+    ✗ THREDDS catalog 2026-04-13: 404 Client Error: Not Found for url: https://coastwatch.noaa.gov/thredds/catalog/gridN20VIIRSSCIENCEL3UWW00/2026/103/catalog.xml
+    No THREDDS passes — trying ERDDAP fallback ...
+    noaacrwsstDaily (2026-04-13) ...
+    ✓ 9,284 pts  7.98–24.93 °C  (noaacrwsstDaily)
+  VIIRS: 5 passes retrieved across last 5 days  (46,420 total pts)
+
+[4/4] NASA MUR SST  (target: 2026-04-17, collecting up to 5 days)  ~1 km
+  Date 2026-04-17:
+    upwell.pfeg.noaa.gov csvp 2026-04-17 ...
+    ✓ 221,452 pts  9.72–25.87 °C  (upwell.pfeg.noaa.gov csvp)
+  Date 2026-04-16:
+    upwell.pfeg.noaa.gov csvp 2026-04-16 ...
+    ✓ 221,452 pts  9.53–25.84 °C  (upwell.pfeg.noaa.gov csvp)
+  Date 2026-04-15:
+    upwell.pfeg.noaa.gov csvp 2026-04-15 ...
+    ✓ 221,452 pts  8.31–25.40 °C  (upwell.pfeg.noaa.gov csvp)
+  Date 2026-04-14:
+    upwell.pfeg.noaa.gov csvp 2026-04-14 ...
+    ✓ 221,452 pts  8.40–25.41 °C  (upwell.pfeg.noaa.gov csvp)
+  Date 2026-04-13:
+    upwell.pfeg.noaa.gov csvp 2026-04-13 ...
+    ✓ 221,452 pts  8.28–25.21 °C  (upwell.pfeg.noaa.gov csvp)
+  MUR: 5/5 datasets retrieved
+
+[3/4] Copernicus CMEMS L4 SST  (target: 2026-04-17, collecting up to 5 days)  ~5 km
+  Date 2026-04-17:
+    CMEMS downloading 2026-04-17 ...
+INFO - 2026-04-19T10:30:39Z - Selected dataset version: "default"
+INFO - 2026-04-19T10:30:39Z - Selected dataset part: "default"
+    ✓ 9,214 pts  8.69–25.28 °C
+  Date 2026-04-16:
+    CMEMS downloading 2026-04-16 ...
+INFO - 2026-04-19T10:30:44Z - Selected dataset version: "default"
+INFO - 2026-04-19T10:30:44Z - Selected dataset part: "default"
+    ✓ 9,214 pts  8.90–25.44 °C
+  Date 2026-04-15:
+    CMEMS downloading 2026-04-15 ...
+INFO - 2026-04-19T10:30:49Z - Selected dataset version: "default"
+INFO - 2026-04-19T10:30:49Z - Selected dataset part: "default"
+    ✓ 9,214 pts  8.47–24.94 °C
+  Date 2026-04-14:
+    CMEMS downloading 2026-04-14 ...
+INFO - 2026-04-19T10:30:55Z - Selected dataset version: "default"
+INFO - 2026-04-19T10:30:55Z - Selected dataset part: "default"
+    ✓ 9,214 pts  8.59–25.39 °C
+  Date 2026-04-13:
+    CMEMS downloading 2026-04-13 ...
+INFO - 2026-04-19T10:31:00Z - Selected dataset version: "default"
+INFO - 2026-04-19T10:31:00Z - Selected dataset part: "default"
+    ✓ 9,214 pts  8.05–25.43 °C
+  CMEMS: 5/5 datasets retrieved
+
+[Writing individual source files ...]
+  Exporting goes19 20260417_14 (40,306 points) ...
+    GeoJSON  → SSTv2/DailySST/goes19_20260417_14.geojson  (40,306 pts, 6172 KB)
+    CSV      → SSTv2/DailySST/goes19_20260417_14.csv  (40,306 rows, 1685 KB)
+    Parquet  → SSTv2/DailySST/goes19_20260417_14.parquet  (40,306 rows, 137 KB)
+    Grid JSON → SSTv2/DailySST/goes19_20260417_14_grid.json  (266×333, 472 KB)
+  Exporting goes19 20260417_15 (42,922 points) ...
+    GeoJSON  → SSTv2/DailySST/goes19_20260417_15.geojson  (42,922 pts, 6573 KB)
+    CSV      → SSTv2/DailySST/goes19_20260417_15.csv  (42,922 rows, 1794 KB)
+    Parquet  → SSTv2/DailySST/goes19_20260417_15.parquet  (42,922 rows, 145 KB)
+    Grid JSON → SSTv2/DailySST/goes19_20260417_15_grid.json  (266×333, 475 KB)
+  Exporting goes19 20260417_13 (35,844 points) ...
+    GeoJSON  → SSTv2/DailySST/goes19_20260417_13.geojson  (35,844 pts, 5489 KB)
+    CSV      → SSTv2/DailySST/goes19_20260417_13.csv  (35,844 rows, 1498 KB)
+    Parquet  → SSTv2/DailySST/goes19_20260417_13.parquet  (35,844 rows, 124 KB)
+    Grid JSON → SSTv2/DailySST/goes19_20260417_13_grid.json  (260×333, 459 KB)
+  Exporting goes19 20260417_16 (43,828 points) ...
+    GeoJSON  → SSTv2/DailySST/goes19_20260417_16.geojson  (43,828 pts, 6711 KB)
+    CSV      → SSTv2/DailySST/goes19_20260417_16.csv  (43,828 rows, 1832 KB)
+    Parquet  → SSTv2/DailySST/goes19_20260417_16.parquet  (43,828 rows, 147 KB)
+    Grid JSON → SSTv2/DailySST/goes19_20260417_16_grid.json  (266×332, 474 KB)
+  Exporting goes19 20260417_12 (33,012 points) ...
+    GeoJSON  → SSTv2/DailySST/goes19_20260417_12.geojson  (33,012 pts, 5055 KB)
+    CSV      → SSTv2/DailySST/goes19_20260417_12.csv  (33,012 rows, 1380 KB)
+    Parquet  → SSTv2/DailySST/goes19_20260417_12.parquet  (33,012 rows, 116 KB)
+    Grid JSON → SSTv2/DailySST/goes19_20260417_12_grid.json  (266×333, 466 KB)
+  Exporting viirs 20260417 (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260417.geojson  (9,284 pts, 1431 KB)
+    CSV      → SSTv2/DailySST/viirs_20260417.csv  (9,284 rows, 397 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260417.parquet  (9,284 rows, 43 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260417_grid.json  (107×133, 80 KB)
+  Exporting viirs 20260416 (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260416.geojson  (9,284 pts, 1431 KB)
+    CSV      → SSTv2/DailySST/viirs_20260416.csv  (9,284 rows, 397 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260416.parquet  (9,284 rows, 43 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260416_grid.json  (107×133, 80 KB)
+  Exporting viirs 20260415 (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260415.geojson  (9,284 pts, 1431 KB)
+    CSV      → SSTv2/DailySST/viirs_20260415.csv  (9,284 rows, 397 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260415.parquet  (9,284 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260415_grid.json  (107×133, 79 KB)
+  Exporting viirs 20260414 (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260414.geojson  (9,284 pts, 1430 KB)
+    CSV      → SSTv2/DailySST/viirs_20260414.csv  (9,284 rows, 397 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260414.parquet  (9,284 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260414_grid.json  (107×133, 79 KB)
+  Exporting viirs 20260413 (9,284 points) ...
+    GeoJSON  → SSTv2/DailySST/viirs_20260413.geojson  (9,284 pts, 1430 KB)
+    CSV      → SSTv2/DailySST/viirs_20260413.csv  (9,284 rows, 396 KB)
+    Parquet  → SSTv2/DailySST/viirs_20260413.parquet  (9,284 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/viirs_20260413_grid.json  (107×133, 79 KB)
+  Exporting mur 20260417 (221,452 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260417.geojson  (221,452 pts, 33430 KB)
+    CSV      → SSTv2/DailySST/mur_20260417.csv  (221,452 rows, 8776 KB)
+    Parquet  → SSTv2/DailySST/mur_20260417.parquet  (221,452 rows, 820 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260417_grid.json  (531×666, 2142 KB)
+  Exporting mur 20260416 (221,452 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260416.geojson  (221,452 pts, 33429 KB)
+    CSV      → SSTv2/DailySST/mur_20260416.csv  (221,452 rows, 8775 KB)
+    Parquet  → SSTv2/DailySST/mur_20260416.parquet  (221,452 rows, 824 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260416_grid.json  (531×666, 2142 KB)
+  Exporting mur 20260415 (221,452 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260415.geojson  (221,452 pts, 33422 KB)
+    CSV      → SSTv2/DailySST/mur_20260415.csv  (221,452 rows, 8768 KB)
+    Parquet  → SSTv2/DailySST/mur_20260415.parquet  (221,452 rows, 836 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260415_grid.json  (531×666, 2134 KB)
+  Exporting mur 20260414 (221,452 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260414.geojson  (221,452 pts, 33414 KB)
+    CSV      → SSTv2/DailySST/mur_20260414.csv  (221,452 rows, 8759 KB)
+    Parquet  → SSTv2/DailySST/mur_20260414.parquet  (221,452 rows, 838 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260414_grid.json  (531×666, 2126 KB)
+  Exporting mur 20260413 (221,452 points) ...
+    GeoJSON  → SSTv2/DailySST/mur_20260413.geojson  (221,452 pts, 33404 KB)
+    CSV      → SSTv2/DailySST/mur_20260413.csv  (221,452 rows, 8750 KB)
+    Parquet  → SSTv2/DailySST/mur_20260413.parquet  (221,452 rows, 845 KB)
+    Grid JSON → SSTv2/DailySST/mur_20260413_grid.json  (531×666, 2116 KB)
+  Exporting cmems 20260417 (9,214 points) ...
+    GeoJSON  → SSTv2/DailySST/cmems_20260417.geojson  (9,214 pts, 1420 KB)
+    CSV      → SSTv2/DailySST/cmems_20260417.csv  (9,214 rows, 394 KB)
+    Parquet  → SSTv2/DailySST/cmems_20260417.parquet  (9,214 rows, 43 KB)
+    Grid JSON → SSTv2/DailySST/cmems_20260417_grid.json  (106×133, 79 KB)
+  Exporting cmems 20260416 (9,214 points) ...
+    GeoJSON  → SSTv2/DailySST/cmems_20260416.geojson  (9,214 pts, 1420 KB)
+    CSV      → SSTv2/DailySST/cmems_20260416.csv  (9,214 rows, 394 KB)
+    Parquet  → SSTv2/DailySST/cmems_20260416.parquet  (9,214 rows, 43 KB)
+    Grid JSON → SSTv2/DailySST/cmems_20260416_grid.json  (106×133, 79 KB)
+  Exporting cmems 20260415 (9,214 points) ...
+    GeoJSON  → SSTv2/DailySST/cmems_20260415.geojson  (9,214 pts, 1420 KB)
+    CSV      → SSTv2/DailySST/cmems_20260415.csv  (9,214 rows, 394 KB)
+    Parquet  → SSTv2/DailySST/cmems_20260415.parquet  (9,214 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/cmems_20260415_grid.json  (106×133, 79 KB)
+  Exporting cmems 20260414 (9,214 points) ...
+    GeoJSON  → SSTv2/DailySST/cmems_20260414.geojson  (9,214 pts, 1420 KB)
+    CSV      → SSTv2/DailySST/cmems_20260414.csv  (9,214 rows, 394 KB)
+    Parquet  → SSTv2/DailySST/cmems_20260414.parquet  (9,214 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/cmems_20260414_grid.json  (106×133, 79 KB)
+  Exporting cmems 20260413 (9,214 points) ...
+    GeoJSON  → SSTv2/DailySST/cmems_20260413.geojson  (9,214 pts, 1419 KB)
+    CSV      → SSTv2/DailySST/cmems_20260413.csv  (9,214 rows, 393 KB)
+    Parquet  → SSTv2/DailySST/cmems_20260413.parquet  (9,214 rows, 44 KB)
+    Grid JSON → SSTv2/DailySST/cmems_20260413_grid.json  (106×133, 78 KB)
+
+[Building blended composites per date ...]
+  20260417: blending ['GOES19', 'VIIRS', 'MUR', 'CMEMS'] ...
+  Exporting blended 20260417 (6,238 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260417.geojson  (6,238 pts, 959 KB)
+    CSV      → SSTv2/DailySST/blended_20260417.csv  (6,238 rows, 265 KB)
+    Parquet  → SSTv2/DailySST/blended_20260417.parquet  (6,238 rows, 54 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260417_grid.json  (90×104, 57 KB)
+  20260416: blending ['VIIRS', 'MUR', 'CMEMS'] ...
+  Exporting blended 20260416 (6,238 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260416.geojson  (6,238 pts, 960 KB)
+    CSV      → SSTv2/DailySST/blended_20260416.csv  (6,238 rows, 265 KB)
+    Parquet  → SSTv2/DailySST/blended_20260416.parquet  (6,238 rows, 57 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260416_grid.json  (90×104, 58 KB)
+  20260415: blending ['VIIRS', 'MUR', 'CMEMS'] ...
+  Exporting blended 20260415 (6,238 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260415.geojson  (6,238 pts, 959 KB)
+    CSV      → SSTv2/DailySST/blended_20260415.csv  (6,238 rows, 265 KB)
+    Parquet  → SSTv2/DailySST/blended_20260415.parquet  (6,238 rows, 57 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260415_grid.json  (90×104, 57 KB)
+  20260414: blending ['VIIRS', 'MUR', 'CMEMS'] ...
+  Exporting blended 20260414 (6,238 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260414.geojson  (6,238 pts, 959 KB)
+    CSV      → SSTv2/DailySST/blended_20260414.csv  (6,238 rows, 265 KB)
+    Parquet  → SSTv2/DailySST/blended_20260414.parquet  (6,238 rows, 57 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260414_grid.json  (90×104, 57 KB)
+  20260413: blending ['VIIRS', 'MUR', 'CMEMS'] ...
+  Exporting blended 20260413 (6,238 points) ...
+    GeoJSON  → SSTv2/DailySST/blended_20260413.geojson  (6,238 pts, 959 KB)
+    CSV      → SSTv2/DailySST/blended_20260413.csv  (6,238 rows, 264 KB)
+    Parquet  → SSTv2/DailySST/blended_20260413.parquet  (6,238 rows, 57 KB)
+    Grid JSON → SSTv2/DailySST/blended_20260413_grid.json  (90×104, 57 KB)
+
+============================================================
+  Source      Passes   Total pts
+  --------  --------  ----------
+  GOES19           5     195,912
+  VIIRS            5      46,420
+  MUR              5   1,107,260
+  CMEMS            5      46,070
+  Blended          5
+============================================================
+
+  Files written to: /home/runner/work/SSTv2/SSTv2/SSTv2/DailySST
