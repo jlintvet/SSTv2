@@ -7,13 +7,13 @@ Fetches:
 - Bathymetry grid JSON (raw depth grid for feature detection algorithms)
 - Coastline line (Natural Earth 10m, public domain)
 - Land mask polygons (Natural Earth 10m, public domain)
-- Wrecks / fishing spots (GPX → wrecks.json, rebuilt when GPX files change)
+- Wrecks / fishing spots (GPX → wrecks.json, always rebuilt on every run)
 Caching
 -------
 Bathymetry, coastline, and land mask are static datasets. Files are skipped
 on re-run unless they are missing or older than CACHE_DAYS (default: 30 days).
-Wrecks are rebuilt whenever any source GPX file is newer than wrecks.json,
-or when wrecks.json is absent.
+Wrecks are always rebuilt on every run — source GPX files can change at any
+time and a stale wrecks.json is worse than the small overhead of rebuilding.
 Contour depth levels (fathom-aligned for offshore fishing)
 ----------------------------------------------------------
   10 fm  =   60 ft  — nearshore / inshore boundary
@@ -73,7 +73,7 @@ log = logging.getLogger(__name__)
 # Values : region label used in wrecks.json properties
 #
 # To add a new region: drop the GPX file into DailySST/ and add an entry here.
-# wrecks.json is rebuilt automatically whenever any GPX is newer than the output.
+# wrecks.json is always rebuilt on every run (no cache check).
 # ---------------------------------------------------------------------------
 WRECK_GPX_FILES = {
     "Fishing_Spots_HatterasNC.gpx":  "HatterasNC",
@@ -139,25 +139,6 @@ def _static_cache_valid(path: pathlib.Path) -> bool:
         log.info("%s exists — skipping fetch. (Delete to force refresh.)", path.name)
         return True
     return False
-def _wrecks_cache_valid() -> bool:
-    """
-    Returns True if wrecks.json exists AND is newer than all source GPX files.
-    If any GPX is newer (i.e. it was updated) or wrecks.json is absent, rebuild.
-    """
-    dest = OUTPUT_DIR / "wrecks.json"
-    if not dest.exists():
-        log.info("wrecks.json not found — will build.")
-        return False
-    dest_mtime = dest.stat().st_mtime
-    for gpx_name in WRECK_GPX_FILES:
-        gpx_path = OUTPUT_DIR / gpx_name
-        if not gpx_path.exists():
-            continue   # missing GPX — skip, will warn later
-        if gpx_path.stat().st_mtime > dest_mtime:
-            log.info("%s is newer than wrecks.json — rebuilding.", gpx_name)
-            return False
-    log.info("wrecks.json is up to date — skipping rebuild. (Delete to force refresh.)")
-    return True
 # ---------------------------------------------------------------------------
 # Wrecks — GPX parsing and JSON output
 # ---------------------------------------------------------------------------
@@ -667,9 +648,9 @@ def main() -> None:
     if not _static_cache_valid(OUTPUT_DIR / "landmask.json"):
         write_land_mask(session)
     # ── Wrecks / fishing spots ───────────────────────────────────────────────
+    # Always rebuild — source GPX files can change between runs.
     log.info("=== Wrecks ===")
-    if not _wrecks_cache_valid():
-        write_wrecks_json()
+    write_wrecks_json()
     log.info("=== Done. ===")
 if __name__ == "__main__":
     main()
