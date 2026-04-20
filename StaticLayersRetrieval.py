@@ -29,7 +29,9 @@ The 200 fm (1200 ft) contour is flagged with shelf_break=true in properties
 for special UI treatment (bolder stroke, permanent label, etc.).
 Outputs into DailySST/
   bathymetry_contours.json  — GeoJSON LineStrings with depth_ft + depth_fathoms
-  bathymetry_grid.json      — Raw 2D depth grid for feature detection
+  bathymetry_grid.json      — Raw 2D depth grid (ft only, int-rounded) for
+                              feature detection. Consumers derive fathoms as
+                              depth_ft / 6.
   noaa_coastline.json       — GeoJSON LineStrings (Natural Earth 10m)
   landmask.json             — GeoJSON Polygons / MultiPolygons (Natural Earth 10m)
   wrecks.json               — GeoJSON FeatureCollection from source GPX files
@@ -143,14 +145,11 @@ def _static_cache_valid(path: pathlib.Path) -> bool:
 # Wrecks — GPX parsing and JSON output
 # ---------------------------------------------------------------------------
 _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
-
 def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
     """
     Parse a GPX 1.1 file and return a list of GeoJSON-style feature dicts.
-
     Handles both full-namespace GPX (xmlns="http://www.topografix.com/GPX/1/1")
     and bare/namespace-stripped GPX (as produced by the clean step).
-
     Properties extracted per waypoint:
       name   — <name> text
       symbol — <sym> text (e.g. "Rocks", "Wreck")
@@ -164,7 +163,6 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
     except ET.ParseError as e:
         log.warning("  Could not parse %s: %s", path.name, e)
         return []
-
     # Support both namespaced and bare GPX tags
     tag = root.tag
     if tag.startswith("{"):
@@ -180,7 +178,6 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
         name_tag = "name"
         sym_tag  = "sym"
         desc_tag = "desc"
-
     features = []
     for wpt in root.findall(wpt_tag, ns):
         try:
@@ -188,14 +185,11 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
             lon = float(wpt.get("lon"))
         except (TypeError, ValueError):
             continue
-
         name_el = wpt.find(name_tag, ns)
         sym_el  = wpt.find(sym_tag,  ns)
         desc_el = wpt.find(desc_tag, ns)
-
         name   = name_el.text.strip() if name_el is not None and name_el.text else ""
         symbol = sym_el.text.strip()  if sym_el  is not None and sym_el.text  else "Rocks"
-
         # Extract Fishing Status ID from CDATA description, e.g. "ID#377565"
         fs_id = None
         if desc_el is not None and desc_el.text:
@@ -203,7 +197,6 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
             m = re.search(r"ID#(\d+)", desc_el.text)
             if m:
                 fs_id = m.group(1)
-
         feature = {
             "type": "Feature",
             "geometry": {
@@ -219,17 +212,12 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
         }
         if fs_id is not None:
             feature["properties"]["fs_id"] = fs_id
-
         features.append(feature)
-
     return features
-
-
 def write_wrecks_json() -> None:
     """
     Parse all source GPX files defined in WRECK_GPX_FILES, combine into a
     single GeoJSON FeatureCollection, and write DailySST/wrecks.json.
-
     Output schema:
     {
       "type": "FeatureCollection",
@@ -259,7 +247,6 @@ def write_wrecks_json() -> None:
     log.info("Building wrecks.json from %d GPX file(s) ...", len(WRECK_GPX_FILES))
     all_features   = []
     gpx_files_used = []
-
     for gpx_name, region in WRECK_GPX_FILES.items():
         gpx_path = OUTPUT_DIR / gpx_name
         if not gpx_path.exists():
@@ -269,15 +256,12 @@ def write_wrecks_json() -> None:
         log.info("  %-40s → %d waypoints  (region: %s)", gpx_name, len(features), region)
         all_features.extend(features)
         gpx_files_used.append(gpx_name)
-
     if not all_features:
         log.warning("No waypoints found — wrecks.json not written.")
         return
-
     regions_present = list(dict.fromkeys(          # preserve insertion order, dedupe
         f["properties"]["region"] for f in all_features
     ))
-
     fc = {
         "type": "FeatureCollection",
         "metadata": {
@@ -296,13 +280,11 @@ def write_wrecks_json() -> None:
         "feature_count": len(all_features),
         "features":      all_features,
     }
-
     dest = OUTPUT_DIR / "wrecks.json"
     tmp  = dest.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(fc, fh, separators=(",", ":"))
     tmp.rename(dest)
-
     size_kb = dest.stat().st_size / 1024
     log.info("wrecks.json written: %d features across %d region(s)  (%.1f KB)",
              len(all_features), len(regions_present), size_kb)
@@ -461,23 +443,32 @@ def write_contours(lats: list, lons: list, grid: list) -> None:
              len(features), len(CONTOUR_DEPTHS_FT), dest.stat().st_size / 1024)
 # ---------------------------------------------------------------------------
 # Bathymetry grid output
+#
+# Size-optimized schema (v2):
+#   • depth_ft is the only depth grid. Fathoms are NOT stored — consumers
+#     derive them as depth_ft / 6 (1 fathom = 6 ft exactly).
+#   • depth_ft values are rounded to the nearest integer foot. GEBCO's
+#     intrinsic accuracy is much coarser than 1 ft, so this is lossless in
+#     practice and ~halves the serialized byte count vs. 1-decimal floats.
+#   • lats / lons are rounded to 5 decimal places (~1.1 m precision).
+#   • JSON is written compact (no indent, no whitespace).
+#   • math.isnan cells are serialized as null (= land or no data).
+#
+# Together these changes cut bathymetry_grid.json from ~23.6 MB to roughly
+# one quarter of that size (drop fathoms grid ~50% + int-round depths ~30-50%
+# of the remainder).
 # ---------------------------------------------------------------------------
 def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
     log.info("Writing bathymetry grid JSON ...")
-    grid_ft      = []
-    grid_fathoms = []
+    grid_ft = []
     for row in grid:
         ft_row = []
-        fm_row = []
         for cell in row:
             if math.isnan(cell):
                 ft_row.append(None)
-                fm_row.append(None)
             else:
-                ft_row.append(round(cell,        1))
-                fm_row.append(round(cell / 6.0,  2))
+                ft_row.append(int(round(cell)))
         grid_ft.append(ft_row)
-        grid_fathoms.append(fm_row)
     res_lat = round(lats[1] - lats[0], 6) if len(lats) > 1 else None
     res_lon = round(lons[1] - lons[0], 6) if len(lons) > 1 else None
     payload = {
@@ -486,6 +477,7 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
                                     .isoformat(timespec="seconds")
                                     .replace("+00:00", "Z")),
             "source":              "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
+            "schema_version":      2,
             "stride":              BATHY_STRIDE,
             "res_lat_deg":         res_lat,
             "res_lon_deg":         res_lon,
@@ -496,17 +488,16 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
             },
             "units": {
-                "depth_ft":      "feet below surface (positive = deeper); null = land or no data",
-                "depth_fathoms": "fathoms (1 fm = 6 ft exactly); null = land or no data",
+                "depth_ft": "feet below surface, rounded to nearest integer (positive = deeper); null = land or no data",
             },
-            "contour_depths_ft":    CONTOUR_DEPTHS_FT,
-            "shelf_break_ft":       SHELF_BREAK_FT,
-            "shelf_break_fathoms":  int(SHELF_BREAK_FT / 6),
+            "fathoms_note":        "Fathoms are not stored. Derive client-side: depth_fathoms = depth_ft / 6 (1 fathom = 6 ft exactly).",
+            "contour_depths_ft":   CONTOUR_DEPTHS_FT,
+            "shelf_break_ft":      SHELF_BREAK_FT,
+            "shelf_break_fathoms": int(SHELF_BREAK_FT / 6),
         },
-        "lats":          [round(v, 5) for v in lats],
-        "lons":          [round(v, 5) for v in lons],
-        "depth_ft":      grid_ft,
-        "depth_fathoms": grid_fathoms,
+        "lats":     [round(v, 5) for v in lats],
+        "lons":     [round(v, 5) for v in lons],
+        "depth_ft": grid_ft,
     }
     dest = OUTPUT_DIR / "bathymetry_grid.json"
     tmp  = dest.with_suffix(".tmp")
