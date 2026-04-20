@@ -60,6 +60,13 @@ BATHY_STRIDE = 1
 # Re-fetch bathymetry only if output files are older than this many days.
 # Bathymetry updates ~annually; 30 days is a safe default for CI runs.
 CACHE_DAYS = 30
+# Bump this whenever write_bathymetry_grid() changes its output schema.
+# _bathy_cache_valid() invalidates any cached bathymetry_grid.json whose
+# meta.schema_version does not match this value, forcing a re-fetch even
+# if the file is newer than CACHE_DAYS.
+#   v1 = depth_ft (1 decimal) + depth_fathoms (2 decimal) grids
+#   v2 = depth_ft only, int-rounded; fathoms derived client-side
+BATHY_GRID_SCHEMA_VERSION = 2
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 TIMEOUT    = 300   # seconds — stride=1 downloads are larger; give extra headroom
 logging.basicConfig(
@@ -134,7 +141,27 @@ def _bathy_cache_valid() -> bool:
             log.info("Cache stale: %s is %d days old (limit: %d) — will re-fetch.",
                      path.name, (datetime.datetime.now() - mtime).days, CACHE_DAYS)
             return False
-    log.info("Bathymetry cache is valid (files < %d days old) — skipping fetch.", CACHE_DAYS)
+    # Schema-version check: if the cached grid was written by an older version
+    # of this script, invalidate the cache so the new schema gets written out
+    # even when files are still within the CACHE_DAYS window.
+    grid_path = OUTPUT_DIR / "bathymetry_grid.json"
+    try:
+        with open(grid_path, "r", encoding="utf-8") as fh:
+            cached_meta = json.load(fh).get("meta", {})
+        cached_version = cached_meta.get("schema_version")
+        if cached_version != BATHY_GRID_SCHEMA_VERSION:
+            log.info(
+                "Cache schema mismatch: %s is schema v%s, current v%d — will re-fetch.",
+                grid_path.name, cached_version, BATHY_GRID_SCHEMA_VERSION,
+            )
+            return False
+    except (OSError, ValueError) as exc:
+        log.info("Cache unreadable (%s) — will re-fetch.", exc)
+        return False
+    log.info(
+        "Bathymetry cache is valid (files < %d days old, schema v%d) — skipping fetch.",
+        CACHE_DAYS, BATHY_GRID_SCHEMA_VERSION,
+    )
     return True
 def _static_cache_valid(path: pathlib.Path) -> bool:
     if path.exists():
@@ -477,7 +504,7 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
                                     .isoformat(timespec="seconds")
                                     .replace("+00:00", "Z")),
             "source":              "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
-            "schema_version":      2,
+            "schema_version":      BATHY_GRID_SCHEMA_VERSION,
             "stride":              BATHY_STRIDE,
             "res_lat_deg":         res_lat,
             "res_lon_deg":         res_lon,
