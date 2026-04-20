@@ -125,12 +125,25 @@ BATHY_SOURCES = [
 ]
 # ---------------------------------------------------------------------------
 # HTTP session with retry
+#
+# User-Agent: NOAA ERDDAP servers (PFEG, PIFSC, NCEI) routinely return 403
+# Forbidden for requests that use the default python-requests UA, which looks
+# like bot traffic. ERDDAP's own documentation asks clients to identify
+# themselves via a descriptive User-Agent:
+#   https://coastwatch.pfeg.noaa.gov/erddap/information.html#citeTheSource
+# Setting a clear UA tied to this repo makes requests look legitimate and is
+# the standard fix for the "worked yesterday, 403 today" failure mode.
 # ---------------------------------------------------------------------------
+USER_AGENT = "SSTv2/1.0 (+https://github.com/jlintvet/SSTv2) python-requests"
 def _make_session() -> requests.Session:
     s = requests.Session()
     retry = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
     s.mount("https://", HTTPAdapter(max_retries=retry))
     s.mount("http://",  HTTPAdapter(max_retries=retry))
+    s.headers.update({
+        "User-Agent": USER_AGENT,
+        "Accept":     "text/csv, text/plain, */*",
+    })
     return s
 # ---------------------------------------------------------------------------
 # Cache validation
@@ -404,11 +417,28 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
                             stride, type(exc).__name__)
                 last_err = exc
                 continue
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status == 403:
+                    # 403 commonly means UA/IP block at the server edge. Coarser
+                    # strides won't help (the request was rejected before any
+                    # data transfer). Skip this source entirely.
+                    log.warning(
+                        "  Source rejected the request at stride=%d (HTTP 403 — "
+                        "likely UA or IP policy block at %s). Check the "
+                        "USER_AGENT header and whether this runner IP is banned. "
+                        "Skipping to next source.", stride, base_url,
+                    )
+                else:
+                    log.warning("  Source failed (%s): HTTP %s — skipping to next source.",
+                                base_url, status)
+                last_err = exc
+                break   # 4xx — a different stride on the same URL won't fix it
             except Exception as exc:
                 log.warning("  Source failed (%s): %s — skipping to next source.",
                             base_url, exc)
                 last_err = exc
-                break   # 404 / bad dataset ID — next stride won't help
+                break
     raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
 # ---------------------------------------------------------------------------
 # Grid builder
