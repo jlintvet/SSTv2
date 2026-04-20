@@ -14,7 +14,7 @@ MUR (FALLBACK)
 ---------------------------------------------------------
 OUTPUT STRUCTURE (STRICT)
 ---------------------------------------------------------
-SSTv2/DailySSTData/
+DailySSTData/
     GOES/Hourly/
     GOES/Composite/
     VIIRS/
@@ -22,7 +22,7 @@ SSTv2/DailySSTData/
 ---------------------------------------------------------
 IMPORTANT
 ---------------------------------------------------------
-- This script NEVER writes to SSTv2/DailySST/
+- Paths are relative to the repo root (no redundant SSTv2/ prefix)
 - All directories are auto-created
 - Safe for GitHub Actions
 =========================================================
@@ -35,7 +35,7 @@ import pandas as pd
 # =========================================================
 # CONFIG
 # =========================================================
-BASE_DIR = "SSTv2/DailySSTData"
+BASE_DIR = "DailySSTData"
 DIRS = {
     "goes_hourly": os.path.join(BASE_DIR, "GOES", "Hourly"),
     "goes_composite": os.path.join(BASE_DIR, "GOES", "Composite"),
