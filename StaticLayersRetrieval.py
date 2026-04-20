@@ -107,12 +107,21 @@ NE_LAND_URL      = f"{NE_BASE}/ne_10m_land.geojson"
 CONTOUR_DEPTHS_FT = [60, 120, 180, 300, 600, 1200, 1800, 3000, 6000]
 SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ---------------------------------------------------------------------------
-# ERDDAP bathymetry sources — tried in order until one succeeds
+# ERDDAP bathymetry sources — tried in order until one succeeds.
+#
+# Each source is attempted at the configured BATHY_STRIDE, then (on transient
+# network failure only) at progressively coarser strides. See _fetch_bathymetry.
+#
+# NOTE 2026-04-20: Removed two fallbacks that 404'd in CI:
+#   https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp → 404
+#   https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp         → 404
+# Replaced with PFEG CoastWatch's copy of ETOPO_2022_v1_15s, which is confirmed
+# live in NOAA's ERDDAP catalog. If you want to add more fallbacks, verify the
+# current dataset IDs at <server>/erddap/griddap/index.html?searchFor=ETOPO .
 # ---------------------------------------------------------------------------
 BATHY_SOURCES = [
     ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),
-    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",           "z"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",   "z"),
 ]
 # ---------------------------------------------------------------------------
 # HTTP session with retry
@@ -351,19 +360,55 @@ def _try_erddap_source(session: requests.Session, base_url: str,
     r.raise_for_status()
     return _parse_erddap_csvp(r.text)
 def _fetch_bathymetry(session: requests.Session) -> list[dict]:
-    log.info("Fetching bathymetry  (stride=%d, ~%.0f m resolution) ...",
-             BATHY_STRIDE, BATHY_STRIDE * 450)
+    """
+    Try each BATHY_SOURCES entry in order. For each source, attempt the
+    configured stride first; if it fails with a transient network error
+    (ConnectionResetError, chunked-encoding break, read timeout), auto-degrade
+    to progressively coarser strides before moving on to the next source.
+
+    Why: PFEG / OceanWatch ERDDAP servers routinely drop large responses
+    mid-stream under load. A stride-1 request over our bbox is ~2M points
+    (~30 MB CSV); at stride=2 it's ~500k, at stride=4 it's ~125k. Coarser
+    strides transfer faster and are less likely to get reset.
+
+    Non-transient errors (HTTP 4xx, bad dataset ID, etc.) skip straight to
+    the next source — retrying at a different stride won't help a 404.
+    """
+    from requests.exceptions import (
+        ConnectionError as ReqConnectionError,
+        ChunkedEncodingError,
+        ReadTimeout,
+    )
+    # Stride ladder: configured → 2× → 4×. Deduped to skip no-op repeats
+    # when BATHY_STRIDE is already 2 or 4.
+    stride_ladder = list(dict.fromkeys([
+        BATHY_STRIDE,
+        max(BATHY_STRIDE * 2, 2),
+        max(BATHY_STRIDE * 4, 4),
+    ]))
+    TRANSIENT_EXC = (ReqConnectionError, ChunkedEncodingError, ReadTimeout)
     last_err = None
     for base_url, var in BATHY_SOURCES:
-        try:
-            data = _try_erddap_source(session, base_url, var, BATHY_STRIDE)
-            if data:
-                ocean = sum(1 for r in data if r["depth_ft"] is not None)
-                log.info("  Got %d points (%d ocean) from %s", len(data), ocean, base_url)
-                return data
-        except Exception as exc:
-            log.warning("  Source failed (%s): %s", base_url, exc)
-            last_err = exc
+        for stride in stride_ladder:
+            log.info("Fetching bathymetry from %s  (stride=%d, ~%.0f m resolution) ...",
+                     base_url, stride, stride * 450)
+            try:
+                data = _try_erddap_source(session, base_url, var, stride)
+                if data:
+                    ocean = sum(1 for r in data if r["depth_ft"] is not None)
+                    log.info("  Got %d points (%d ocean) from %s at stride=%d",
+                             len(data), ocean, base_url, stride)
+                    return data
+            except TRANSIENT_EXC as exc:
+                log.warning("  Transient failure at stride=%d (%s) — will retry coarser.",
+                            stride, type(exc).__name__)
+                last_err = exc
+                continue
+            except Exception as exc:
+                log.warning("  Source failed (%s): %s — skipping to next source.",
+                            base_url, exc)
+                last_err = exc
+                break   # 404 / bad dataset ID — next stride won't help
     raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
 # ---------------------------------------------------------------------------
 # Grid builder
