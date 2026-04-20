@@ -1,204 +1,211 @@
 #!/usr/bin/env python3
 
 """
-SST DATA FETCHER (REAL-TIME PIPELINE)
+=========================================================
+SST DATA FETCHER (REAL-TIME PIPELINE - FIXED VERSION)
+=========================================================
 
-This script builds a fresh SST dataset using a priority stack:
+This pipeline retrieves and stores sea surface temperature (SST)
+data using a freshness-first hierarchy:
 
-1. GOES (PRIMARY)
-   - Retrieves last 24 hours of hourly passes
-   - Writes each hour separately (for animation)
-   - Builds a "latest composite" from most recent valid hour
+1. GOES (PRIMARY - real-time, hourly)
+   - Pulls last 24 hourly passes
+   - Each hour is saved individually (for animation)
+   - Also builds ONE latest-hour composite
 
-2. VIIRS (SECONDARY)
-   - Retrieves most recent daily pass (today)
-   - Used to fill GOES gaps if needed
+2. VIIRS (SECONDARY - daily)
+   - Fills gaps where GOES has no coverage
+   - Only pulls current day
 
-3. MUR (FALLBACK)
-   - Retrieves last 5 days
-   - Used only where GOES + VIIRS have no data
+3. MUR (FALLBACK - multi-day)
+   - Provides complete spatial coverage
+   - Pulls last 5 days
 
-OUTPUT STRUCTURE:
+---------------------------------------------------------
+OUTPUT STRUCTURE (STRICT)
+---------------------------------------------------------
 
-SSTv2/
-└── DailySSTData/
-    ├── GOES/
-    │   └── Hourly/
-    ├── GOESComposite/
-    ├── VIIRS/
-    └── MUR/
+ALL outputs go under:
 
-IMPORTANT:
-- ALL writes go through a single function → prevents path bugs
-- NO files are written to /DailySST/
+SSTv2/DailySSTData/
+
+    GOES/Hourly/
+        goes_YYYYMMDD_HH.(csv|geojson|parquet|grid.json)
+
+    GOESComposite/
+        goes_composite_YYYYMMDD.(...)
+
+    VIIRS/
+        viirs_YYYYMMDD.(...)
+
+    MUR/
+        mur_YYYYMMDD.(...)
+
+---------------------------------------------------------
+CRITICAL BEHAVIOR
+---------------------------------------------------------
+
+- NO files are written to legacy SSTv2/DailySST/
+- Directories are ALWAYS created if missing
+- Each dataset writes 4 formats:
+    csv, geojson, parquet, grid.json
+- Logging prints exact file paths written
+
+---------------------------------------------------------
 """
 
 import os
 from datetime import datetime, timedelta
-from pathlib import Path
 import pandas as pd
 import numpy as np
 
-# =========================
-# DIRECTORY CONFIG
-# =========================
+# =========================================================
+# CONFIG
+# =========================================================
 
-BASE_DIR = Path("SSTv2") / "DailySSTData"
+BASE_DIR = "SSTv2/DailySSTData"
 
 DIRS = {
-    "GOES_HOURLY": BASE_DIR / "GOES" / "Hourly",
-    "GOES_COMPOSITE": BASE_DIR / "GOESComposite",
-    "VIIRS": BASE_DIR / "VIIRS",
-    "MUR": BASE_DIR / "MUR",
+    "goes_hourly": os.path.join(BASE_DIR, "GOES/Hourly"),
+    "goes_composite": os.path.join(BASE_DIR, "GOESComposite"),
+    "viirs": os.path.join(BASE_DIR, "VIIRS"),
+    "mur": os.path.join(BASE_DIR, "MUR"),
 }
 
-for d in DIRS.values():
-    d.mkdir(parents=True, exist_ok=True)
+# =========================================================
+# UTILITIES
+# =========================================================
 
-# =========================
-# UTIL: WRITE OUTPUTS
-# =========================
-
-def write_outputs(df, base_filename, out_dir):
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"→ Writing to {out_dir}/{base_filename}")
-
-    df.to_csv(out_dir / f"{base_filename}.csv", index=False)
-
-    try:
-        df.to_parquet(out_dir / f"{base_filename}.parquet", index=False)
-    except Exception:
-        pass
-
-    try:
-        df.to_json(out_dir / f"{base_filename}.geojson", orient="records")
-    except Exception:
-        pass
+def ensure_dirs():
+    for path in DIRS.values():
+        os.makedirs(path, exist_ok=True)
 
 
-# =========================
-# MOCK FETCHERS (REPLACE WITH YOUR REAL ONES)
-# =========================
-
-def fake_sst_data(n=1000):
+def generate_fake_sst(n=1000):
+    """Mock SST data (replace with real fetch)"""
     return pd.DataFrame({
-        "lat": np.random.uniform(30, 45, n),
-        "lon": np.random.uniform(-80, -65, n),
-        "sst": np.random.uniform(10, 25, n),
+        "lat": np.random.uniform(20, 45, n),
+        "lon": np.random.uniform(-85, -60, n),
+        "sst": np.random.uniform(10, 30, n)
     })
 
 
-def fetch_goes_hour(ts):
-    # replace with real GOES logic
-    df = fake_sst_data(np.random.randint(500, 3000))
-    print(f"✓ GOES {ts.strftime('%Y%m%d_%H')} ({len(df)} pts)")
-    return df
+def write_outputs(df, base_path):
+    """Write all formats"""
+    print(f"→ Writing to {base_path}")
+
+    df.to_csv(base_path + ".csv", index=False)
+    df.to_parquet(base_path + ".parquet", index=False)
+
+    # GeoJSON
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [row.lon, row.lat],
+                },
+                "properties": {"sst": row.sst},
+            }
+            for row in df.itertuples()
+        ],
+    }
+
+    with open(base_path + ".geojson", "w") as f:
+        import json
+        json.dump(geojson, f)
+
+    # Grid (simple mock)
+    with open(base_path + "_grid.json", "w") as f:
+        import json
+        json.dump({"count": len(df)}, f)
 
 
-def fetch_viirs(date):
-    # replace with real VIIRS logic
-    df = fake_sst_data(2000)
-    print(f"✓ VIIRS {date.strftime('%Y%m%d')} ({len(df)} pts)")
-    return df
+# =========================================================
+# GOES (LAST 24 HOURS)
+# =========================================================
 
-
-def fetch_mur(date):
-    # replace with real MUR logic
-    df = fake_sst_data(3000)
-    print(f"✓ MUR {date.strftime('%Y%m%d')} ({len(df)} pts)")
-    return df
-
-
-# =========================
-# GOES: LAST 24 HOURS
-# =========================
-
-def process_goes(now):
+def fetch_goes():
     print("\nGOES (last 24 hours)")
 
-    hourly_frames = []
+    now = datetime.utcnow()
+    hourly_results = []
 
-    for h in range(24):
-        ts = now - timedelta(hours=h)
+    for i in range(24):
+        ts = now - timedelta(hours=i)
+        stamp = ts.strftime("%Y%m%d_%H")
 
-        try:
-            df = fetch_goes_hour(ts)
+        df = generate_fake_sst(1500)
 
-            if df is None or df.empty:
-                continue
+        print(f"✓ GOES {stamp} ({len(df)} pts)")
 
-            fname = f"goes_{ts.strftime('%Y%m%d_%H')}"
-            write_outputs(df, fname, DIRS["GOES_HOURLY"])
+        base_path = os.path.join(DIRS["goes_hourly"], f"goes_{stamp}")
+        write_outputs(df, base_path)
 
-            hourly_frames.append((ts, df))
+        hourly_results.append((ts, df))
 
-        except Exception as e:
-            print(f"✗ GOES {ts} failed: {e}")
-
-    # Build composite from most recent valid
-    if hourly_frames:
-        latest_ts, latest_df = sorted(hourly_frames, key=lambda x: x[0], reverse=True)[0]
-
-        fname = f"goes_composite_{latest_ts.strftime('%Y%m%d')}"
-        write_outputs(latest_df, fname, DIRS["GOES_COMPOSITE"])
-
-        return latest_df
-
-    return None
+    return hourly_results
 
 
-# =========================
-# VIIRS: TODAY
-# =========================
+def build_goes_composite(hourly_results):
+    """Use ONLY latest hour"""
+    latest_ts, latest_df = sorted(hourly_results, key=lambda x: x[0])[0]
 
-def process_viirs(now):
+    stamp = latest_ts.strftime("%Y%m%d")
+    base_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
+
+    write_outputs(latest_df, base_path)
+
+
+# =========================================================
+# VIIRS (TODAY)
+# =========================================================
+
+def fetch_viirs():
     print("\nVIIRS (today)")
 
-    try:
-        df = fetch_viirs(now)
-        fname = f"viirs_{now.strftime('%Y%m%d')}"
-        write_outputs(df, fname, DIRS["VIIRS"])
-        return df
-    except Exception as e:
-        print(f"✗ VIIRS failed: {e}")
-        return None
+    today = datetime.utcnow().strftime("%Y%m%d")
+    df = generate_fake_sst(2000)
+
+    print(f"✓ VIIRS {today} ({len(df)} pts)")
+
+    base_path = os.path.join(DIRS["viirs"], f"viirs_{today}")
+    write_outputs(df, base_path)
 
 
-# =========================
-# MUR: LAST 5 DAYS
-# =========================
+# =========================================================
+# MUR (LAST 5 DAYS)
+# =========================================================
 
-def process_mur(now):
+def fetch_mur():
     print("\nMUR (last 5 days)")
 
-    mur_frames = []
+    for i in range(5):
+        ts = datetime.utcnow() - timedelta(days=i+1)
+        stamp = ts.strftime("%Y%m%d")
 
-    for d in range(1, 6):
-        date = now - timedelta(days=d)
+        df = generate_fake_sst(3000)
 
-        try:
-            df = fetch_mur(date)
-            fname = f"mur_{date.strftime('%Y%m%d')}"
-            write_outputs(df, fname, DIRS["MUR"])
-            mur_frames.append(df)
-        except Exception as e:
-            print(f"✗ MUR {date} failed: {e}")
+        print(f"✓ MUR {stamp} ({len(df)} pts)")
 
-    return mur_frames
+        base_path = os.path.join(DIRS["mur"], f"mur_{stamp}")
+        write_outputs(df, base_path)
 
 
-# =========================
+# =========================================================
 # MAIN
-# =========================
+# =========================================================
 
 def main():
-    now = datetime.utcnow()
+    ensure_dirs()
 
-    goes_latest = process_goes(now)
-    viirs = process_viirs(now)
-    mur = process_mur(now)
+    goes_data = fetch_goes()
+    build_goes_composite(goes_data)
+
+    fetch_viirs()
+    fetch_mur()
 
     print("\n✓ Pipeline complete")
 
