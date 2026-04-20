@@ -1,143 +1,155 @@
-#!/usr/bin/env python3
-"""
-=========================================================
-SST DATA FETCHER — REAL-TIME PIPELINE (FINAL)
-=========================================================
-GOES (PRIMARY)
-- Last 24 hourly passes
-- Each hour saved individually
-- Latest hour used for composite
-VIIRS (SECONDARY)
-- Today only
-MUR (FALLBACK)
-- Last 5 days
----------------------------------------------------------
-OUTPUT STRUCTURE (STRICT)
----------------------------------------------------------
-DailySSTData/
-    GOES/Hourly/
-    GOES/Composite/
-    VIIRS/
-    MUR/
----------------------------------------------------------
-IMPORTANT
----------------------------------------------------------
-- Paths are relative to the repo root (no redundant SSTv2/ prefix)
-- All directories are auto-created
-- Safe for GitHub Actions
-=========================================================
-"""
-import os
-import json
-from datetime import datetime, timedelta
-import numpy as np
-import pandas as pd
-# =========================================================
-# CONFIG
-# =========================================================
-BASE_DIR = "DailySSTData"
-DIRS = {
-    "goes_hourly": os.path.join(BASE_DIR, "GOES", "Hourly"),
-    "goes_composite": os.path.join(BASE_DIR, "GOES", "Composite"),
-    "viirs": os.path.join(BASE_DIR, "VIIRS"),
-    "mur": os.path.join(BASE_DIR, "MUR"),
-}
-# =========================================================
-# SETUP
-# =========================================================
-def ensure_dirs():
-    for d in DIRS.values():
-        os.makedirs(d, exist_ok=True)
-# =========================================================
-# MOCK DATA (REPLACE WITH REAL FETCH)
-# =========================================================
-def generate_sst(n):
-    return pd.DataFrame({
-        "lat": np.random.uniform(20, 45, n),
-        "lon": np.random.uniform(-85, -60, n),
-        "sst": np.random.uniform(10, 30, n)
-    })
-# =========================================================
-# OUTPUT WRITER
-# =========================================================
-def write_outputs(df, base_path):
-    print(f"→ Writing to {base_path}")
-    df.to_csv(base_path + ".csv", index=False)
-    df.to_parquet(base_path + ".parquet", index=False)
-    geojson = {
-        "type": "FeatureCollection",
-        "features": []
-    }
-    for row in df.itertuples():
-        geojson["features"].append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [row.lon, row.lat]
-            },
-            "properties": {
-                "sst": row.sst
-            }
-        })
-    with open(base_path + ".geojson", "w") as f:
-        json.dump(geojson, f)
-    with open(base_path + "_grid.json", "w") as f:
-        json.dump({"count": len(df)}, f)
-# =========================================================
-# GOES
-# =========================================================
-def fetch_goes():
-    print("\nGOES (last 24 hours)")
-    now = datetime.utcnow()
-    results = []
-    for i in range(24):
-        ts = now - timedelta(hours=i)
-        stamp = ts.strftime("%Y%m%d_%H")
-        df = generate_sst(1500)
-        print(f"✓ GOES {stamp} ({len(df)} pts)")
-        path = os.path.join(DIRS["goes_hourly"], f"goes_{stamp}")
-        write_outputs(df, path)
-        results.append((ts, df))
-    return results
-def build_goes_composite(goes_data):
-    print("\nGOES composite (latest hour only)")
-    latest = sorted(goes_data, key=lambda x: x[0], reverse=True)[0]
-    ts, df = latest
-    stamp = ts.strftime("%Y%m%d")
-    path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
-    write_outputs(df, path)
-# =========================================================
-# VIIRS
-# =========================================================
-def fetch_viirs():
-    print("\nVIIRS (today)")
-    today = datetime.utcnow().strftime("%Y%m%d")
-    df = generate_sst(2000)
-    print(f"✓ VIIRS {today} ({len(df)} pts)")
-    path = os.path.join(DIRS["viirs"], f"viirs_{today}")
-    write_outputs(df, path)
-# =========================================================
-# MUR
-# =========================================================
-def fetch_mur():
-    print("\nMUR (last 5 days)")
-    for i in range(5):
-        ts = datetime.utcnow() - timedelta(days=i + 1)
-        stamp = ts.strftime("%Y%m%d")
-        df = generate_sst(3000)
-        print(f"✓ MUR {stamp} ({len(df)} pts)")
-        path = os.path.join(DIRS["mur"], f"mur_{stamp}")
-        write_outputs(df, path)
-# =========================================================
-# MAIN
-# =========================================================
-def main():
-    print("Starting SST pipeline...")
-    ensure_dirs()
-    goes = fetch_goes()
-    build_goes_composite(goes)
-    fetch_viirs()
-    fetch_mur()
-    print("\n✓ Pipeline complete")
-if __name__ == "__main__":
-    main()
+name: SST Data Fetch
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Most recent date to fetch (YYYY-MM-DD). Script collects the 5 days ending on this date. Defaults to yesterday if blank.'
+        required: false
+        default: ''
+      sources:
+        description: 'Which sources to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - goes19_only
+          - viirs_only
+          - mur_only
+          - cmems_only
+permissions:
+  contents: write
+jobs:
+  fetch-sst:
+    name: Fetch SST Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            requests \
+            xarray \
+            netCDF4 \
+            numpy \
+            pandas \
+            pyarrow \
+            h5py \
+            copernicusmarine
+      - name: Resolve target date
+        id: date
+        run: |
+          INPUT_DATE="${{ github.event.inputs.target_date }}"
+          if [ -z "$INPUT_DATE" ]; then
+            echo "date=$(date -u -d '2 days ago' '+%Y-%m-%d')" >> $GITHUB_OUTPUT
+          else
+            echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
+          fi
+      # ── Credential check — tells you exactly what to fix if secrets are missing
+      - name: Check credentials
+        env:
+          CMEMS_USER:     ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
+        run: |
+          echo "Target date : ${{ steps.date.outputs.date }}"
+          echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
+          echo ""
+          if [ -z "$CMEMS_USER" ] || [ -z "$CMEMS_PASSWORD" ]; then
+            echo "⚠️  CMEMS secrets not set — CMEMS source will be skipped."
+            echo "   To fix: repo → Settings → Secrets and variables → Actions"
+            echo "   Add secret: CMEMS_USER     = your Copernicus username"
+            echo "   Add secret: CMEMS_PASSWORD = your Copernicus password"
+            echo "   Register free at https://marine.copernicus.eu"
+          else
+            echo "✓ CMEMS_USER set"
+            echo "✓ CMEMS_PASSWORD set"
+          fi
+          echo ""
+          echo "Note: MUR + VIIRS run without any credentials."
+      # ── Secrets passed explicitly on the step that needs them ─────────────────
+      - name: Fetch SST data
+        env:
+          CMEMS_USER:                           ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD:                       ${{ secrets.CMEMS_PASSWORD }}
+          COPERNICUSMARINE_SERVICE_USERNAME:    ${{ secrets.CMEMS_USER }}
+          COPERNICUSMARINE_SERVICE_PASSWORD:    ${{ secrets.CMEMS_PASSWORD }}
+          TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
+          SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
+          PYTHONUNBUFFERED:     "1"
+        run: |
+          python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
+      - name: Debug output
+        if: always()
+        run: |
+          echo "====== DailySSTData/ ======"
+          find DailySSTData/ -type f 2>/dev/null | sort || echo "!! DailySSTData/ does not exist"
+          echo ""
+          echo "====== Fetch log (last 100 lines) ======"
+          tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
+      - name: Verify outputs exist
+        run: |
+          count=$(find DailySSTData/ -type f -not -name "*.nc" -not -name "*.log" 2>/dev/null | wc -l)
+          echo "Output file count: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
+            exit 1
+          fi
+      - name: Clean scratch files and list outputs
+        run: |
+          # Remove raw .nc scratch files — not needed in repo
+          find DailySSTData/ -name "_*.nc" -delete 2>/dev/null || true
+          echo "=== DailySSTData/ contents ==="
+          find DailySSTData/ -type f | sort
+          echo ""
+          du -sh DailySSTData/ 2>/dev/null || true
+      - name: Commit files to DailySSTData/ in repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add DailySSTData/
+          git diff --cached --quiet && echo "No changes to commit" || \
+            git commit -m "data: SST update ${{ steps.date.outputs.date }}"
+          git push origin HEAD
+      - name: Commit fetch log to repo
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p DailySSTData/logs
+          cp sst_fetch.log DailySSTData/logs/sst_fetch_${{ steps.date.outputs.date }}.log 2>/dev/null || true
+          git add DailySSTData/logs/ 2>/dev/null || true
+          git diff --cached --quiet && echo "No log changes" || \
+            git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
+          git push origin HEAD 2>/dev/null || true
+      # ── Optional: push to S3 ─────────────────────────────────────────────────
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region:            us-east-1
+      #
+      # - name: Push data to S3
+      #   run: |
+      #     DATE="${{ steps.date.outputs.date }}"
+      #     aws s3 sync DailySSTData/ s3://YOUR_BUCKET/sst/$DATE/ \
+      #       --content-type "application/json" \
+      #       --cache-control "max-age=86400"
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::SST fetch failed for ${{ steps.date.outputs.date }}"
+          echo "Download the sst-fetch-log artifact for full details."
