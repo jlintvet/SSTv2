@@ -1,31 +1,32 @@
 Starting SST pipeline...
-✓ Wrote Earthdata credentials to ~/.netrc
 
-GOES-16 (last 24 hours)
-✗ xarray/s3fs not installed — skipping GOES
+GOES/Blended (noaacwBLENDEDsstDLDaily, last 5 days)
+✗ BLENDED 20260420 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwBLENDED
+✗ BLENDED 20260419 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwBLENDED
+✗ BLENDED 20260418 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwBLENDED
+✗ BLENDED 20260417 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwBLENDED
+✗ BLENDED 20260416 HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>503 Service Unavailable</title> </head><body> <h1>Service Unavailable</h1> <p>The server is temporarily unable to service your request due to maintenance downtime or capacity problems. Please try again later.</p> </body></html> 
+✗ No Blended data available for composite.
+⚠ Blended/GOES: zero successful days.
 
-GOES composite (latest hour)
-✗ No GOES data available for composite.
+VIIRS-ACSPO (noaacwLEOACSPOSSTL3SnrtCDaily, last 5 days)
+✗ VIIRS 20260420 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwLEOACSP
+✗ VIIRS 20260419 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwLEOACSP
+✗ VIIRS 20260418 HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>503 Service Unavailable</title> </head><body> <h1>Service Unavailable</h1> <p>The server is temporarily unable to service your request due to maintenance downtime or capacity problems. Please try again later.</p> </body></html> 
+✗ VIIRS 20260417 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwLEOACSP
+✗ VIIRS 20260416 HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"> <html><head> <title>502 Proxy Error</title> </head><body> <h1>Proxy Error</h1> <p>The proxy server received an invalid response from an upstream server.<br /> The proxy server could not handle the request <em><a href="/erddap/griddap/noaacwLEOACSP
+⚠ VIIRS: zero successful days.
 
-VIIRS-blended (previous day)
-✗ VIIRS 20260420 failed: OSError: [Errno -75] NetCDF: Malformed or unexpected Constraint: 'https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc?analysed_sst[(2026-04-20T12:00:00Z):1:(2026-04-20T12:00:00Z)][(33.7):1:(39.0)][(-78.89):1:(-72.21)]'
-
-MUR (last 5 published days)
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-✗ MUR 20260420 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260420090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-✗ MUR 20260419 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260419090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-✗ MUR 20260418 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260418090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-✗ MUR 20260417 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260417090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
-context: HTTP^ Basic: Access denied.
-✗ MUR 20260416 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260416090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-⚠ MUR: zero successful days.
+MUR (jplMURSST41, last 5 published days)
+✓ MUR 20260420
+  → DailySSTData/MUR/mur_20260420.csv  (8986 pts, 107 lats × 133 lons)
+✓ MUR 20260419
+  → DailySSTData/MUR/mur_20260419.csv  (8986 pts, 107 lats × 133 lons)
+✓ MUR 20260418
+  → DailySSTData/MUR/mur_20260418.csv  (8986 pts, 107 lats × 133 lons)
+✓ MUR 20260417
+  → DailySSTData/MUR/mur_20260417.csv  (8986 pts, 107 lats × 133 lons)
+✓ MUR 20260416
+  → DailySSTData/MUR/mur_20260416.csv  (8986 pts, 107 lats × 133 lons)
 
 ✓ Pipeline complete
