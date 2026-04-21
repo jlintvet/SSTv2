@@ -16,10 +16,9 @@ on:
         type: choice
         options:
           - all
-          - goes19_only
+          - goes_only
           - viirs_only
           - mur_only
-          - cmems_only
 
 permissions:
   contents: write
@@ -28,7 +27,7 @@ jobs:
   fetch-sst:
     name: Fetch SST Data
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,12 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # ERDDAP .csv endpoints need only requests + pandas + numpy.
-          # No xarray / netcdf4 / s3fs / h5netcdf / pyarrow / copernicusmarine.
-          pip install \
-            requests \
-            numpy \
-            pandas
+          pip install requests numpy pandas
 
       - name: Resolve target date
         id: date
@@ -62,20 +56,17 @@ jobs:
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
 
-      - name: Show configuration
-        run: |
-          echo "Target date : ${{ steps.date.outputs.date }}"
-          echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
-          echo ""
-          echo "All SST sources are fetched from NOAA CoastWatch ERDDAP."
-          echo "No credentials are required."
-
       - name: Fetch SST data
         env:
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
           SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
           PYTHONUNBUFFERED:     "1"
         run: |
+          echo "Target date : ${{ steps.date.outputs.date }}"
+          echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
+          echo ""
+          echo "Note: all sources pulled from NOAA CoastWatch ERDDAP. No credentials needed."
+          echo ""
           python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
 
       - name: Debug output
@@ -90,7 +81,7 @@ jobs:
       - name: Verify outputs exist
         run: |
           count=$(find DailySSTData/ -type f -name "*.csv" 2>/dev/null | wc -l)
-          echo "CSV file count: $count"
+          echo "Output CSV count: $count"
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the log above."
             exit 1
@@ -99,7 +90,7 @@ jobs:
       - name: List outputs
         run: |
           echo "=== DailySSTData/ contents ==="
-          find DailySSTData/ -type f -name "*.csv" | sort
+          find DailySSTData/ -type f | sort
           echo ""
           du -sh DailySSTData/ 2>/dev/null || true
 
@@ -128,3 +119,4 @@ jobs:
         if: failure()
         run: |
           echo "::error::SST fetch failed for ${{ steps.date.outputs.date }}"
+          echo "Check the log output above for details."
