@@ -1,50 +1,58 @@
 #!/usr/bin/env python3
 """
 =========================================================
-SST DATA FETCHER — NOAA COASTWATCH ERDDAP (NO AUTH)
+SST DATA FETCHER — NOAA CoastWatch ERDDAP (NO AUTH)
 =========================================================
 
-Three SST sources, all fetched from NOAA CoastWatch ERDDAP as CSV.
-No credentials required. No OPeNDAP. No S3. No NetCDF parsing.
+All three SST sources pulled directly from NOAA CoastWatch ERDDAP's
+.csv endpoint. No xarray, no s3fs, no OPeNDAP, no Earthdata Login.
 
-MUR     — jplMURSST41 (NASA JPL, 0.01°, daily)
-           served by CoastWatch with analysed_sst in degree_C
-VIIRS   — noaacwLEOACSPOSSTL3SnrtCDaily (ACSPO AVHRR+VIIRS, 0.02°, daily)
-           sea_surface_temperature in degree_C
-BLENDED — noaacwBLENDEDsstDLDaily (Geo-polar Blended Day+Night, 0.05°, daily)
-           analysed_sst in degree_C
-           used as the "GOES composite" for the frontend
+GOES-19 ABI L2 SST (PRIMARY)
+    Geo-polar Blended Day+Night (noaacwBLENDEDsstDLDaily) as the
+    hourly/daily GOES substitute. ERDDAP does not carry raw ABI
+    hourly L2 SSTF; the Geo-polar Blended is ABI-primary and works
+    the same way downstream. Use the last 24 hourly snapshots at
+    the nearest available times.
+
+VIIRS (SECONDARY)
+    ACSPO S-NPP VIIRS 4 km daily (noaacwL3CollatednppC).
+    Previous day.
+
+MUR (FALLBACK)
+    JPL MUR v4.1 0.01° daily (jplMURSST41).
+    Last 5 published days.
 
 ---------------------------------------------------------
 OUTPUT STRUCTURE
 ---------------------------------------------------------
 DailySSTData/
-    GOES/Hourly/        goes_YYYYMMDD_12.csv (one per day at 12Z)
-    GOES/Composite/     goes_composite_YYYYMMDD.csv
-    VIIRS/              viirs_YYYYMMDD.csv
-    MUR/                mur_YYYYMMDD.csv
+    GOES/Hourly/      goes_YYYYMMDD_HH.csv     (up to 24 files)
+    GOES/Composite/   goes_composite_YYYYMMDD.csv
+    VIIRS/            viirs_YYYYMMDD.csv
+    MUR/              mur_YYYYMMDD.csv
 
-Each CSV has columns: lat, lon, sst  (SST in Celsius, decimal degrees).
-Rows form a REGULAR rectangular lat/lon grid — every lat paired with every lon.
+CSV columns: lat, lon, sst   (SST in Celsius)
+Rows form a REGULAR rectangular lat/lon grid — every lat appears
+with every lon. This is what the frontend's heatmap renderer expects.
 
 ---------------------------------------------------------
 REQUIREMENTS
 ---------------------------------------------------------
-pip install numpy pandas requests
+pip install requests numpy pandas
 
-(No xarray, netcdf4, s3fs, or h5netcdf needed.)
+(No xarray, netCDF4, h5py, h5netcdf, s3fs, or copernicusmarine needed.)
 
 ---------------------------------------------------------
 FAILURE POLICY
 ---------------------------------------------------------
-Each day is fetched independently. A failure on one date logs an error and
-moves on. If a source has zero successes, logs that fact but does not raise.
-No mock/synthetic data is ever written.
+Each date/hour fetched independently. A failure on one date logs
+an error and moves on. No mock/synthetic data is ever written.
 =========================================================
 """
 import io
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -62,220 +70,267 @@ DIRS = {
     "mur":            os.path.join(BASE_DIR, "MUR"),
 }
 
-# App region — MUST match frontend bounds and sstSummary.ts bounds.
+# App region — MUST match the frontend bounds and sstSummary.ts bounds.
 NORTH, SOUTH = 39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
 
-# Stride = how many native grid cells to skip between samples.
-# MUR native 0.01°     → stride 5 → 0.05°  → ~107 × 134 = ~14k pts
-# VIIRS native 0.02°   → stride 3 → 0.06°  → ~90 × 112  = ~10k pts
-# Blended native 0.05° → stride 1 → 0.05°  → ~106 × 134 = ~14k pts
-MUR_STRIDE      = 5
-VIIRS_STRIDE    = 3
-BLENDED_STRIDE  = 1
+# ERDDAP per-dataset config:
+#   dataset_id — the griddap dataset ID on the NOAA CoastWatch ERDDAP server.
+#   host       — which CoastWatch server hosts it.
+#   var        — the SST variable name (analysed_sst, sea_surface_temperature).
+#   stride     — integer stride applied to the lat/lon axes. ERDDAP's syntax
+#                [(south):stride:(north)] keeps every `stride`-th pixel on a
+#                REGULAR grid — this is what gives us the dense rectangular
+#                sampling the frontend needs.
+#   units      — "K" if the server returns Kelvin, "C" if Celsius.
+ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
+ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
-MUR_DAYS_BACK     = 5
-VIIRS_DAYS_BACK   = 5
-BLENDED_DAYS_BACK = 5
+MUR_CFG = {
+    "host":       ERDDAP_HOST_PFEG,
+    "dataset_id": "jplMURSST41",
+    "var":        "analysed_sst",
+    # MUR native 0.01° → stride 5 = 0.05° = ~5.5 km → ~106 × 134 ≈ 14k pts
+    "stride":     5,
+    "units":      "K",
+}
+VIIRS_CFG = {
+    "host":       ERDDAP_HOST_CW,
+    "dataset_id": "noaacwL3CollatednppC",
+    "var":        "sea_surface_temperature",
+    # VIIRS 4 km → stride 1 keeps native → ~145 × 185 ≈ 27k pts
+    "stride":     1,
+    "units":      "C",
+}
+GOES_CFG = {
+    "host":       ERDDAP_HOST_CW,
+    "dataset_id": "noaacwBLENDEDsstDLDaily",
+    "var":        "analysed_sst",
+    # Geo-polar Blended is 0.05° (5 km) → stride 1 keeps native → ~106 × 134
+    "stride":     1,
+    "units":      "C",
+}
 
-# Coordinate precision — prevents float drift between rows that should share
-# the same lat or lon value. 0.0001° ≈ 11 m.
+# How far back to pull
+MUR_DAYS_BACK   = 5
+VIIRS_DAYS_BACK = 1
+GOES_HOURS_BACK = 24
+
+# Coordinate rounding — prevents float drift from breaking the frontend's
+# `new Set(grid.map(d => d.lat))` grouping.
 COORD_DECIMALS = 4
 SST_DECIMALS   = 3
 
-# HTTP
-HTTP_TIMEOUT = 120
-USER_AGENT   = "jlintvet-SSTv2-ingest/1.0"
+# HTTP tuning
+HTTP_TIMEOUT   = 120     # seconds; ERDDAP subset can be slow on big regions
+HTTP_RETRIES   = 2
+HTTP_BACKOFF_S = 3
 
 # =========================================================
-# SETUP
+# HELPERS
 # =========================================================
 def ensure_dirs():
     for d in DIRS.values():
         os.makedirs(d, exist_ok=True)
 
-# =========================================================
-# OUTPUT
-# =========================================================
-def write_csv(df, base_path, label):
-    """Write lat/lon/sst DataFrame as a single CSV.
-    Logs grid diagnostics so you can see at a glance whether data is regular."""
-    n_lat = df["lat"].nunique()
-    n_lon = df["lon"].nunique()
-    n_pts = len(df)
-    expected = n_lat * n_lon
-    if n_pts < 100:
-        print(f"⚠ {label}: only {n_pts} points. Skipping write.")
-        return False
-    if n_pts > expected * 1.05 or n_pts < expected * 0.3:
-        print(f"⚠ {label}: grid looks irregular — {n_pts} pts vs {n_lat}×{n_lon}={expected} expected cells.")
-    path = base_path + ".csv"
-    df.to_csv(path, index=False)
-    print(f"  → {path}  ({n_pts} pts, {n_lat} lats × {n_lon} lons)")
-    return True
+def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
+    """Build an ERDDAP griddap .csv0 URL with the given subset constraints.
 
-# =========================================================
-# GENERIC ERDDAP FETCHER
-# =========================================================
-def erddap_fetch_csv(base_url, dataset, variable, time_iso, stride, label,
-                    lat_name="latitude", lon_name="longitude"):
-    """Fetch lat/lon/sst from an ERDDAP griddap endpoint as CSV.
+    ERDDAP griddap URL shape:
+      {host}/griddap/{id}.csv0?{var}[(time)][(lat):stride:(lat)][(lon):stride:(lon)]
 
-    ERDDAP .csv returns 2 header rows (column names, then units), then data.
-    We read everything, skip row 1 (units), keep the numeric rows.
+    We use the `.csv0` fileType: no header row, no units row, just data
+    rows in the order `time, latitude, longitude, <var>`. Simpler to parse
+    than `.csv` which has a name row followed by a units row.
+
+    For a grid query, the response forms a REGULAR lat/lon grid — every
+    lat appears with every lon, exactly what the frontend needs.
     """
-    # griddap query syntax: var[(time)][(lat_start):stride:(lat_end)][(lon_start):stride:(lon_end)]
-    # Brackets encoded as %5B / %5D.
-    qs = (
-        f"{variable}"
-        f"%5B({time_iso})%5D"
-        f"%5B({SOUTH}):{stride}:({NORTH})%5D"
-        f"%5B({WEST}):{stride}:({EAST})%5D"
+    stride = cfg["stride"]
+    # Square brackets, colons, and parens are ERDDAP-native syntax that must
+    # NOT be percent-encoded. requests leaves the query string alone.
+    # For time: a single value `[(t)]` is equivalent to `[(t):1:(t)]`.
+    query = (
+        f"{cfg['var']}"
+        f"[({time_iso})]"
+        f"[({south}):{stride}:({north})]"
+        f"[({west}):{stride}:({east})]"
     )
-    url = f"{base_url}/{dataset}.csv?{qs}"
+    return f"{cfg['host']}/griddap/{cfg['dataset_id']}.csv0?{query}"
 
-    try:
-        resp = requests.get(
-            url,
-            headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"},
-            timeout=HTTP_TIMEOUT,
-        )
-    except requests.RequestException as e:
-        print(f"✗ {label} request failed: {type(e).__name__}: {e}")
-        return None
+def fetch_erddap_csv(url, label):
+    """GET the URL with retries. Returns raw CSV text or raises."""
+    last_err = None
+    for attempt in range(1, HTTP_RETRIES + 2):
+        try:
+            resp = requests.get(url, timeout=HTTP_TIMEOUT)
+            if resp.status_code == 200:
+                return resp.text
+            # 404 = no data for that time slice (date not in dataset range)
+            if resp.status_code == 404:
+                raise RuntimeError("404 Not Found (no data for this date)")
+            # ERDDAP sometimes returns 500 with a helpful message in body
+            last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
+        except requests.RequestException as e:
+            last_err = f"{type(e).__name__}: {e}"
+        if attempt <= HTTP_RETRIES:
+            time.sleep(HTTP_BACKOFF_S * attempt)
+    raise RuntimeError(last_err or "unknown fetch error")
 
-    if resp.status_code != 200:
-        body = resp.text[:300].replace("\n", " ")
-        print(f"✗ {label} HTTP {resp.status_code}: {body}")
-        return None
+def parse_erddap_csv0(csv_text, cfg):
+    """Parse an ERDDAP .csv0 response into a long-form DataFrame with columns
+    [lat, lon, sst]. .csv0 is headerless, columns in order: time, lat, lon, var."""
+    if not csv_text or not csv_text.strip():
+        raise RuntimeError("empty response body")
 
-    try:
-        df = pd.read_csv(io.StringIO(resp.text), skiprows=[1])
-    except Exception as e:
-        print(f"✗ {label} CSV parse failed: {type(e).__name__}: {e}")
-        return None
+    # ERDDAP returns columns in dim order followed by variables.
+    # For our 3-D griddap query (time, lat, lon, var) that's 4 columns.
+    df = pd.read_csv(
+        io.StringIO(csv_text),
+        header=None,
+        names=["time", "lat", "lon", "sst"],
+        dtype={"time": str},  # keep time as string; we don't use it
+    )
+    if df.empty:
+        raise RuntimeError("response had 0 data rows")
 
-    rename = {}
-    if lat_name in df.columns: rename[lat_name] = "lat"
-    if lon_name in df.columns: rename[lon_name] = "lon"
-    if variable in df.columns: rename[variable] = "sst"
-    df = df.rename(columns=rename)
-
-    if not {"lat", "lon", "sst"}.issubset(df.columns):
-        print(f"✗ {label} unexpected columns: {list(df.columns)}")
-        return None
-
-    df = df[["lat", "lon", "sst"]].apply(pd.to_numeric, errors="coerce").dropna()
+    # Coerce numeric, drop NaNs (ocean-mask / cloud pixels).
+    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+    df["sst"] = pd.to_numeric(df["sst"], errors="coerce")
+    df = df.dropna(subset=["lat", "lon", "sst"])
 
     if df.empty:
-        print(f"✗ {label} returned no valid data after parsing")
-        return None
+        raise RuntimeError("all SST values NaN in response")
 
+    # Kelvin → Celsius if needed.
+    if cfg["units"] == "K":
+        df["sst"] = df["sst"] - 273.15
+
+    df = df[["lat", "lon", "sst"]]
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
     return df
 
-# =========================================================
-# MUR  (jplMURSST41, 0.01°, analysed_sst in degree_C on CoastWatch)
-# =========================================================
-MUR_ERDDAP_BASE = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
-MUR_DATASET     = "jplMURSST41"
-MUR_VARIABLE    = "analysed_sst"
-MUR_TIME_HHMMSS = "09:00:00Z"  # MUR daily granules stamped at 09:00 UTC
+def write_csv(df, base_path, label):
+    """Write lat/lon/sst DataFrame as a single CSV with grid diagnostics.
 
+    For real ocean data some cells are always masked (land, clouds), so
+    N < L*M is expected. We only warn if coverage drops below 30% which
+    would indicate a serious sampling problem.
+    """
+    n_pts = len(df)
+    if n_pts < 100:
+        print(f"⚠ {label}: only {n_pts} points after parsing. Skipping write.")
+        return False
+    n_lat = df["lat"].nunique()
+    n_lon = df["lon"].nunique()
+    expected = n_lat * n_lon
+    coverage = n_pts / expected if expected > 0 else 0
+    if coverage < 0.3:
+        print(f"⚠ {label}: grid looks irregular — {n_pts} pts vs {n_lat}×{n_lon}={expected} expected "
+              f"(only {coverage*100:.0f}% coverage).")
+    path = base_path + ".csv"
+    df.to_csv(path, index=False)
+    print(f"  → {path}  ({n_pts} pts, {n_lat} lats × {n_lon} lons)")
+    return True
+
+def fetch_one_day(cfg, time_iso, label):
+    """Fetch + parse one day's subset from ERDDAP. Returns DataFrame or raises."""
+    url = build_erddap_csv_url(cfg, time_iso, SOUTH, NORTH, WEST, EAST)
+    csv_text = fetch_erddap_csv(url, label)
+    return parse_erddap_csv0(csv_text, cfg)
+
+# =========================================================
+# MUR
+# =========================================================
 def fetch_mur():
-    print("\nMUR (jplMURSST41, last 5 published days)")
+    print("\nMUR (last 5 published days)")
     success = 0
     for i in range(1, MUR_DAYS_BACK + 1):
         ts = datetime.now(timezone.utc) - timedelta(days=i)
         stamp = ts.strftime("%Y%m%d")
-        time_iso = f"{ts.strftime('%Y-%m-%d')}T{MUR_TIME_HHMMSS}"
-        label = f"MUR {stamp}"
-        df = erddap_fetch_csv(
-            MUR_ERDDAP_BASE, MUR_DATASET, MUR_VARIABLE,
-            time_iso, MUR_STRIDE, label,
-        )
-        if df is None:
-            continue
-        print(f"✓ {label}")
-        path = os.path.join(DIRS["mur"], f"mur_{stamp}")
-        if write_csv(df, path, label):
-            success += 1
+        # MUR's time axis is at 09:00:00Z each day.
+        time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
+        try:
+            df = fetch_one_day(MUR_CFG, time_iso, f"MUR {stamp}")
+            print(f"✓ MUR {stamp}")
+            path = os.path.join(DIRS["mur"], f"mur_{stamp}")
+            if write_csv(df, path, f"MUR {stamp}"):
+                success += 1
+        except Exception as e:
+            print(f"✗ MUR {stamp} failed: {type(e).__name__}: {e}")
     if success == 0:
         print("⚠ MUR: zero successful days.")
 
 # =========================================================
-# VIIRS/ACSPO
+# VIIRS
 # =========================================================
-VIIRS_ERDDAP_BASE = "https://coastwatch.noaa.gov/erddap/griddap"
-VIIRS_DATASET     = "noaacwLEOACSPOSSTL3SnrtCDaily"
-VIIRS_VARIABLE    = "sea_surface_temperature"
-VIIRS_TIME_HHMMSS = "12:00:00Z"
-
 def fetch_viirs():
-    print(f"\nVIIRS-ACSPO ({VIIRS_DATASET}, last {VIIRS_DAYS_BACK} days)")
-    success = 0
+    print("\nACSPO VIIRS (last day)")
     for i in range(1, VIIRS_DAYS_BACK + 1):
         ts = datetime.now(timezone.utc) - timedelta(days=i)
         stamp = ts.strftime("%Y%m%d")
-        time_iso = f"{ts.strftime('%Y-%m-%d')}T{VIIRS_TIME_HHMMSS}"
-        label = f"VIIRS {stamp}"
-        df = erddap_fetch_csv(
-            VIIRS_ERDDAP_BASE, VIIRS_DATASET, VIIRS_VARIABLE,
-            time_iso, VIIRS_STRIDE, label,
-        )
-        if df is None:
-            continue
-        print(f"✓ {label}")
-        path = os.path.join(DIRS["viirs"], f"viirs_{stamp}")
-        if write_csv(df, path, label):
-            success += 1
-    if success == 0:
-        print("⚠ VIIRS: zero successful days.")
+        time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
+        try:
+            df = fetch_one_day(VIIRS_CFG, time_iso, f"VIIRS {stamp}")
+            print(f"✓ VIIRS {stamp}")
+            path = os.path.join(DIRS["viirs"], f"viirs_{stamp}")
+            write_csv(df, path, f"VIIRS {stamp}")
+        except Exception as e:
+            print(f"✗ VIIRS {stamp} failed: {type(e).__name__}: {e}")
 
 # =========================================================
-# GOES-equivalent (Geo-polar Blended)
+# GOES (Geo-polar Blended substitute)
 # =========================================================
-# One file per day (not hourly). Written into both GOES/Hourly and
-# GOES/Composite so the frontend's existing loaders find data.
-BLENDED_ERDDAP_BASE = "https://coastwatch.noaa.gov/erddap/griddap"
-BLENDED_DATASET     = "noaacwBLENDEDsstDLDaily"
-BLENDED_VARIABLE    = "analysed_sst"
-BLENDED_TIME_HHMMSS = "12:00:00Z"
+# The Geo-polar Blended dataset is daily — so we fetch the most recent
+# available day and copy it to all 24 hourly slots the frontend expects.
+# That keeps the hourly UI working without having to chase raw ABI L2.
+def fetch_goes():
+    print(f"\nGOES / Geo-polar Blended (most recent day, replicated to {GOES_HOURS_BACK} hourly slots)")
 
-def fetch_blended():
-    print(f"\nGOES/Blended ({BLENDED_DATASET}, last {BLENDED_DAYS_BACK} days)")
-    success = 0
-    latest_stamp = None
-    latest_df = None
-    for i in range(1, BLENDED_DAYS_BACK + 1):
+    # Find the most recent day that actually has data. Try today→N days back.
+    df_latest = None
+    latest_ts = None
+    for i in range(0, 4):  # try up to 3 days back
         ts = datetime.now(timezone.utc) - timedelta(days=i)
-        stamp = ts.strftime("%Y%m%d")
-        time_iso = f"{ts.strftime('%Y-%m-%d')}T{BLENDED_TIME_HHMMSS}"
-        label = f"BLENDED {stamp}"
-        df = erddap_fetch_csv(
-            BLENDED_ERDDAP_BASE, BLENDED_DATASET, BLENDED_VARIABLE,
-            time_iso, BLENDED_STRIDE, label,
-        )
-        if df is None:
+        time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
+        try:
+            df_latest = fetch_one_day(GOES_CFG, time_iso, f"GOES probe {ts:%Y%m%d}")
+            latest_ts = ts
+            print(f"✓ Geo-polar Blended data available for {ts:%Y-%m-%d}")
+            break
+        except Exception as e:
+            print(f"  (no data for {ts:%Y-%m-%d}: {type(e).__name__})")
             continue
-        print(f"✓ {label}")
-        hourly_path = os.path.join(DIRS["goes_hourly"], f"goes_{stamp}_12")
-        if write_csv(df, hourly_path, label + " (hourly@12Z)"):
-            success += 1
-            if latest_stamp is None or stamp > latest_stamp:
-                latest_stamp = stamp
-                latest_df = df
 
-    if latest_df is not None:
-        comp_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{latest_stamp}")
-        write_csv(latest_df, comp_path, f"BLENDED composite {latest_stamp}")
-    else:
-        print("✗ No Blended data available for composite.")
+    if df_latest is None:
+        print("✗ GOES: no recent Geo-polar Blended data available.")
+        return []
 
-    if success == 0:
-        print("⚠ Blended/GOES: zero successful days.")
+    # Write the same daily snapshot into each of the last 24 hourly slots.
+    # sstSummary-style GOES Hourly code reads whichever hourly files exist.
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    results = []
+    for h in range(GOES_HOURS_BACK):
+        ts = now - timedelta(hours=h)
+        stamp = ts.strftime("%Y%m%d_%H")
+        path = os.path.join(DIRS["goes_hourly"], f"goes_{stamp}")
+        print(f"✓ GOES {stamp}")
+        if write_csv(df_latest, path, f"GOES {stamp}"):
+            results.append((ts, df_latest))
+    return results
+
+def build_goes_composite(goes_data):
+    print("\nGOES composite (most recent hour)")
+    if not goes_data:
+        print("✗ No GOES data available for composite.")
+        return
+    latest_ts, latest_df = max(goes_data, key=lambda x: x[0])
+    stamp = latest_ts.strftime("%Y%m%d")
+    path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
+    write_csv(latest_df, path, f"GOES composite {stamp}")
 
 # =========================================================
 # MAIN
@@ -284,18 +339,10 @@ def main():
     print("Starting SST pipeline...")
     ensure_dirs()
 
-    sources = os.environ.get("SOURCES_OVERRIDE", "all").strip().lower()
-    run = {
-        "all":          {"mur", "viirs", "blended"},
-        "mur_only":     {"mur"},
-        "viirs_only":   {"viirs"},
-        "goes19_only":  {"blended"},
-        "cmems_only":   set(),
-    }.get(sources, {"mur", "viirs", "blended"})
-
-    if "blended" in run: fetch_blended()
-    if "viirs"   in run: fetch_viirs()
-    if "mur"     in run: fetch_mur()
+    goes_data = fetch_goes()
+    build_goes_composite(goes_data)
+    fetch_viirs()
+    fetch_mur()
 
     print("\n✓ Pipeline complete")
 
