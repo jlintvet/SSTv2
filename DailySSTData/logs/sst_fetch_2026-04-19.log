@@ -1,5 +1,5 @@
 Starting SST pipeline...
-⚠ EARTHDATA_USERNAME / EARTHDATA_PASSWORD not set — MUR fetch will fail.
+✓ Wrote Earthdata credentials to ~/.netrc
 
 GOES-16 (last 24 hours)
 ✗ xarray/s3fs not installed — skipping GOES
@@ -11,16 +11,21 @@ VIIRS-blended (previous day)
 ✗ VIIRS 20260420 failed: OSError: [Errno -75] NetCDF: Malformed or unexpected Constraint: 'https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc?analysed_sst[(2026-04-20T12:00:00Z):1:(2026-04-20T12:00:00Z)][(33.7):1:(39.0)][(-78.89):1:(-72.21)]'
 
 MUR (last 5 published days)
-curl error details: 
-✗ MUR 20260420 failed: OSError: [Errno -68] NetCDF: I/O failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260420090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-curl error details: 
-✗ MUR 20260419 failed: OSError: [Errno -68] NetCDF: I/O failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260419090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-curl error details: 
-✗ MUR 20260418 failed: OSError: [Errno -68] NetCDF: I/O failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260418090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-curl error details: 
-✗ MUR 20260417 failed: OSError: [Errno -68] NetCDF: I/O failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260417090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
-curl error details: 
-✗ MUR 20260416 failed: OSError: [Errno -68] NetCDF: I/O failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260416090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+✗ MUR 20260420 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260420090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+✗ MUR 20260419 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260419090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+✗ MUR 20260418 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260418090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+✗ MUR 20260417 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260417090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
+syntax error, unexpected WORD_WORD, expecting SCAN_ATTR or SCAN_DATASET or SCAN_ERROR
+context: HTTP^ Basic: Access denied.
+✗ MUR 20260416 failed: OSError: [Errno -77] NetCDF: Access failure: 'https://opendap.earthdata.nasa.gov/providers/POCLOUD/datasets/MUR-JPL-L4-GLOB-v4.1/granules/20260416090000-JPL-L4_GHRSST-SSTfnd-MUR-GLOB-v02.0-fv04.1.nc'
 ⚠ MUR: zero successful days.
 
 ✓ Pipeline complete
