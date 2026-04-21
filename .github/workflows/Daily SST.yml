@@ -86,6 +86,8 @@ jobs:
           CMEMS_PASSWORD:                       ${{ secrets.CMEMS_PASSWORD }}
           COPERNICUSMARINE_SERVICE_USERNAME:    ${{ secrets.CMEMS_USER }}
           COPERNICUSMARINE_SERVICE_PASSWORD:    ${{ secrets.CMEMS_PASSWORD }}
+          EARTHDATA_USERNAME:                   ${{ secrets.NASA_EARTHDATA_USER }}
+          EARTHDATA_PASSWORD:                   ${{ secrets.NASA_EARTHDATA_PASSWORD }}
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
           SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
           PYTHONUNBUFFERED:     "1"
