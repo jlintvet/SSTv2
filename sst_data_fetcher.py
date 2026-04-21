@@ -121,10 +121,18 @@ GOES_HOURS_BACK = 24
 COORD_DECIMALS = 4
 SST_DECIMALS   = 3
 
-# HTTP tuning
-HTTP_TIMEOUT   = 120     # seconds; ERDDAP subset can be slow on big regions
-HTTP_RETRIES   = 2
-HTTP_BACKOFF_S = 3
+# HTTP tuning — ERDDAP publishes rate-limit guidance. Be conservative.
+HTTP_TIMEOUT       = 120     # seconds; ERDDAP subset can be slow on big regions
+HTTP_RETRIES       = 2
+HTTP_BACKOFF_S     = 3
+REQUEST_SPACING_S  = 2.0     # min seconds between any two ERDDAP requests (per host)
+# Contact address in User-Agent so NOAA can reach you instead of blacklisting.
+# Change this to your real email or project URL.
+USER_AGENT = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
+
+# Per-host state for the polite client.
+_last_request_at = {}     # host → monotonic timestamp of last request
+_host_blacklisted = set() # hosts that returned 403 this run — skip further calls
 
 # =========================================================
 # HELPERS
@@ -132,6 +140,21 @@ HTTP_BACKOFF_S = 3
 def ensure_dirs():
     for d in DIRS.values():
         os.makedirs(d, exist_ok=True)
+
+def _host_of(url):
+    # crude but fine for our 2 known hosts
+    return url.split("/", 3)[2]
+
+def _throttle(host):
+    """Ensure at least REQUEST_SPACING_S seconds have elapsed since the last
+    request to this host. Sleeps if needed."""
+    now = time.monotonic()
+    last = _last_request_at.get(host)
+    if last is not None:
+        wait = REQUEST_SPACING_S - (now - last)
+        if wait > 0:
+            time.sleep(wait)
+    _last_request_at[host] = time.monotonic()
 
 def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
     """Build an ERDDAP griddap .csv0 URL with the given subset constraints.
@@ -159,22 +182,55 @@ def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
     return f"{cfg['host']}/griddap/{cfg['dataset_id']}.csv0?{query}"
 
 def fetch_erddap_csv(url, label):
-    """GET the URL with retries. Returns raw CSV text or raises."""
+    """GET the URL with throttling, proper User-Agent, and retries.
+    Returns raw CSV text or raises. If a 403 is received, flags the host
+    as blacklisted so subsequent calls short-circuit instead of piling on."""
+    host = _host_of(url)
+    if host in _host_blacklisted:
+        raise RuntimeError(
+            f"host {host} is blacklisted this run — skipping further requests. "
+            f"Wait 30-60 min for NOAA's auto-unblock, then retry."
+        )
+
+    headers = {"User-Agent": USER_AGENT, "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.5"}
+
     last_err = None
     for attempt in range(1, HTTP_RETRIES + 2):
+        _throttle(host)
         try:
-            resp = requests.get(url, timeout=HTTP_TIMEOUT)
-            if resp.status_code == 200:
-                return resp.text
-            # 404 = no data for that time slice (date not in dataset range)
-            if resp.status_code == 404:
-                raise RuntimeError("404 Not Found (no data for this date)")
-            # ERDDAP sometimes returns 500 with a helpful message in body
-            last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
+            resp = requests.get(url, timeout=HTTP_TIMEOUT, headers=headers)
         except requests.RequestException as e:
             last_err = f"{type(e).__name__}: {e}"
+            if attempt <= HTTP_RETRIES:
+                time.sleep(HTTP_BACKOFF_S * attempt)
+            continue
+
+        if resp.status_code == 200:
+            return resp.text
+
+        # 404 = no data for that time slice (date not yet published or retired)
+        if resp.status_code == 404:
+            raise RuntimeError("404 Not Found (no data for this date)")
+
+        # 403 = blacklisted or access-forbidden. Do NOT retry; flag the host.
+        if resp.status_code == 403:
+            _host_blacklisted.add(host)
+            body = resp.text[:200].replace("\n", " ")
+            raise RuntimeError(f"403 Forbidden (blacklisted): {body}")
+
+        # 429 = rate-limit. Honor Retry-After if present, else long backoff.
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", "30"))
+            last_err = f"HTTP 429 Rate-Limit (Retry-After {retry_after}s)"
+            if attempt <= HTTP_RETRIES:
+                time.sleep(retry_after)
+            continue
+
+        # Other 5xx / unexpected codes — retry with backoff.
+        last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
         if attempt <= HTTP_RETRIES:
             time.sleep(HTTP_BACKOFF_S * attempt)
+
     raise RuntimeError(last_err or "unknown fetch error")
 
 def parse_erddap_csv0(csv_text, cfg):
@@ -268,8 +324,10 @@ def fetch_mur():
 # VIIRS
 # =========================================================
 def fetch_viirs():
-    print("\nACSPO VIIRS (last day)")
-    for i in range(1, VIIRS_DAYS_BACK + 1):
+    print("\nACSPO VIIRS (probing recent days)")
+    # VIIRS data availability lags unpredictably — some days are missing.
+    # Probe backwards up to 5 days and take the first that works.
+    for i in range(1, 6):
         ts = datetime.now(timezone.utc) - timedelta(days=i)
         stamp = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
@@ -278,8 +336,10 @@ def fetch_viirs():
             print(f"✓ VIIRS {stamp}")
             path = os.path.join(DIRS["viirs"], f"viirs_{stamp}")
             write_csv(df, path, f"VIIRS {stamp}")
+            return  # first success wins; don't hammer server
         except Exception as e:
-            print(f"✗ VIIRS {stamp} failed: {type(e).__name__}: {e}")
+            print(f"  (no VIIRS data for {stamp}: {type(e).__name__}: {str(e)[:80]})")
+    print("⚠ VIIRS: no data found in last 5 days.")
 
 # =========================================================
 # GOES (Geo-polar Blended substitute)
