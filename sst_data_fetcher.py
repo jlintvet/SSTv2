@@ -94,14 +94,13 @@ MUR_CFG = {
     "stride":     5,
     "units":      "K",
 }
-VIIRS_CFG = {
-    "host":       ERDDAP_HOST_CW,
-    "dataset_id": "noaacwL3CollatednppC",
-    "var":        "sea_surface_temperature",
-    # VIIRS 4 km → stride 1 keeps native → ~145 × 185 ≈ 27k pts
-    "stride":     1,
-    "units":      "C",
-}
+# NOTE: VIIRS (S-NPP) dataset noaacwL3CollatednppC was retired in mid-2025.
+# Its last time coverage on CoastWatch ERDDAP is 2025-06-04. NOAA-20 and
+# NOAA-21 VIIRS are the current operational sensors but they don't have a
+# dedicated NRT SST product on the CoastWatch ERDDAP server we can subscribe
+# to without auth. The Geo-polar Blended product we already use for GOES
+# (below) ingests VIIRS from NOAA-20 and NOAA-21 as inputs, so the VIIRS
+# signal is still represented in the data — just not as a separate source.
 GOES_CFG = {
     "host":       ERDDAP_HOST_CW,
     "dataset_id": "noaacwBLENDEDsstDLDaily",
@@ -113,7 +112,6 @@ GOES_CFG = {
 
 # How far back to pull
 MUR_DAYS_BACK   = 5
-VIIRS_DAYS_BACK = 1
 GOES_HOURS_BACK = 24
 
 # Coordinate rounding — prevents float drift from breaking the frontend's
@@ -321,27 +319,6 @@ def fetch_mur():
         print("⚠ MUR: zero successful days.")
 
 # =========================================================
-# VIIRS
-# =========================================================
-def fetch_viirs():
-    print("\nACSPO VIIRS (probing recent days)")
-    # VIIRS data availability lags unpredictably — some days are missing.
-    # Probe backwards up to 5 days and take the first that works.
-    for i in range(1, 6):
-        ts = datetime.now(timezone.utc) - timedelta(days=i)
-        stamp = ts.strftime("%Y%m%d")
-        time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
-        try:
-            df = fetch_one_day(VIIRS_CFG, time_iso, f"VIIRS {stamp}")
-            print(f"✓ VIIRS {stamp}")
-            path = os.path.join(DIRS["viirs"], f"viirs_{stamp}")
-            write_csv(df, path, f"VIIRS {stamp}")
-            return  # first success wins; don't hammer server
-        except Exception as e:
-            print(f"  (no VIIRS data for {stamp}: {type(e).__name__}: {str(e)[:80]})")
-    print("⚠ VIIRS: no data found in last 5 days.")
-
-# =========================================================
 # GOES (Geo-polar Blended substitute)
 # =========================================================
 # The Geo-polar Blended dataset is daily — so we fetch the most recent
@@ -401,7 +378,6 @@ def main():
 
     goes_data = fetch_goes()
     build_goes_composite(goes_data)
-    fetch_viirs()
     fetch_mur()
 
     print("\n✓ Pipeline complete")
