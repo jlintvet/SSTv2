@@ -1,4 +1,5 @@
 name: SST Data Fetch
+
 on:
   schedule:
     - cron: '0 10 * * *'
@@ -19,8 +20,10 @@ on:
           - viirs_only
           - mur_only
           - cmems_only
+
 permissions:
   contents: write
+
 jobs:
   fetch-sst:
     name: Fetch SST Data
@@ -32,23 +35,23 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 1
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          # ERDDAP .csv endpoints need only requests + pandas + numpy.
+          # No xarray / netcdf4 / s3fs / h5netcdf / pyarrow / copernicusmarine.
           pip install \
             requests \
-            xarray \
-            netCDF4 \
             numpy \
-            pandas \
-            pyarrow \
-            h5py \
-            copernicusmarine
+            pandas
+
       - name: Resolve target date
         id: date
         run: |
@@ -58,41 +61,23 @@ jobs:
           else
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
-      # ── Credential check — tells you exactly what to fix if secrets are missing
-      - name: Check credentials
-        env:
-          CMEMS_USER:     ${{ secrets.CMEMS_USER }}
-          CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
+
+      - name: Show configuration
         run: |
           echo "Target date : ${{ steps.date.outputs.date }}"
           echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
           echo ""
-          if [ -z "$CMEMS_USER" ] || [ -z "$CMEMS_PASSWORD" ]; then
-            echo "⚠️  CMEMS secrets not set — CMEMS source will be skipped."
-            echo "   To fix: repo → Settings → Secrets and variables → Actions"
-            echo "   Add secret: CMEMS_USER     = your Copernicus username"
-            echo "   Add secret: CMEMS_PASSWORD = your Copernicus password"
-            echo "   Register free at https://marine.copernicus.eu"
-          else
-            echo "✓ CMEMS_USER set"
-            echo "✓ CMEMS_PASSWORD set"
-          fi
-          echo ""
-          echo "Note: MUR + VIIRS run without any credentials."
-      # ── Secrets passed explicitly on the step that needs them ─────────────────
+          echo "All SST sources are fetched from NOAA CoastWatch ERDDAP."
+          echo "No credentials are required."
+
       - name: Fetch SST data
         env:
-          CMEMS_USER:                           ${{ secrets.CMEMS_USER }}
-          CMEMS_PASSWORD:                       ${{ secrets.CMEMS_PASSWORD }}
-          COPERNICUSMARINE_SERVICE_USERNAME:    ${{ secrets.CMEMS_USER }}
-          COPERNICUSMARINE_SERVICE_PASSWORD:    ${{ secrets.CMEMS_PASSWORD }}
-          EARTHDATA_USERNAME:                   ${{ secrets.NASA_EARTHDATA_USER }}
-          EARTHDATA_PASSWORD:                   ${{ secrets.NASA_EARTHDATA_PASSWORD }}
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
           SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
           PYTHONUNBUFFERED:     "1"
         run: |
           python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
+
       - name: Debug output
         if: always()
         run: |
@@ -101,22 +86,23 @@ jobs:
           echo ""
           echo "====== Fetch log (last 100 lines) ======"
           tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
+
       - name: Verify outputs exist
         run: |
-          count=$(find DailySSTData/ -type f -not -name "*.nc" -not -name "*.log" 2>/dev/null | wc -l)
-          echo "Output file count: $count"
+          count=$(find DailySSTData/ -type f -name "*.csv" 2>/dev/null | wc -l)
+          echo "CSV file count: $count"
           if [ "$count" -eq 0 ]; then
-            echo "::error::No SST data files produced. Check the sst-fetch-log artifact."
+            echo "::error::No SST data files produced. Check the log above."
             exit 1
           fi
-      - name: Clean scratch files and list outputs
+
+      - name: List outputs
         run: |
-          # Remove raw .nc scratch files — not needed in repo
-          find DailySSTData/ -name "_*.nc" -delete 2>/dev/null || true
           echo "=== DailySSTData/ contents ==="
-          find DailySSTData/ -type f | sort
+          find DailySSTData/ -type f -name "*.csv" | sort
           echo ""
           du -sh DailySSTData/ 2>/dev/null || true
+
       - name: Commit files to DailySSTData/ in repo
         run: |
           git config user.name  "github-actions[bot]"
@@ -125,6 +111,7 @@ jobs:
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
           git push origin HEAD
+
       - name: Commit fetch log to repo
         if: always()
         run: |
@@ -136,22 +123,8 @@ jobs:
           git diff --cached --quiet && echo "No log changes" || \
             git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
           git push origin HEAD 2>/dev/null || true
-      # ── Optional: push to S3 ─────────────────────────────────────────────────
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region:            us-east-1
-      #
-      # - name: Push data to S3
-      #   run: |
-      #     DATE="${{ steps.date.outputs.date }}"
-      #     aws s3 sync DailySSTData/ s3://YOUR_BUCKET/sst/$DATE/ \
-      #       --content-type "application/json" \
-      #       --cache-control "max-age=86400"
+
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::SST fetch failed for ${{ steps.date.outputs.date }}"
-          echo "Download the sst-fetch-log artifact for full details."
