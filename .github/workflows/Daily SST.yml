@@ -87,6 +87,18 @@ jobs:
             exit 1
           fi
 
+      - name: Clean up stale non-CSV artifacts
+        run: |
+          # Remove old Parquet/GeoJSON/_grid.json files left over from previous
+          # pipeline versions. The current script writes CSV only.
+          deleted=0
+          for pattern in "*.parquet" "*.geojson" "*_grid.json"; do
+            while IFS= read -r f; do
+              [ -n "$f" ] && rm -f "$f" && deleted=$((deleted+1))
+            done < <(find DailySSTData/ -type f -name "$pattern" 2>/dev/null)
+          done
+          echo "Removed $deleted stale non-CSV files."
+
       - name: List outputs
         run: |
           echo "=== DailySSTData/ contents ==="
