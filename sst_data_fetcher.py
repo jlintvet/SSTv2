@@ -38,8 +38,8 @@ REQUIREMENTS
 pip install numpy pandas xarray netcdf4 requests s3fs
 
 For MUR (Earthdata Login):
-    export EARTHDATA_USERNAME=your_username
-    export EARTHDATA_PASSWORD=your_password
+    export NASA_EARTHDATA_USERNAME=your_username
+    export NASA_EARTHDATA_PASSWORD=your_password
 
 ---------------------------------------------------------
 FAILURE POLICY
