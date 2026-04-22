@@ -92,21 +92,25 @@ MUR_MIRRORS = [
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
-        "units":      "K",
+        # MUR ERDDAP serves analysed_sst in Celsius (not Kelvin, despite the
+        # underlying NetCDF variable). Observed empirically: when set to "K",
+        # the ingest subtracts 273.15 and downstream cToF() produces -444°F.
+        # Switching to "C" keeps the pipeline honest: no spurious offset.
+        "units":      "C",
     },
     {
         "host":       ERDDAP_HOST_CW,     # secondary: NESDIS CoastWatch — different org, different rate-limit
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
-        "units":      "K",
+        "units":      "C",
     },
     {
         "host":       "https://upwell.pfeg.noaa.gov/erddap",  # tertiary: PFEG sibling node
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
-        "units":      "K",
+        "units":      "C",
     },
 ]
 # Legacy alias for the primary mirror so other code paths still compile.
