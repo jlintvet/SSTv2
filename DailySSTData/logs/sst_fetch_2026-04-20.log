@@ -1,16 +1,38 @@
-WARNING: netCDF4 not installed -- VIIRS multi-pass fetch disabled.
+WARNING: netCDF4 not installed — VIIRS multi-pass fetch disabled.
          pip install netCDF4
 =========================================================
 SST PIPELINE
-  UTC  : 2026-04-22 20:53:56
-  Bbox : 33.7-39.0N  -78.89--72.21E
+  UTC  : 2026-04-22 21:51:00
+  Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  (land filter: loaded 24 coastline polygons intersecting region)
-  (land filter: dropped 94 inland points, kept 8892 ocean points)
+  MUR 20260421 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 94 inland, kept 8892 ocean)
   ✓ MUR 20260421
-  -> DailySSTData/MUR/mur_20260421.csv  (8892 pts, 107 lats x 133 lons)
-  (land filter: dropped 94 inland points, kept 8892 ocean points)
+  → DailySSTData/MUR/mur_20260421.csv  (8892 pts, 107 lats × 133 lons)
+  MUR 20260420 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
   ✓ MUR 20260420
-  -> DailySSTData/MUR/mur_20260420.csv  (8892 pts, 107 lats x 133 lons)
+  → DailySSTData/MUR/mur_20260420.csv  (8892 pts, 107 lats × 133 lons)
+  MUR 20260419 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20260419
+  → DailySSTData/MUR/mur_20260419.csv  (8892 pts, 107 lats × 133 lons)
+  MUR 20260418 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20260418
+  → DailySSTData/MUR/mur_20260418.csv  (8892 pts, 107 lats × 133 lons)
+  MUR 20260417 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20260417
+  → DailySSTData/MUR/mur_20260417.csv  (8892 pts, 107 lats × 133 lons)
+
+── GOES-19 geo-polar blended daily composite ──
+  GOES 20260422 … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260421 …   (land filter: dropped 70 inland, kept 2237 ocean)
+  ✓ Geo-polar Blended 2026-04-21
+  → DailySSTData/GOES/Composite/goes_composite_20260421.csv  (2237 pts, 54 lats × 66 lons)
+
+── VIIRS multi-pass ──
+  skipped (netCDF4 not installed — pip install netCDF4)
+
+=========================================================
+✓ Pipeline complete
+=========================================================
