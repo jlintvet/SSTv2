@@ -77,7 +77,9 @@ Contract:
 - `grid` is a flat object keyed by `"${lat}_${lon}"` strings, value = SST °F.
 - `isOcean` is the frontend coastline mask function (redundant now that ingest filters, but still checked as a safety net).
 - Canvas is **fixed 512 × 400 pixels**, independent of source grid resolution.
-- Each canvas pixel resolves to a geographic lat/lon via inverse Mercator (see Mercator fix above), then snaps to the nearest source-grid cell.
+- Each canvas pixel resolves to a geographic lat/lon via inverse Mercator (see Mercator fix above).
+- Each pixel value is **bilinearly interpolated** from the 4 surrounding source-grid cells. Do NOT revert to nearest-neighbor (`Math.round` + single-cell lookup) — that makes the display blocky, and `raster-resampling: linear` on the Mapbox layer only smooths pixel edges, it cannot recover smooth gradient from blocky source pixels.
+- Missing neighbors (NaN or land-filtered) drop out of the weighted sum, renormalized by `wsum`. If `wsum < 0.25`, the pixel is left transparent — prevents dark halos along the coast where only 1 of 4 neighbors has data.
 - Land pixels (per `isOcean`) are left transparent. Data NaN is left transparent.
 - Return includes four lat/lon corners expanded by half a grid cell on each side — this aligns pixel centers with cell centers, so Mapbox's `raster-resampling: linear` interpolates smoothly without shifting data by half a cell.
 
