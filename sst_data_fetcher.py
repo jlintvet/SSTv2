@@ -60,6 +60,104 @@ import pandas as pd
 import requests
 
 # =========================================================
+# LAND FILTER
+# =========================================================
+# MUR and other L4 SST products report "water" temperatures for inland
+# water bodies (Chesapeake Bay, Pamlico Sound, Rappahannock River, etc.)
+# because those ARE water — but on a fishing-focused Atlantic SST map,
+# they appear as colored blocks painted over land. Filter them out here,
+# at ingest time, using Natural Earth 1:10m coastline. Only Atlantic-
+# ocean points survive to the CSV.
+NE_LAND_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_land.geojson"
+_LAND_POLYS_CACHE = None
+
+def _point_in_ring(px, py, ring):
+    """Ray-cast point-in-polygon test. Ring is [[lon,lat], ...]."""
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi + 1e-12) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+def _load_land_polys_for_bounds(north, south, east, west):
+    """Fetch NE 1:10m land polygons once, filter to those overlapping our bounds.
+    Return list of polygon rings (exterior + holes)."""
+    global _LAND_POLYS_CACHE
+    if _LAND_POLYS_CACHE is not None:
+        return _LAND_POLYS_CACHE
+    try:
+        r = requests.get(NE_LAND_URL, timeout=60)
+        r.raise_for_status()
+        gj = r.json()
+        polys = []
+        for f in gj.get("features", []):
+            g = f.get("geometry", {})
+            t = g.get("type")
+            if t == "Polygon":
+                polys.append(g["coordinates"])
+            elif t == "MultiPolygon":
+                polys.extend(g["coordinates"])
+        # Trim to bounding box: keep polys whose AABB intersects ours.
+        kept = []
+        for poly in polys:
+            ring = poly[0]
+            mnl, mxl, mnla, mxla = 1e9, -1e9, 1e9, -1e9
+            for lo, la in ring:
+                if lo < mnl: mnl = lo
+                if lo > mxl: mxl = lo
+                if la < mnla: mnla = la
+                if la > mxla: mxla = la
+            if mxl >= west and mnl <= east and mxla >= south and mnla <= north:
+                kept.append(poly)
+        print(f"  (land filter: loaded {len(kept)} coastline polygons intersecting region)")
+        _LAND_POLYS_CACHE = kept
+        return kept
+    except Exception as e:
+        print(f"  ⚠ land filter: failed to load coastline ({e}); skipping land filter.")
+        _LAND_POLYS_CACHE = []
+        return []
+
+def _is_land(lat, lon, polys):
+    """True iff (lat, lon) falls inside any land polygon (exterior minus holes)."""
+    for poly in polys:
+        if _point_in_ring(lon, lat, poly[0]):
+            # Check holes (lakes inside land — rare at this scale).
+            in_hole = False
+            for h in range(1, len(poly)):
+                if _point_in_ring(lon, lat, poly[h]):
+                    in_hole = True
+                    break
+            if not in_hole:
+                return True
+    return False
+
+def filter_to_ocean(df, label):
+    """Drop rows whose (lat, lon) fall on land per NE 1:10m coastline.
+    This eliminates Chesapeake Bay, Pamlico Sound, and other inland
+    water bodies whose SST values would otherwise bleed across dry land
+    on the Mapbox basemap at the frontend."""
+    polys = _load_land_polys_for_bounds(NORTH, SOUTH, EAST, WEST)
+    if not polys:
+        return df  # couldn't load coastline — let the data through unfiltered
+    before = len(df)
+    # Vectorize by building a boolean mask per row. For our region the grid
+    # has ~9000 points; iterating in Python is fine (<100ms).
+    mask = np.fromiter(
+        (not _is_land(lat, lon, polys)
+         for lat, lon in zip(df["lat"].to_numpy(), df["lon"].to_numpy())),
+        dtype=bool, count=len(df))
+    df = df[mask].reset_index(drop=True)
+    dropped = before - len(df)
+    if dropped > 0:
+        print(f"  (land filter: dropped {dropped} inland points, kept {len(df)} ocean points)")
+    return df
+
+
+# =========================================================
 # CONFIG
 # =========================================================
 BASE_DIR = "DailySSTData"
@@ -306,6 +404,12 @@ def parse_erddap_csv0(csv_text, cfg):
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
+
+    # Drop any points that fall on land (per NE 1:10m coastline). MUR and
+    # similar L4 products fill Chesapeake Bay, tidal rivers, and Pamlico
+    # Sound with SSTs; removing them here gives the frontend a clean
+    # ocean-only dataset so the heatmap never paints over dry land.
+    df = filter_to_ocean(df, label="ingest")
     return df
 
 def write_csv(df, base_path, label):
