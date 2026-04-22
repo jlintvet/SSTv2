@@ -86,14 +86,32 @@ WEST,  EAST  = -78.89, -72.21
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
-MUR_CFG = {
-    "host":       ERDDAP_HOST_PFEG,
-    "dataset_id": "jplMURSST41",
-    "var":        "analysed_sst",
-    # MUR native 0.01° → stride 5 = 0.05° = ~5.5 km → ~106 × 134 ≈ 14k pts
-    "stride":     5,
-    "units":      "K",
-}
+MUR_MIRRORS = [
+    {
+        "host":       ERDDAP_HOST_PFEG,   # primary: NOAA PFEG CoastWatch
+        "dataset_id": "jplMURSST41",
+        "var":        "analysed_sst",
+        "stride":     5,
+        "units":      "K",
+    },
+    {
+        "host":       ERDDAP_HOST_CW,     # secondary: NESDIS CoastWatch — different org, different rate-limit
+        "dataset_id": "jplMURSST41",
+        "var":        "analysed_sst",
+        "stride":     5,
+        "units":      "K",
+    },
+    {
+        "host":       "https://upwell.pfeg.noaa.gov/erddap",  # tertiary: PFEG sibling node
+        "dataset_id": "jplMURSST41",
+        "var":        "analysed_sst",
+        "stride":     5,
+        "units":      "K",
+    },
+]
+# Legacy alias for the primary mirror so other code paths still compile.
+# MUR native 0.01° → stride 5 = 0.05° = ~5.5 km → ~106 × 134 ≈ 14k pts
+MUR_CFG = MUR_MIRRORS[0]
 # NOTE: VIIRS (S-NPP) dataset noaacwL3CollatednppC was retired in mid-2025.
 # Its last time coverage on CoastWatch ERDDAP is 2025-06-04. NOAA-20 and
 # NOAA-21 VIIRS are the current operational sensors but they don't have a
@@ -131,6 +149,10 @@ USER_AGENT = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
 # Per-host state for the polite client.
 _last_request_at = {}     # host → monotonic timestamp of last request
 _host_blacklisted = set() # hosts that returned 403 this run — skip further calls
+_host_conn_resets = {}    # host → count of recent ConnectionError/reset events;
+                          # promoted to _host_blacklisted after CONN_RESET_THRESHOLD.
+
+CONN_RESET_THRESHOLD = 2  # after this many resets on a host, stop hitting it
 
 # =========================================================
 # HELPERS
@@ -199,6 +221,21 @@ def fetch_erddap_csv(url, label):
             resp = requests.get(url, timeout=HTTP_TIMEOUT, headers=headers)
         except requests.RequestException as e:
             last_err = f"{type(e).__name__}: {e}"
+            # Connection resets / aborts often mean the host is silently
+            # rate-limiting us at the TCP level. Count them per-host; once we
+            # cross the threshold, blacklist the host so subsequent dates
+            # don't burn 30+ seconds each retrying a dead connection.
+            if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+                _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
+                if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
+                    _host_blacklisted.add(host)
+                    raise RuntimeError(
+                        f"host {host} keeps resetting connections "
+                        f"({_host_conn_resets[host]} resets) — treating as blacklisted."
+                    )
+                # Don't retry a connection-reset on the same host; fall through
+                # to the caller so it can try the next mirror immediately.
+                raise RuntimeError(last_err)
             if attempt <= HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF_S * attempt)
             continue
@@ -307,16 +344,33 @@ def fetch_mur():
         stamp = ts.strftime("%Y%m%d")
         # MUR's time axis is at 09:00:00Z each day.
         time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
-        try:
-            df = fetch_one_day(MUR_CFG, time_iso, f"MUR {stamp}")
-            print(f"✓ MUR {stamp}")
-            path = os.path.join(DIRS["mur"], f"mur_{stamp}")
-            if write_csv(df, path, f"MUR {stamp}"):
-                success += 1
-        except Exception as e:
-            print(f"✗ MUR {stamp} failed: {type(e).__name__}: {e}")
+
+        # Try each mirror. If a mirror's host is blacklisted (resets/403s),
+        # skip it silently and try the next one. All mirrors failing → log once.
+        df = None
+        last_err = None
+        for cfg in MUR_MIRRORS:
+            mirror_host = cfg["host"].split("/", 3)[2]
+            if mirror_host in _host_blacklisted:
+                continue
+            try:
+                df = fetch_one_day(cfg, time_iso, f"MUR {stamp}@{mirror_host}")
+                break
+            except Exception as e:
+                last_err = f"{mirror_host}: {type(e).__name__}: {str(e)[:120]}"
+                continue
+
+        if df is None:
+            print(f"✗ MUR {stamp} failed on all mirrors. Last: {last_err}")
+            continue
+
+        print(f"✓ MUR {stamp}")
+        path = os.path.join(DIRS["mur"], f"mur_{stamp}")
+        if write_csv(df, path, f"MUR {stamp}"):
+            success += 1
+
     if success == 0:
-        print("⚠ MUR: zero successful days.")
+        print("⚠ MUR: zero successful days (all mirrors failed).")
 
 # =========================================================
 # GOES (Geo-polar Blended substitute)
