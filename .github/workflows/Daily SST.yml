@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests numpy pandas
+          pip install requests numpy pandas netCDF4
 
       - name: Resolve target date
         id: date
@@ -56,6 +56,18 @@ jobs:
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
 
+      - name: Remove stale GOES Hourly files
+        run: |
+          # The old pipeline replicated one daily snapshot into 24 identical
+          # hourly CSVs. The new pipeline writes real VIIRS per-pass files
+          # instead. Remove the fake hourly directory entirely if it exists.
+          if [ -d "DailySSTData/GOES/Hourly" ]; then
+            rm -rf DailySSTData/GOES/Hourly
+            echo "Removed stale DailySSTData/GOES/Hourly/"
+          else
+            echo "DailySSTData/GOES/Hourly/ not present — nothing to remove"
+          fi
+
       - name: Fetch SST data
         env:
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
@@ -65,7 +77,8 @@ jobs:
           echo "Target date : ${{ steps.date.outputs.date }}"
           echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
           echo ""
-          echo "Note: all sources pulled from NOAA CoastWatch ERDDAP. No credentials needed."
+          echo "Note: MUR and GOES via NOAA CoastWatch ERDDAP (no auth)."
+          echo "      VIIRS via STAR NESDIS NRT file server (no auth)."
           echo ""
           python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
 
@@ -82,9 +95,28 @@ jobs:
         run: |
           count=$(find DailySSTData/ -type f -name "*.csv" 2>/dev/null | wc -l)
           echo "Output CSV count: $count"
+
+          mur_count=$(find DailySSTData/MUR/ -name "*.csv" 2>/dev/null | wc -l)
+          goes_count=$(find DailySSTData/GOES/Composite/ -name "*.csv" 2>/dev/null | wc -l)
+          viirs_count=$(find DailySSTData/VIIRS/Passes/ -name "*.csv" 2>/dev/null | wc -l)
+
+          echo "  MUR files        : $mur_count"
+          echo "  GOES composite   : $goes_count"
+          echo "  VIIRS passes     : $viirs_count"
+
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the log above."
             exit 1
+          fi
+
+          if [ "$mur_count" -eq 0 ]; then
+            echo "::warning::No MUR files produced."
+          fi
+          if [ "$goes_count" -eq 0 ]; then
+            echo "::warning::No GOES composite files produced."
+          fi
+          if [ "$viirs_count" -eq 0 ]; then
+            echo "::warning::No VIIRS pass files produced — check netCDF4 install and file server URL."
           fi
 
       - name: Clean up stale non-CSV artifacts
@@ -106,10 +138,12 @@ jobs:
           echo ""
           du -sh DailySSTData/ 2>/dev/null || true
 
-      - name: Commit files to DailySSTData/ in repo
+      - name: Commit SST data to repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Stage all data changes — includes new files, removals of stale
+          # Hourly CSVs, and new VIIRS pass files
           git add DailySSTData/
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
