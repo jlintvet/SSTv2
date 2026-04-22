@@ -6,77 +6,29 @@ SST DATA FETCHER — NOAA CoastWatch ERDDAP + VIIRS L3U
 
 Three independent data sources serving three distinct UI views:
 
-MUR (DAILY COMPOSITE)
-    JPL MUR v4.1 0.01° daily (jplMURSST41) via ERDDAP.
-    Smooth gap-filled L4 analysis. Best overall daily picture.
-    Last 5 published days.
+  MUR       — JPL MUR v4.1 daily L4 composite    (jplMURSST41)
+  GOES-19   — Geo-polar Blended daily composite  (noaacwBLENDEDsstDLDaily)
+  VIIRS     — ACSPO L3U per-swath multi-pass     (STAR NESDIS file server)
 
-GOES-19 (BLENDED DAILY)
-    Geo-polar Blended Day+Night (noaacwBLENDEDsstDLDaily).
-    Multi-sensor blended analysis with ABI/GOES-19 as primary
-    geostationary input. Different sensor weighting than MUR.
-    Most recent available day written to GOES/Composite/.
-    NOTE: This is a daily product — one file per day, not hourly.
-    The previous "hourly" files were identical copies of one daily
-    snapshot and have been removed. The composite is the honest form.
+REQUIREMENTS:  pip install requests numpy pandas netCDF4
 
-VIIRS (MULTI-PASS)
-    ACSPO L3U 10-min granule NetCDF files from the STAR NESDIS
-    NRT file server (no auth required). NPP, NOAA-20, and NOAA-21
-    each make ~2 passes over the Mid-Atlantic per day, giving ~6
-    genuinely distinct per-swath snapshots per 24 hours with 1-3 hr
-    NRT latency. Cloud-covered pixels are masked (fill values) -- that
-    is expected and correct for L3U swath data. This view shows the
-    actual satellite passes as they happened, not a blended analysis.
-
----------------------------------------------------------
-OUTPUT STRUCTURE
----------------------------------------------------------
-DailySSTData/
-    MUR/              mur_YYYYMMDD.csv
-    GOES/Composite/   goes_composite_YYYYMMDD.csv
-    VIIRS/Passes/     viirs_{platform}_{YYYYMMDD_HHMM}.csv
-
-CSV columns: lat, lon, sst   (SST in Celsius)
-MUR and GOES form regular rectangular lat/lon grids.
-VIIRS pass CSVs are sparse (swath footprint, cloud gaps present).
-
----------------------------------------------------------
-REQUIREMENTS
----------------------------------------------------------
-pip install requests numpy pandas netCDF4
-
-netCDF4 is required only for the VIIRS multi-pass fetch.
-MUR and GOES continue to work without it via ERDDAP CSV.
-
----------------------------------------------------------
-VERIFYING VIIRS FILE SERVER PATH
----------------------------------------------------------
-Before first run confirm which NRT base URL is reachable:
-
+VERIFYING VIIRS FILE SERVER PATH — run before first deploy:
   python3 -c "
   import requests
   for u in [
     'https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/',
     'https://coastwatch.noaa.gov/pub/socd/mecb/coastwatch/viirs/nrt/n20/',
   ]:
-      r = requests.get(u, timeout=10)
-      print(r.status_code, u)
+      print(requests.get(u, timeout=10).status_code, u)
   "
-
-Set VIIRS_BASE_CANDIDATES below accordingly.
-
----------------------------------------------------------
-FAILURE POLICY
----------------------------------------------------------
-Each date/granule fetched independently. A failure on one
-logs an error and moves on. No mock/synthetic data is written.
 =========================================================
 """
 import io
 import os
 import re
+import signal
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -88,8 +40,36 @@ try:
     _NETCDF4_AVAILABLE = True
 except ImportError:
     _NETCDF4_AVAILABLE = False
-    print("WARNING: netCDF4 not installed -- VIIRS multi-pass fetch disabled.")
+    print("WARNING: netCDF4 not installed — VIIRS multi-pass fetch disabled.")
     print("         pip install netCDF4")
+
+
+# =========================================================
+# HARD TIMEOUT CONTEXT MANAGER
+# =========================================================
+# requests timeout=(connect, read) caps individual socket reads but NOT
+# the total wall-clock time if the server dribbles bytes slowly forever.
+# This SIGALRM-based context manager enforces an absolute ceiling.
+# Only works on Unix/Linux (GitHub Actions is Linux — fine for CI).
+
+class _TimeoutError(Exception):
+    pass
+
+@contextmanager
+def hard_timeout(seconds: int, label: str = ""):
+    """Raise _TimeoutError if the block takes longer than `seconds`."""
+    def _handler(signum, frame):
+        raise _TimeoutError(
+            f"hard timeout ({seconds}s) exceeded{': ' + label if label else ''}"
+        )
+
+    old = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
 
 
 # =========================================================
@@ -121,7 +101,7 @@ def _load_land_polys_for_bounds(north, south, east, west):
     if _LAND_POLYS_CACHE is not None:
         return _LAND_POLYS_CACHE
     try:
-        r = requests.get(NE_LAND_URL, timeout=60)
+        r = requests.get(NE_LAND_URL, timeout=(10, 30))
         r.raise_for_status()
         gj = r.json()
         polys = []
@@ -143,7 +123,7 @@ def _load_land_polys_for_bounds(north, south, east, west):
                 if la > mxla: mxla = la
             if mxl >= west and mnl <= east and mxla >= south and mnla <= north:
                 kept.append(poly)
-        print(f"  (land filter: loaded {len(kept)} coastline polygons intersecting region)")
+        print(f"  (land filter: loaded {len(kept)} coastline polygons)")
         _LAND_POLYS_CACHE = kept
         return kept
     except Exception as e:
@@ -166,7 +146,6 @@ def _is_land(lat, lon, polys):
 
 
 def filter_to_ocean(df, label=""):
-    """Drop rows whose (lat, lon) fall on land per NE 1:10m coastline."""
     polys = _load_land_polys_for_bounds(NORTH, SOUTH, EAST, WEST)
     if not polys:
         return df
@@ -180,10 +159,7 @@ def filter_to_ocean(df, label=""):
     df = df[mask].reset_index(drop=True)
     dropped = before - len(df)
     if dropped > 0:
-        print(
-            f"  (land filter: dropped {dropped} inland points,"
-            f" kept {len(df)} ocean points)"
-        )
+        print(f"  (land filter: dropped {dropped} inland, kept {len(df)} ocean)")
     return df
 
 
@@ -197,8 +173,8 @@ DIRS = {
     "mur":            os.path.join(BASE_DIR, "MUR"),
 }
 
-# App region -- MUST match the frontend bounds and sstSummary.ts bounds.
-NORTH, SOUTH = 39.00, 33.70
+# App region — must match frontend bounds and sstSummary.ts
+NORTH, SOUTH =  39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
 
 
@@ -208,18 +184,15 @@ WEST,  EAST  = -78.89, -72.21
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
-# MUR: multiple mirrors in priority order.
-# MUR native 0.01 deg -> stride 5 = 0.05 deg ~ 5.5 km -> ~106x134 ~ 14k pts
+# MUR mirrors in priority order.
+# stride 5 on 0.01° native = 0.05° ~ 5.5 km, ~14 k pts over the bbox.
 MUR_MIRRORS = [
     {
         "host":       ERDDAP_HOST_PFEG,
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
-        # MUR ERDDAP serves analysed_sst in Celsius despite the underlying
-        # NetCDF variable. Observed empirically: setting "K" produces -444F
-        # offsets downstream. "C" keeps the pipeline honest.
-        "units":      "C",
+        "units":      "C",   # ERDDAP serves this in °C despite the NetCDF var
     },
     {
         "host":       ERDDAP_HOST_CW,
@@ -236,19 +209,16 @@ MUR_MIRRORS = [
         "units":      "C",
     },
 ]
-MUR_CFG      = MUR_MIRRORS[0]
 MUR_DAYS_BACK = 5
 
-# GOES / Geo-polar Blended Day+Night.
-# noaacwBLENDEDsstDLDaily = Diurnal-corrected Day+Night blend.
-# Uses GOES-19 ABI as primary geostationary input alongside NOAA-20/21
-# VIIRS, MetOp AVHRR, Himawari AHI, and Meteosat SEVIRI.
-# 0.05 deg native resolution -> stride 1 keeps all points.
+# Geo-polar Blended Day+Night (GOES-19 ABI primary geostationary input).
+# stride 2 on 0.05° native = 0.10° — still ~3.5 k pts, much smaller response.
+# Raising stride reduces transfer size and hang risk without losing visual detail.
 GOES_CFG = {
     "host":       ERDDAP_HOST_CW,
     "dataset_id": "noaacwBLENDEDsstDLDaily",
     "var":        "analysed_sst",
-    "stride":     1,
+    "stride":     2,
     "units":      "C",
 }
 
@@ -256,22 +226,33 @@ GOES_CFG = {
 # =========================================================
 # VIIRS L3U GRANULE CONFIG
 # =========================================================
-# ACSPO L3U 10-minute granule NetCDF files. No auth required.
-# _probe_viirs_base() tests both at startup and uses the live one.
 VIIRS_BASE_CANDIDATES = [
     "https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs",
     "https://coastwatch.noaa.gov/pub/socd/mecb/coastwatch/viirs/nrt",
 ]
-VIIRS_PLATFORMS  = ["npp", "n20", "n21"]   # Suomi-NPP, NOAA-20, NOAA-21
+VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
 VIIRS_HOURS_BACK = 24
 
 
 # =========================================================
 # HTTP TUNING
 # =========================================================
-HTTP_TIMEOUT       = 120
+# timeout=(connect_seconds, read_seconds)
+# read_seconds caps the time between consecutive bytes from the server.
+# A slow-but-alive ERDDAP that streams at 1 byte/read_seconds will still
+# hang. The hard_timeout() context manager is the backstop for that case.
+
+HTTP_CONNECT_TIMEOUT   = 15     # seconds to establish TCP connection
+HTTP_READ_TIMEOUT      = 90     # seconds of silence before read gives up
+HTTP_TIMEOUT           = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+
+# Absolute wall-clock ceiling per fetch call (connect + transfer).
+# Covers the case where ERDDAP trickle-streams a huge response byte by byte.
+ERDDAP_HARD_TIMEOUT_S  = 180    # 3 minutes max per ERDDAP request
+VIIRS_HARD_TIMEOUT_S   = 120    # 2 minutes max per granule download
+
 HTTP_RETRIES       = 2
-HTTP_BACKOFF_S     = 3
+HTTP_BACKOFF_S     = 5
 REQUEST_SPACING_S  = 2.0
 USER_AGENT         = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
 
@@ -297,7 +278,6 @@ def _host_of(url):
 
 
 def _throttle(host):
-    """Sleep if needed to enforce REQUEST_SPACING_S between calls to a host."""
     now  = time.monotonic()
     last = _last_request_at.get(host)
     if last is not None:
@@ -308,7 +288,6 @@ def _throttle(host):
 
 
 def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
-    """Build an ERDDAP griddap .csv0 URL for a bounding-box/time subset."""
     stride = cfg["stride"]
     query = (
         f"{cfg['var']}"
@@ -320,28 +299,41 @@ def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
 
 
 def fetch_erddap_csv(url, label):
-    """GET an ERDDAP CSV URL with throttling, retries, and blacklist logic."""
+    """
+    GET an ERDDAP .csv0 URL.
+    Uses (connect, read) timeout tuple AND a hard SIGALRM wall-clock ceiling.
+    """
     host = _host_of(url)
     if host in _host_blacklisted:
-        raise RuntimeError(f"host {host} is blacklisted this run -- skipping.")
+        raise RuntimeError(f"host {host} blacklisted this run")
+
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.5",
     }
     last_err = None
+
     for attempt in range(1, HTTP_RETRIES + 2):
         _throttle(host)
         try:
-            resp = requests.get(url, timeout=HTTP_TIMEOUT, headers=headers)
+            with hard_timeout(ERDDAP_HARD_TIMEOUT_S, label):
+                resp = requests.get(
+                    url,
+                    timeout=HTTP_TIMEOUT,
+                    headers=headers,
+                )
+        except _TimeoutError as e:
+            last_err = str(e)
+            print(f"\n  ⚠ {last_err}")
+            # Don't retry a hard timeout — the server is clearly stuck
+            raise RuntimeError(last_err)
         except requests.RequestException as e:
             last_err = f"{type(e).__name__}: {e}"
             if isinstance(e, (requests.ConnectionError, requests.Timeout)):
                 _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
                 if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
                     _host_blacklisted.add(host)
-                    raise RuntimeError(
-                        f"host {host} keeps resetting -- blacklisted."
-                    )
+                    raise RuntimeError(f"host {host} keeps resetting — blacklisted")
                 raise RuntimeError(last_err)
             if attempt <= HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF_S * attempt)
@@ -350,10 +342,10 @@ def fetch_erddap_csv(url, label):
         if resp.status_code == 200:
             return resp.text
         if resp.status_code == 404:
-            raise RuntimeError("404 Not Found (no data for this date)")
+            raise RuntimeError("404 — no data for this date")
         if resp.status_code == 403:
             _host_blacklisted.add(host)
-            raise RuntimeError(f"403 Forbidden: {resp.text[:200]}")
+            raise RuntimeError(f"403 Forbidden — blacklisted: {resp.text[:200]}")
         if resp.status_code == 429:
             retry_after = int(resp.headers.get("Retry-After", "30"))
             last_err = f"HTTP 429 (Retry-After {retry_after}s)"
@@ -368,10 +360,6 @@ def fetch_erddap_csv(url, label):
 
 
 def parse_erddap_csv0(csv_text, cfg):
-    """
-    Parse ERDDAP .csv0 (headerless) response into DataFrame [lat, lon, sst].
-    Column order from griddap: time, latitude, longitude, variable.
-    """
     if not csv_text or not csv_text.strip():
         raise RuntimeError("empty response body")
     df = pd.read_csv(
@@ -381,13 +369,13 @@ def parse_erddap_csv0(csv_text, cfg):
         dtype={"time": str},
     )
     if df.empty:
-        raise RuntimeError("response had 0 data rows")
+        raise RuntimeError("0 data rows")
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
     df["sst"] = pd.to_numeric(df["sst"], errors="coerce")
     df = df.dropna(subset=["lat", "lon", "sst"])
     if df.empty:
-        raise RuntimeError("all SST values NaN in response")
+        raise RuntimeError("all SST values NaN")
     if cfg["units"] == "K":
         df["sst"] = df["sst"] - 273.15
     df = df[["lat", "lon", "sst"]]
@@ -399,14 +387,9 @@ def parse_erddap_csv0(csv_text, cfg):
 
 
 def write_csv(df, base_path, label):
-    """
-    Write [lat, lon, sst] DataFrame as CSV with a grid coverage diagnostic.
-    Gridded products (MUR, GOES) warn below 30% coverage.
-    VIIRS pass files are inherently sparse -- warn only below 5%.
-    """
     n_pts = len(df)
     if n_pts < 100:
-        print(f"  ⚠ {label}: only {n_pts} points. Skipping write.")
+        print(f"  ⚠ {label}: only {n_pts} pts — skipping write.")
         return False
     n_lat    = df["lat"].nunique()
     n_lon    = df["lon"].nunique()
@@ -415,32 +398,25 @@ def write_csv(df, base_path, label):
     threshold = 0.05 if "VIIRS" in label else 0.30
     if coverage < threshold:
         print(
-            f"  ⚠ {label}: sparse -- {n_pts} pts vs "
-            f"{n_lat}x{n_lon}={expected} ({coverage*100:.0f}% fill)."
+            f"  ⚠ {label}: sparse — {n_pts} pts / "
+            f"{n_lat}×{n_lon}={expected} ({coverage*100:.0f}%)"
         )
     path = base_path + ".csv"
     df.to_csv(path, index=False)
-    print(f"  -> {path}  ({n_pts} pts, {n_lat} lats x {n_lon} lons)")
+    print(f"  → {path}  ({n_pts} pts, {n_lat} lats × {n_lon} lons)")
     return True
 
 
 def fetch_one_day_erddap(cfg, time_iso, label):
-    """Fetch + parse one ERDDAP day subset. Returns DataFrame or raises."""
     url      = build_erddap_csv_url(cfg, time_iso, SOUTH, NORTH, WEST, EAST)
     csv_text = fetch_erddap_csv(url, label)
     return parse_erddap_csv0(csv_text, cfg)
 
 
 # =========================================================
-# MUR -- DAILY COMPOSITE
+# MUR — DAILY COMPOSITE
 # =========================================================
 def fetch_mur():
-    """
-    Pull the last MUR_DAYS_BACK daily MUR L4 snapshots via ERDDAP.
-    Tries each mirror in order; falls back silently if a mirror is
-    blacklisted or returns errors.
-    Output: DailySSTData/MUR/mur_YYYYMMDD.csv
-    """
     print(f"\n── MUR daily composite (last {MUR_DAYS_BACK} days) ──")
     success = 0
 
@@ -449,23 +425,23 @@ def fetch_mur():
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
 
-        df       = None
+        df = None
         last_err = None
         for cfg in MUR_MIRRORS:
-            mirror_host = cfg["host"].split("/", 3)[2]
-            if mirror_host in _host_blacklisted:
+            mhost = cfg["host"].split("/", 3)[2]
+            if mhost in _host_blacklisted:
                 continue
             try:
-                df = fetch_one_day_erddap(
-                    cfg, time_iso, f"MUR {stamp}@{mirror_host}"
-                )
+                print(f"  MUR {stamp} ({mhost}) … ", end="", flush=True)
+                df = fetch_one_day_erddap(cfg, time_iso, f"MUR {stamp}")
                 break
             except Exception as e:
-                last_err = f"{mirror_host}: {type(e).__name__}: {str(e)[:120]}"
+                last_err = f"{mhost}: {type(e).__name__}: {str(e)[:120]}"
+                print(f"✗ {type(e).__name__}")
                 continue
 
         if df is None:
-            print(f"  ✗ MUR {stamp} failed on all mirrors. Last: {last_err}")
+            print(f"  ✗ MUR {stamp} — all mirrors failed. Last: {last_err}")
             continue
 
         print(f"  ✓ MUR {stamp}")
@@ -474,46 +450,38 @@ def fetch_mur():
             success += 1
 
     if success == 0:
-        print("  ⚠ MUR: zero successful days (all mirrors failed).")
+        print("  ⚠ MUR: zero successful days.")
 
 
 # =========================================================
-# GOES -- BLENDED DAILY COMPOSITE
+# GOES — BLENDED DAILY COMPOSITE
 # =========================================================
 def fetch_goes():
     """
-    Pull the most recent available Geo-polar Blended Day+Night snapshot
-    via ERDDAP and write it as a single dated composite file.
-
-    This is a genuine daily product -- one analysis per day.
-    GOES-19 ABI is the primary geostationary input; it is blended with
-    NOAA-20/21 VIIRS, MetOp AVHRR, Himawari AHI, and Meteosat SEVIRI.
-    The result is a different view of SST than MUR due to different sensor
-    weighting and analysis methodology.
-
-    Output: DailySSTData/GOES/Composite/goes_composite_YYYYMMDD.csv
+    Pull the most recent Geo-polar Blended Day+Night snapshot via ERDDAP.
+    One honest daily file — not replicated to fake hourly slots.
     """
     print("\n── GOES-19 geo-polar blended daily composite ──")
 
     df_latest = None
     latest_ts = None
 
-    for i in range(0, 4):   # try today back to 3 days ago
+    for i in range(0, 4):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
+        label    = f"GOES {ts:%Y%m%d}"
         try:
-            df_latest = fetch_one_day_erddap(
-                GOES_CFG, time_iso, f"GOES {ts:%Y%m%d}"
-            )
+            print(f"  {label} … ", end="", flush=True)
+            df_latest = fetch_one_day_erddap(GOES_CFG, time_iso, label)
             latest_ts = ts
-            print(f"  ✓ Geo-polar Blended available for {ts:%Y-%m-%d}")
+            print(f"  ✓ Geo-polar Blended {ts:%Y-%m-%d}")
             break
         except Exception as e:
-            print(f"  (no data for {ts:%Y-%m-%d}: {type(e).__name__})")
+            print(f"✗ {type(e).__name__}: {str(e)[:80]}")
             continue
 
     if df_latest is None:
-        print("  ✗ GOES: no recent Geo-polar Blended data available.")
+        print("  ✗ GOES: no recent data available.")
         return
 
     stamp = latest_ts.strftime("%Y%m%d")
@@ -522,49 +490,38 @@ def fetch_goes():
 
 
 # =========================================================
-# VIIRS -- MULTI-PASS (L3U GRANULE FILE SERVER)
+# VIIRS — MULTI-PASS (L3U GRANULE FILE SERVER)
 # =========================================================
 
 def _probe_viirs_base() -> str:
-    """
-    Test each VIIRS_BASE_CANDIDATES URL and return the first live one.
-    Raises RuntimeError if none respond.
-    """
     for base in VIIRS_BASE_CANDIDATES:
         test_url = f"{base}/n20/"
         try:
             r = requests.get(
                 test_url,
-                timeout=15,
+                timeout=(10, 20),
                 headers={"User-Agent": USER_AGENT},
                 allow_redirects=True,
             )
             if r.status_code in (200, 403):
-                print(f"  ✓ VIIRS NRT base confirmed: {base}")
+                print(f"  ✓ VIIRS NRT base: {base}")
                 return base
         except requests.RequestException:
             pass
     raise RuntimeError(
-        "Neither VIIRS NRT file server URL is reachable.\n"
-        "Check VIIRS_BASE_CANDIDATES or network connectivity."
+        "Neither VIIRS NRT file server URL is reachable. "
+        "Check VIIRS_BASE_CANDIDATES."
     )
 
 
 def _list_viirs_granules(base: str, platform: str, year: int, doy: int) -> list:
-    """
-    Fetch the HTTP directory listing for one platform/year/doy and return
-    a sorted list of ACSPO L3U granule filenames.
-
-    ACSPO L3U filename pattern:
-      20250422123456-STAR-L3U_GHRSST-SSTsubskin-VIIRS_N20-ACSPO_V2.80-v02.0-fv01.0.nc
-    """
     url  = f"{base}/{platform}/l3u/{year}/{doy:03d}/"
     host = _host_of(url)
     try:
         _throttle(host)
         resp = requests.get(
             url,
-            timeout=HTTP_TIMEOUT,
+            timeout=(10, 30),
             headers={"User-Agent": USER_AGENT},
         )
         if resp.status_code == 404:
@@ -582,7 +539,6 @@ def _list_viirs_granules(base: str, platform: str, year: int, doy: int) -> list:
 
 
 def _granule_time(filename: str) -> datetime:
-    """Extract granule UTC start time from the leading 14-digit timestamp."""
     return datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(
         tzinfo=timezone.utc
     )
@@ -592,19 +548,10 @@ def _fetch_viirs_granule(
     base: str, platform: str, year: int, doy: int, filename: str
 ) -> pd.DataFrame:
     """
-    Download one ACSPO L3U NetCDF4 granule, subset to the bounding box,
-    and return a long-form DataFrame [lat, lon, sst] in Celsius.
-    Returns None on any failure (network, parse, empty bbox).
-
-    L3U file characteristics:
-      - Global 0.02 deg grid, ~25 MB per file
-      - sea_surface_temperature: shape (1, nlat, nlon), units Kelvin
-      - lat / lon: 1-D coordinate arrays
-      - Only QL=5 (confidently clear) pixels populated -- NOAA pre-filters
-        at L3U ingest, so no further quality masking needed here
-      - Cloud-covered pixels are fill values -> NaN -> dropped from output
-      - Swath edges outside the satellite view are also fill values
-      This means the output CSV is sparse -- that is correct and expected.
+    Download one ACSPO L3U NetCDF4 granule (~25 MB global 0.02° grid),
+    subset to bbox, return DataFrame [lat, lon, sst] in °C.
+    Returns None on any failure.
+    Cloud/land pixels are fill values → NaN → dropped — expected for L3U.
     """
     if not _NETCDF4_AVAILABLE:
         return None
@@ -616,15 +563,19 @@ def _fetch_viirs_granule(
 
     try:
         _throttle(host)
-        resp = requests.get(
-            url,
-            timeout=HTTP_TIMEOUT,
-            headers={"User-Agent": USER_AGENT},
-            stream=False,   # must be fully in memory for nc.Dataset(memory=)
-        )
-        resp.raise_for_status()
+        with hard_timeout(VIIRS_HARD_TIMEOUT_S, filename):
+            resp = requests.get(
+                url,
+                timeout=HTTP_TIMEOUT,
+                headers={"User-Agent": USER_AGENT},
+                stream=False,
+            )
+            resp.raise_for_status()
+    except _TimeoutError as e:
+        print(f"\n  ⚠ {e}")
+        return None
     except requests.RequestException as e:
-        print(f"  ⚠ granule download failed {filename}: {e}")
+        print(f"  ⚠ download failed {filename}: {e}")
         if isinstance(e, (requests.ConnectionError, requests.Timeout)):
             _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
             if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
@@ -638,7 +589,6 @@ def _fetch_viirs_granule(
         lon_full = ds.variables["lon"][:]
         sst_var  = ds.variables["sea_surface_temperature"]  # (1, nlat, nlon) K
 
-        # Slice to bounding box
         lat_mask = (lat_full >= SOUTH) & (lat_full <= NORTH)
         lon_mask = (lon_full >= WEST)  & (lon_full <= EAST)
         lat_idx  = np.where(lat_mask)[0]
@@ -646,12 +596,12 @@ def _fetch_viirs_granule(
 
         if len(lat_idx) == 0 or len(lon_idx) == 0:
             ds.close()
-            return None   # granule does not overlap our region
+            return None
 
         lat_sl  = slice(int(lat_idx[0]), int(lat_idx[-1]) + 1)
         lon_sl  = slice(int(lon_idx[0]), int(lon_idx[-1]) + 1)
 
-        sst_sub = sst_var[0, lat_sl, lon_sl]   # masked array, Kelvin
+        sst_sub = sst_var[0, lat_sl, lon_sl]
         lat_sub = lat_full[lat_sl]
         lon_sub = lon_full[lon_sl]
         ds.close()
@@ -660,7 +610,6 @@ def _fetch_viirs_granule(
         print(f"  ⚠ NetCDF parse failed {filename}: {e}")
         return None
 
-    # Meshgrid -> long-form, K -> C
     lon_grid, lat_grid = np.meshgrid(lon_sub, lat_sub)
     sst_c = np.ma.filled(sst_sub, np.nan).astype(np.float64) - 273.15
 
@@ -670,8 +619,7 @@ def _fetch_viirs_granule(
         "sst": sst_c.flatten(),
     })
     df = df.dropna(subset=["sst"])
-    df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]   # physical sanity
-
+    df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
     if df.empty:
         return None
 
@@ -686,19 +634,14 @@ def fetch_viirs_passes():
     """
     Scan the STAR NESDIS NRT file server for ACSPO L3U granules from the
     last VIIRS_HOURS_BACK hours across Suomi-NPP, NOAA-20, and NOAA-21.
-    Write one CSV per granule that has data within the bounding box.
-
-    Typical yield for the Mid-Atlantic (33.7-39N, 78.9-72.2W):
-        ~2 passes x 3 satellites = ~6 distinct files per 24-hour window.
-
-    Output: DailySSTData/VIIRS/Passes/viirs_{platform}_{YYYYMMDD_HHMM}.csv
+    ~2 passes × 3 satellites = ~6 distinct files per 24-hour window.
     """
     if not _NETCDF4_AVAILABLE:
         print("\n── VIIRS multi-pass ──")
-        print("  skipped (netCDF4 not installed -- pip install netCDF4)")
+        print("  skipped (netCDF4 not installed — pip install netCDF4)")
         return
 
-    print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h -- NPP / NOAA-20 / NOAA-21) ──")
+    print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──")
 
     try:
         live_base = _probe_viirs_base()
@@ -709,7 +652,6 @@ def fetch_viirs_passes():
     now_utc = datetime.now(timezone.utc)
     cutoff  = now_utc - timedelta(hours=VIIRS_HOURS_BACK)
 
-    # Collect (year, doy) pairs covered by the window (usually 1-2 days)
     day_pairs = set()
     for h in range(VIIRS_HOURS_BACK + 2):
         t = now_utc - timedelta(hours=h)
@@ -739,12 +681,11 @@ def fetch_viirs_passes():
                     f"viirs_{platform}_{stamp}",
                 )
 
-                # Skip granules already written in a previous run
                 if os.path.exists(out_path + ".csv"):
                     total_skipped += 1
                     continue
 
-                print(f"  {platform} {stamp} ... ", end="", flush=True)
+                print(f"  {platform} {stamp} … ", end="", flush=True)
                 df = _fetch_viirs_granule(live_base, platform, year, doy, fname)
 
                 if df is not None and write_csv(
@@ -752,7 +693,7 @@ def fetch_viirs_passes():
                 ):
                     total_new += 1
                 else:
-                    print("✗ no usable data in bounding box")
+                    print("✗ no usable data in bbox")
 
     if total_new == 0 and total_skipped == 0:
         print("  ⚠ VIIRS: zero granules found in time window.")
@@ -770,19 +711,14 @@ def main():
     print("=" * 57)
     print("SST PIPELINE")
     print(f"  UTC  : {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}")
-    print(f"  Bbox : {SOUTH}-{NORTH}N  {WEST}-{EAST}E")
+    print(f"  Bbox : {SOUTH}–{NORTH}°N  {WEST}–{EAST}°E")
     print("=" * 57)
 
     ensure_dirs()
 
-    # View 1 -- MUR: smooth gap-filled L4 daily composite
-    fetch_mur()
-
-    # View 2 -- GOES-19: geo-polar blended daily composite
-    fetch_goes()
-
-    # View 3 -- VIIRS: per-swath multi-pass, genuinely sub-daily
-    fetch_viirs_passes()
+    fetch_mur()           # View 1: MUR smooth gap-filled L4 daily
+    fetch_goes()          # View 2: GOES-19 geo-polar blended daily
+    fetch_viirs_passes()  # View 3: VIIRS per-swath multi-pass
 
     print("\n" + "=" * 57)
     print("✓ Pipeline complete")
