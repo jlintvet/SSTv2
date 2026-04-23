@@ -48,21 +48,20 @@ except ImportError:
 # HARD TIMEOUT CONTEXT MANAGER
 # =========================================================
 # requests timeout=(connect, read) caps individual socket reads but NOT
-# the total wall-clock time if the server dribbles bytes slowly forever.
-# This SIGALRM-based context manager enforces an absolute ceiling.
-# Only works on Unix/Linux (GitHub Actions is Linux — fine for CI).
+# total wall-clock time if the server dribbles bytes slowly forever.
+# SIGALRM enforces an absolute ceiling. Linux/macOS only (fine for CI).
 
 class _TimeoutError(Exception):
     pass
 
+
 @contextmanager
 def hard_timeout(seconds: int, label: str = ""):
-    """Raise _TimeoutError if the block takes longer than `seconds`."""
     def _handler(signum, frame):
         raise _TimeoutError(
-            f"hard timeout ({seconds}s) exceeded{': ' + label if label else ''}"
+            f"hard timeout ({seconds}s) exceeded"
+            + (f": {label}" if label else "")
         )
-
     old = signal.signal(signal.SIGALRM, _handler)
     signal.alarm(seconds)
     try:
@@ -177,6 +176,10 @@ DIRS = {
 NORTH, SOUTH =  39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
 
+# Expand bbox slightly for VIIRS swath overlap check so we don't
+# miss granules whose swath edge just clips the region corner.
+VIIRS_BBOX_PAD = 1.0   # degrees
+
 
 # =========================================================
 # ERDDAP CONFIG
@@ -184,18 +187,22 @@ WEST,  EAST  = -78.89, -72.21
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
-# MUR mirrors in priority order.
-# stride 5 on 0.01° native = 0.05° ~ 5.5 km, ~14 k pts over the bbox.
+# MUR mirrors.
+# IMPORTANT: blacklist state is per-host, not per-mirror-entry.
+# pfeg and upwell.pfeg share the same GitHub Actions IP blacklist behaviour,
+# so we put coastwatch.noaa.gov first to avoid burning all three on a
+# blacklisted run. If coastwatch.noaa.gov 404s (it sometimes lags MUR by
+# a day), we fall through to pfeg as a second attempt.
 MUR_MIRRORS = [
     {
-        "host":       ERDDAP_HOST_PFEG,
+        "host":       ERDDAP_HOST_CW,        # try coastwatch first
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
-        "units":      "C",   # ERDDAP serves this in °C despite the NetCDF var
+        "units":      "C",
     },
     {
-        "host":       ERDDAP_HOST_CW,
+        "host":       ERDDAP_HOST_PFEG,       # pfeg as fallback
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
@@ -211,9 +218,8 @@ MUR_MIRRORS = [
 ]
 MUR_DAYS_BACK = 5
 
-# Geo-polar Blended Day+Night (GOES-19 ABI primary geostationary input).
-# stride 2 on 0.05° native = 0.10° — still ~3.5 k pts, much smaller response.
-# Raising stride reduces transfer size and hang risk without losing visual detail.
+# Geo-polar Blended Day+Night. stride 2 on 0.05 deg native = 0.10 deg.
+# Smaller response than stride 1, avoids the hang that stride 1 caused.
 GOES_CFG = {
     "host":       ERDDAP_HOST_CW,
     "dataset_id": "noaacwBLENDEDsstDLDaily",
@@ -233,32 +239,40 @@ VIIRS_BASE_CANDIDATES = [
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
 VIIRS_HOURS_BACK = 24
 
+# Approximate Mid-Atlantic overpass times (UTC) for afternoon-orbit VIIRS.
+# NPP, N20, N21 all fly ~1:30pm local solar time ascending node.
+# Over 33-39N / 73-79W (UTC-5) that translates to roughly:
+#   Ascending  (daytime)  : ~17:30-18:30 UTC
+#   Descending (nighttime) : ~05:30-06:30 UTC
+# We fetch a +/- 3-hour window around each pass to be safe.
+# This pre-filter cuts the granules we actually download from ~144 to ~12,
+# avoiding 3+ GB of unnecessary transfers just to check bbox overlap.
+VIIRS_PASS_WINDOWS_UTC = [
+    (15, 21),   # daytime pass:  15:00–21:00 UTC
+    ( 3,  9),   # nighttime pass: 03:00–09:00 UTC
+]
+
 
 # =========================================================
 # HTTP TUNING
 # =========================================================
-# timeout=(connect_seconds, read_seconds)
-# read_seconds caps the time between consecutive bytes from the server.
-# A slow-but-alive ERDDAP that streams at 1 byte/read_seconds will still
-# hang. The hard_timeout() context manager is the backstop for that case.
+HTTP_CONNECT_TIMEOUT  = 15
+HTTP_READ_TIMEOUT     = 90
+HTTP_TIMEOUT          = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
 
-HTTP_CONNECT_TIMEOUT   = 15     # seconds to establish TCP connection
-HTTP_READ_TIMEOUT      = 90     # seconds of silence before read gives up
-HTTP_TIMEOUT           = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+ERDDAP_HARD_TIMEOUT_S = 180   # absolute ceiling per ERDDAP request
+VIIRS_HARD_TIMEOUT_S  = 120   # absolute ceiling per granule download
 
-# Absolute wall-clock ceiling per fetch call (connect + transfer).
-# Covers the case where ERDDAP trickle-streams a huge response byte by byte.
-ERDDAP_HARD_TIMEOUT_S  = 180    # 3 minutes max per ERDDAP request
-VIIRS_HARD_TIMEOUT_S   = 120    # 2 minutes max per granule download
-
-HTTP_RETRIES       = 2
-HTTP_BACKOFF_S     = 5
-REQUEST_SPACING_S  = 2.0
-USER_AGENT         = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
+HTTP_RETRIES      = 2
+HTTP_BACKOFF_S    = 5
+REQUEST_SPACING_S = 2.0
+USER_AGENT        = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
 
 COORD_DECIMALS = 4
 SST_DECIMALS   = 3
 
+# Per-host blacklist state — isolate each mirror independently so a 403
+# on one host doesn't poison the others.
 _last_request_at  = {}
 _host_blacklisted = set()
 _host_conn_resets = {}
@@ -301,7 +315,8 @@ def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
 def fetch_erddap_csv(url, label):
     """
     GET an ERDDAP .csv0 URL.
-    Uses (connect, read) timeout tuple AND a hard SIGALRM wall-clock ceiling.
+    Uses (connect, read) timeout tuple AND a SIGALRM hard ceiling.
+    A 403 blacklists only the specific host, not all mirrors.
     """
     host = _host_of(url)
     if host in _host_blacklisted:
@@ -317,15 +332,10 @@ def fetch_erddap_csv(url, label):
         _throttle(host)
         try:
             with hard_timeout(ERDDAP_HARD_TIMEOUT_S, label):
-                resp = requests.get(
-                    url,
-                    timeout=HTTP_TIMEOUT,
-                    headers=headers,
-                )
+                resp = requests.get(url, timeout=HTTP_TIMEOUT, headers=headers)
         except _TimeoutError as e:
             last_err = str(e)
             print(f"\n  ⚠ {last_err}")
-            # Don't retry a hard timeout — the server is clearly stuck
             raise RuntimeError(last_err)
         except requests.RequestException as e:
             last_err = f"{type(e).__name__}: {e}"
@@ -333,7 +343,7 @@ def fetch_erddap_csv(url, label):
                 _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
                 if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
                     _host_blacklisted.add(host)
-                    raise RuntimeError(f"host {host} keeps resetting — blacklisted")
+                    raise RuntimeError(f"host {host} blacklisted after resets")
                 raise RuntimeError(last_err)
             if attempt <= HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF_S * attempt)
@@ -344,6 +354,7 @@ def fetch_erddap_csv(url, label):
         if resp.status_code == 404:
             raise RuntimeError("404 — no data for this date")
         if resp.status_code == 403:
+            # Blacklist this host only — other mirrors still usable
             _host_blacklisted.add(host)
             raise RuntimeError(f"403 Forbidden — blacklisted: {resp.text[:200]}")
         if resp.status_code == 429:
@@ -417,6 +428,17 @@ def fetch_one_day_erddap(cfg, time_iso, label):
 # MUR — DAILY COMPOSITE
 # =========================================================
 def fetch_mur():
+    """
+    Pull MUR L4 daily snapshots via ERDDAP.
+
+    Mirror order: coastwatch.noaa.gov first, then pfeg, then upwell.pfeg.
+    GitHub Actions runner IPs are frequently rate-limited by pfeg/upwell
+    because thousands of workflows share the same IP ranges. coastwatch.noaa.gov
+    tends to be more tolerant of CI traffic.
+
+    A 403 blacklists only that specific host — the next mirror is still tried.
+    Blacklist state resets between pipeline runs (it's in-process only).
+    """
     print(f"\n── MUR daily composite (last {MUR_DAYS_BACK} days) ──")
     success = 0
 
@@ -425,10 +447,17 @@ def fetch_mur():
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
 
+        # Skip if already written in a previous run today
+        out_path = os.path.join(DIRS["mur"], f"mur_{stamp}.csv")
+        if os.path.exists(out_path):
+            print(f"  ✓ MUR {stamp} (cached)")
+            success += 1
+            continue
+
         df = None
         last_err = None
         for cfg in MUR_MIRRORS:
-            mhost = cfg["host"].split("/", 3)[2]
+            mhost = _host_of(cfg["host"])
             if mhost in _host_blacklisted:
                 continue
             try:
@@ -469,7 +498,15 @@ def fetch_goes():
     for i in range(0, 4):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
-        label    = f"GOES {ts:%Y%m%d}"
+        stamp    = ts.strftime("%Y%m%d")
+        label    = f"GOES {stamp}"
+
+        # Skip if already written
+        out_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}.csv")
+        if os.path.exists(out_path):
+            print(f"  ✓ GOES composite {stamp} (cached)")
+            return
+
         try:
             print(f"  {label} … ", end="", flush=True)
             df_latest = fetch_one_day_erddap(GOES_CFG, time_iso, label)
@@ -515,6 +552,7 @@ def _probe_viirs_base() -> str:
 
 
 def _list_viirs_granules(base: str, platform: str, year: int, doy: int) -> list:
+    """Return sorted list of ACSPO L3U granule filenames for one platform/day."""
     url  = f"{base}/{platform}/l3u/{year}/{doy:03d}/"
     host = _host_of(url)
     try:
@@ -544,14 +582,38 @@ def _granule_time(filename: str) -> datetime:
     )
 
 
+def _granule_in_pass_window(gran_time: datetime) -> bool:
+    """
+    Return True only if this granule falls within a known overpass window
+    for the Mid-Atlantic. Filters out the ~130 granules per day that are
+    over the Pacific, Southern Ocean, etc. and would just waste bandwidth.
+
+    VIIRS afternoon-orbit satellites (NPP, N20, N21) cross ~33-39N / 73-79W
+    (UTC-5) at roughly 1:30pm local solar time:
+      Ascending  (day)   ~17:30–20:30 UTC  → window 15–21 UTC
+      Descending (night) ~05:30–08:30 UTC  → window  3–9  UTC
+
+    Windows are deliberately wide (+/-3h) to handle orbital drift and
+    ensure we don't miss real passes. The actual bbox check inside
+    _fetch_viirs_granule() is the final arbiter of whether data exists.
+    """
+    h = gran_time.hour
+    for (start, end) in VIIRS_PASS_WINDOWS_UTC:
+        if start <= h < end:
+            return True
+    return False
+
+
 def _fetch_viirs_granule(
     base: str, platform: str, year: int, doy: int, filename: str
 ) -> pd.DataFrame:
     """
-    Download one ACSPO L3U NetCDF4 granule (~25 MB global 0.02° grid),
-    subset to bbox, return DataFrame [lat, lon, sst] in °C.
-    Returns None on any failure.
-    Cloud/land pixels are fill values → NaN → dropped — expected for L3U.
+    Download one ACSPO L3U NetCDF4 granule, subset to bbox, return
+    DataFrame [lat, lon, sst] in °C. Returns None on any failure.
+
+    L3U files are ~25 MB (global 0.02° grid). Only the bbox slice is kept
+    in memory. Cloud/land pixels are fill values → NaN → dropped — expected
+    for L3U swath data.
     """
     if not _NETCDF4_AVAILABLE:
         return None
@@ -589,8 +651,10 @@ def _fetch_viirs_granule(
         lon_full = ds.variables["lon"][:]
         sst_var  = ds.variables["sea_surface_temperature"]  # (1, nlat, nlon) K
 
-        lat_mask = (lat_full >= SOUTH) & (lat_full <= NORTH)
-        lon_mask = (lon_full >= WEST)  & (lon_full <= EAST)
+        # Padded bbox for index lookup — catches swath edges that just clip
+        pad = VIIRS_BBOX_PAD
+        lat_mask = (lat_full >= SOUTH - pad) & (lat_full <= NORTH + pad)
+        lon_mask = (lon_full >= WEST  - pad) & (lon_full <= EAST  + pad)
         lat_idx  = np.where(lat_mask)[0]
         lon_idx  = np.where(lon_mask)[0]
 
@@ -601,7 +665,7 @@ def _fetch_viirs_granule(
         lat_sl  = slice(int(lat_idx[0]), int(lat_idx[-1]) + 1)
         lon_sl  = slice(int(lon_idx[0]), int(lon_idx[-1]) + 1)
 
-        sst_sub = sst_var[0, lat_sl, lon_sl]
+        sst_sub = sst_var[0, lat_sl, lon_sl]   # masked array, K
         lat_sub = lat_full[lat_sl]
         lon_sub = lon_full[lon_sl]
         ds.close()
@@ -619,7 +683,14 @@ def _fetch_viirs_granule(
         "sst": sst_c.flatten(),
     })
     df = df.dropna(subset=["sst"])
+
+    # Clip to exact bbox (padded fetch, exact output)
+    df = df[
+        (df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
+        (df["lon"] >= WEST)  & (df["lon"] <= EAST)
+    ]
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
+
     if df.empty:
         return None
 
@@ -632,9 +703,15 @@ def _fetch_viirs_granule(
 
 def fetch_viirs_passes():
     """
-    Scan the STAR NESDIS NRT file server for ACSPO L3U granules from the
-    last VIIRS_HOURS_BACK hours across Suomi-NPP, NOAA-20, and NOAA-21.
-    ~2 passes × 3 satellites = ~6 distinct files per 24-hour window.
+    Fetch VIIRS ACSPO L3U granules for the last VIIRS_HOURS_BACK hours.
+
+    Key optimisation: only download granules whose timestamp falls within
+    a known overpass window for the Mid-Atlantic. This reduces downloads
+    from ~144 granules/day/satellite to ~12, avoiding 3+ GB of wasted
+    transfers. The full bbox check inside _fetch_viirs_granule() still
+    runs as a final filter.
+
+    Typical yield: ~2 passes × 3 satellites = ~6 CSV files per 24h window.
     """
     if not _NETCDF4_AVAILABLE:
         print("\n── VIIRS multi-pass ──")
@@ -657,8 +734,9 @@ def fetch_viirs_passes():
         t = now_utc - timedelta(hours=h)
         day_pairs.add((t.year, t.timetuple().tm_yday))
 
-    total_new     = 0
-    total_skipped = 0
+    total_new      = 0
+    total_skipped  = 0
+    total_filtered = 0   # granules skipped by pass-window pre-filter
 
     for platform in VIIRS_PLATFORMS:
         for (year, doy) in sorted(day_pairs):
@@ -672,7 +750,14 @@ def fetch_viirs_passes():
                 except ValueError:
                     continue
 
+                # Time-window filter: skip granules outside 24h window
                 if gran_time < cutoff or gran_time > now_utc:
+                    continue
+
+                # Pass-window pre-filter: skip granules not in a known
+                # Mid-Atlantic overpass window — saves ~90% of downloads
+                if not _granule_in_pass_window(gran_time):
+                    total_filtered += 1
                     continue
 
                 stamp    = gran_time.strftime("%Y%m%d_%H%M")
@@ -695,13 +780,10 @@ def fetch_viirs_passes():
                 else:
                     print("✗ no usable data in bbox")
 
-    if total_new == 0 and total_skipped == 0:
-        print("  ⚠ VIIRS: zero granules found in time window.")
-    else:
-        print(
-            f"  ✓ VIIRS: {total_new} new granule(s) written,"
-            f" {total_skipped} already cached."
-        )
+    print(
+        f"  ✓ VIIRS: {total_new} new, {total_skipped} cached,"
+        f" {total_filtered} skipped by pass-window filter."
+    )
 
 
 # =========================================================
