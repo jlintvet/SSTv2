@@ -11,6 +11,32 @@ Three independent data sources serving three distinct UI views:
   VIIRS     — ACSPO L3U per-swath multi-pass     (STAR NESDIS file server)
 
 REQUIREMENTS:  pip install requests numpy pandas netCDF4
+
+=========================================================
+VIIRS PASS TARGETING STRATEGY
+=========================================================
+
+NPP, NOAA-20, and NOAA-21 all fly ~1:30pm local solar time ascending node.
+For the Mid-Atlantic center (~36N, 75.5W = UTC-5.03h):
+
+  Ascending  (day)   1:30pm local -> 18:33 UTC
+  Descending (night) 1:30am local -> 06:33 UTC
+
+Observed from CI logs (2026-04-22, NPP):
+  Night pass hit at 0610 UTC  (36,633 pts)
+  Next hit at    0750 UTC     (28,052 pts) — adjacent orbit, ~100 min later
+
+Each satellite makes one meaningful crossing of our bbox per pass.
+The VIIRS swath is ~3000 km wide and the bbox is ~700 km wide, so the
+crossing takes roughly one 10-minute granule to cover, sometimes two.
+
+Strategy: for each satellite, for each pass (night/day), download only
+the granules within VIIRS_PASS_CENTER_WINDOW_MIN minutes of the known
+center time. This limits downloads to ~3-5 per satellite per pass
+instead of 20+ from a broad hourly window scan.
+
+Center times and the window width are tunable below. If a pass is
+consistently missed, widen VIIRS_PASS_CENTER_WINDOW_MIN by 10 and re-run.
 =========================================================
 """
 import io
@@ -162,8 +188,7 @@ DIRS = {
 NORTH, SOUTH =  39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
 
-# Expand bbox slightly for VIIRS swath overlap fetch
-VIIRS_BBOX_PAD = 1.0   # degrees
+VIIRS_BBOX_PAD = 1.0   # degrees padding for bbox slice
 
 
 # =========================================================
@@ -173,7 +198,6 @@ ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
 # MUR mirrors — coastwatch.noaa.gov first (more tolerant of CI runner IPs).
-# A 403 blacklists only that host; the next mirror is still tried.
 MUR_MIRRORS = [
     {
         "host":       ERDDAP_HOST_CW,
@@ -217,43 +241,35 @@ VIIRS_BASE_CANDIDATES = [
     "https://coastwatch.noaa.gov/pub/socd/mecb/coastwatch/viirs/nrt",
 ]
 
-# Platforms to fetch. All three are on nearly identical afternoon orbits
-# (~1:30pm local solar time) so they cross the Mid-Atlantic within minutes
-# of each other — N20 and N21 add almost no new spatial coverage vs NPP
-# but triple the download count. Fetch all three for maximum data density
-# on clear days, but the pass windows are tight enough that total downloads
-# stay manageable (~6 per platform per day within the windows).
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
-VIIRS_HOURS_BACK = 24
+VIIRS_HOURS_BACK = 30   # look back 30h so we always capture both passes
 
-# Mid-Atlantic overpass windows for afternoon-orbit VIIRS (NPP, N20, N21).
+# Known pass center times (UTC hours + minutes) for the Mid-Atlantic.
+# Derived from orbital mechanics for ~36N / 75.5W (UTC-5.03h) and
+# confirmed from CI logs: NPP night pass hit at 0610 UTC on 2026-04-22.
 #
-# Observed from CI logs (2026-04-22):
-#   Night pass: first bbox hit 0610, second hit 0750 UTC
-#   Day pass:   expected ~1800 UTC (not yet observed in logs)
+# Format: list of (hour, minute) tuples, one per pass per day.
+# N20 and N21 are on very similar orbits to NPP — their passes arrive
+# within ~1-2 minutes of the same center times, so the same targets work
+# for all three platforms.
 #
-# Center times derived from orbital mechanics:
-#   ~36N / 75.5W = UTC-5.03h
-#   Ascending  (day)   1:30pm local = 18:33 UTC -> window 17:00-20:00
-#   Descending (night) 1:30am local = 06:33 UTC -> window 05:30-08:30
-#
-# Windows are set tight (±1.5h from center) to minimise wasted downloads.
-# Each granule outside the window that overlaps the bbox but is all-cloud
-# still costs a ~25 MB download + parse. Tight windows cut that cost.
-#
-# If a pass is ever missed, widen by 30 min on each side and re-run.
-VIIRS_PASS_WINDOWS_UTC = [
-    (17,  20),   # daytime pass:   17:00-20:00 UTC  (center ~18:33)
-    ( 5,   9),   # nighttime pass: 05:00-09:00 UTC  (center ~06:33)
+# The VIIRS orbital period is ~101 minutes, so successive passes of the
+# same satellite over the same region are ~101 min apart. For our bbox
+# there are typically 2 crossings per satellite per day — one ascending
+# (daytime) and one descending (nighttime).
+VIIRS_PASS_CENTERS_UTC = [
+    ( 6, 10),   # night/descending — confirmed 0610 UTC from logs
+    (18, 33),   # day/ascending    — calculated, not yet confirmed
 ]
 
-# Maximum granules to download per platform per pass window per run.
-# NPP 0610 and 0750 both produced data on 2026-04-22 — that's 2 good hits
-# out of ~14 downloads in the night window. Once we have MAX_HITS_PER_WINDOW
-# successful (non-empty) files for a platform+window combination we stop
-# downloading further granules in that window. This caps worst-case cost
-# while still capturing multiple passes when they occur.
-MAX_HITS_PER_WINDOW = 3
+# Download granules within ±this many minutes of each pass center.
+# At 10 min/granule, 30 min = 3 granules per side = 7 granules total per pass.
+# Observed: the actual bbox-crossing is usually 1-2 granules at the center.
+# 30 min gives comfortable margin for orbital drift across the season.
+VIIRS_PASS_CENTER_WINDOW_MIN = 30
+
+# If a pass consistently misses, increase this by 10 and re-run.
+# Maximum meaningful value is ~50 min (half the orbital period / 2).
 
 
 # =========================================================
@@ -552,16 +568,49 @@ def _granule_time(filename: str) -> datetime:
     )
 
 
-def _which_window(gran_time: datetime):
+def _build_target_windows(now_utc: datetime, lookback_hours: int) -> list:
     """
-    Return the window index (0=day, 1=night) if this granule falls within
-    a known Mid-Atlantic overpass window, else None.
+    Build the list of (window_start, window_end) datetime pairs to fetch,
+    by projecting VIIRS_PASS_CENTERS_UTC backward over lookback_hours.
+
+    For each pass center (h, m) we generate one target window per calendar
+    day covered by the lookback period. Each window is:
+        center - VIIRS_PASS_CENTER_WINDOW_MIN  to
+        center + VIIRS_PASS_CENTER_WINDOW_MIN
+
+    Only windows that overlap [now_utc - lookback_hours, now_utc] are kept.
+
+    Returns a list of (window_start_utc, window_end_utc, center_label) tuples,
+    sorted chronologically.
     """
-    h = gran_time.hour
-    for idx, (start, end) in enumerate(VIIRS_PASS_WINDOWS_UTC):
-        if start <= h < end:
-            return idx
-    return None
+    cutoff  = now_utc - timedelta(hours=lookback_hours)
+    half    = timedelta(minutes=VIIRS_PASS_CENTER_WINDOW_MIN)
+    windows = []
+
+    # Check 2 days back to cover lookback period straddling midnight
+    for day_offset in range(3):
+        base_date = (now_utc - timedelta(days=day_offset)).date()
+        for (h, m) in VIIRS_PASS_CENTERS_UTC:
+            center = datetime(
+                base_date.year, base_date.month, base_date.day,
+                h, m, 0, tzinfo=timezone.utc
+            )
+            w_start = center - half
+            w_end   = center + half
+            # Keep window only if it overlaps the lookback period
+            if w_end >= cutoff and w_start <= now_utc:
+                windows.append((w_start, w_end, f"{h:02d}{m:02d}UTC"))
+
+    # Deduplicate (same center can appear from multiple day offsets)
+    seen = set()
+    unique = []
+    for w in sorted(windows):
+        key = w[0]
+        if key not in seen:
+            seen.add(key)
+            unique.append(w)
+
+    return unique
 
 
 def _fetch_viirs_granule(
@@ -569,8 +618,7 @@ def _fetch_viirs_granule(
 ) -> tuple:
     """
     Download one ACSPO L3U NetCDF4 granule, subset to bbox.
-    Returns (DataFrame, reason_string).
-    DataFrame is None on failure. reason_string explains why.
+    Returns (DataFrame, reason_string). DataFrame is None on failure.
     """
     if not _NETCDF4_AVAILABLE:
         return None, "netCDF4 not installed"
@@ -658,28 +706,28 @@ def _fetch_viirs_granule(
 
 def fetch_viirs_passes():
     """
-    Fetch VIIRS ACSPO L3U granules for the last VIIRS_HOURS_BACK hours.
+    Fetch VIIRS ACSPO L3U granules near known pass center times.
 
-    Per-window hit cap (MAX_HITS_PER_WINDOW): once we have written
-    MAX_HITS_PER_WINDOW successful files for a given platform+window
-    combination we stop downloading further granules in that window.
-    This prevents runaway downloads on clear days where many consecutive
-    granules in a window all have data.
+    Instead of scanning a broad hourly window (20+ granules per pass),
+    we target only granules within VIIRS_PASS_CENTER_WINDOW_MIN minutes
+    of the known pass center time. This limits downloads to ~7 granules
+    per pass per platform instead of 20+.
 
-    Observed timing (2026-04-22, NPP):
-      Night window: hits at 0610 and 0750 UTC (36k and 28k pts)
-      Day window:   expected ~1800 UTC
-    Total per-platform downloads in both windows: ~14 (night) + ~6 (day) = ~20
-    With 3 platforms: ~60 downloads max, but most are fast misses (~2s for
-    swath-doesn't-overlap) — only actual bbox-overlapping granules (~3-4
-    per platform per window) cost the full 25 MB download time.
+    Total worst-case downloads per run:
+      2 passes × 3 platforms × ~7 granules = ~42
+    With caching of already-written files this is typically much lower.
     """
     if not _NETCDF4_AVAILABLE:
         print("\n── VIIRS multi-pass ──")
         print("  skipped (netCDF4 not installed — pip install netCDF4)")
         return
 
-    print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──")
+    half_min = VIIRS_PASS_CENTER_WINDOW_MIN
+    centers  = [f"{h:02d}:{m:02d} UTC" for h, m in VIIRS_PASS_CENTERS_UTC]
+    print(
+        f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──\n"
+        f"  Pass centers: {', '.join(centers)}  ±{half_min} min"
+    )
 
     try:
         live_base = _probe_viirs_base()
@@ -687,24 +735,29 @@ def fetch_viirs_passes():
         print(f"  ✗ {e}")
         return
 
-    now_utc = datetime.now(timezone.utc)
-    cutoff  = now_utc - timedelta(hours=VIIRS_HOURS_BACK)
+    now_utc  = datetime.now(timezone.utc)
+    windows  = _build_target_windows(now_utc, VIIRS_HOURS_BACK)
 
+    if not windows:
+        print("  ⚠ No pass windows fall within the lookback period.")
+        return
+
+    print(f"  Target windows this run: {len(windows)}")
+    for w_start, w_end, label in windows:
+        print(f"    {w_start:%Y-%m-%d %H:%M} – {w_end:%H:%M} UTC  ({label})")
+
+    # Collect all (year, doy) pairs covered by the windows
     day_pairs = set()
-    for h in range(VIIRS_HOURS_BACK + 2):
-        t = now_utc - timedelta(hours=h)
-        day_pairs.add((t.year, t.timetuple().tm_yday))
+    for w_start, w_end, _ in windows:
+        for dt in (w_start, w_end):
+            day_pairs.add((dt.year, dt.timetuple().tm_yday))
 
     total_new      = 0
-    total_skipped  = 0   # already on disk from a previous run
-    total_filtered = 0   # outside pass window
-    total_miss     = 0   # downloaded but swath miss or all-cloud
-    total_capped   = 0   # skipped because hit cap reached for window
+    total_skipped  = 0
+    total_filtered = 0
+    total_miss     = 0
 
     for platform in VIIRS_PLATFORMS:
-        # hits[(window_idx)] = count of successful writes this run
-        hits = {}
-
         for (year, doy) in sorted(day_pairs):
             filenames = _list_viirs_granules(live_base, platform, year, doy)
             if not filenames:
@@ -716,17 +769,13 @@ def fetch_viirs_passes():
                 except ValueError:
                     continue
 
-                if gran_time < cutoff or gran_time > now_utc:
-                    continue
-
-                win_idx = _which_window(gran_time)
-                if win_idx is None:
+                # Check if this granule falls inside any target window
+                in_window = any(
+                    w_start <= gran_time <= w_end
+                    for w_start, w_end, _ in windows
+                )
+                if not in_window:
                     total_filtered += 1
-                    continue
-
-                # Skip if we've already hit the cap for this window
-                if hits.get(win_idx, 0) >= MAX_HITS_PER_WINDOW:
-                    total_capped += 1
                     continue
 
                 stamp    = gran_time.strftime("%Y%m%d_%H%M")
@@ -737,9 +786,6 @@ def fetch_viirs_passes():
 
                 if os.path.exists(out_path + ".csv"):
                     total_skipped += 1
-                    # Count cached files toward the hit cap so we don't
-                    # re-download granules we already have from a prior run
-                    hits[win_idx] = hits.get(win_idx, 0) + 1
                     continue
 
                 print(f"  {platform} {stamp} … ", end="", flush=True)
@@ -751,16 +797,22 @@ def fetch_viirs_passes():
                     df, out_path, f"VIIRS {platform} {stamp}"
                 ):
                     total_new += 1
-                    hits[win_idx] = hits.get(win_idx, 0) + 1
                 else:
                     print(f"✗ {reason}")
                     total_miss += 1
 
     print(
         f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
-        f" {total_miss} miss/cloud, {total_filtered} outside window,"
-        f" {total_capped} capped."
+        f" {total_miss} miss/cloud, {total_filtered} outside windows."
     )
+    if total_new == 0 and total_skipped == 0:
+        print(
+            "  ⚠ No VIIRS data produced.\n"
+            "    If this persists across multiple runs, the pass center times\n"
+            "    may need adjustment. Check logs for the nearest miss/hit and\n"
+            "    update VIIRS_PASS_CENTERS_UTC or increase\n"
+            "    VIIRS_PASS_CENTER_WINDOW_MIN."
+        )
 
 
 # =========================================================
@@ -771,11 +823,6 @@ def main():
     print("SST PIPELINE")
     print(f"  UTC  : {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}")
     print(f"  Bbox : {SOUTH}–{NORTH}°N  {WEST}–{EAST}°E")
-    night = VIIRS_PASS_WINDOWS_UTC[1]
-    day   = VIIRS_PASS_WINDOWS_UTC[0]
-    print(f"  VIIRS windows: night {night[0]:02d}:00–{night[1]:02d}:00 UTC,"
-          f" day {day[0]:02d}:00–{day[1]:02d}:00 UTC"
-          f" (max {MAX_HITS_PER_WINDOW} hits/window/platform)")
     print("=" * 57)
 
     ensure_dirs()
