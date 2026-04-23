@@ -13,11 +13,23 @@ Three independent data sources serving three distinct UI views:
 REQUIREMENTS:  pip install requests numpy pandas netCDF4
 
 =========================================================
+LAND FILTER POLICY
+=========================================================
+MUR and GOES are pulled from ERDDAP which does not pre-mask land,
+so we apply a coastline polygon filter to those outputs.
+
+VIIRS L3U files are pre-processed by NOAA's ACSPO algorithm which
+masks land pixels via the l2p_flags land bit before writing the file.
+Those pixels become fill values, which become NaN, which are dropped
+by dropna(). Running an additional land filter on VIIRS is redundant
+and was causing 5-10 minute hangs on 36k-point granules. We skip it.
+
+=========================================================
 VIIRS PASS TARGETING
 =========================================================
 NPP/N20/N21 cross the Mid-Atlantic (~36N, 75.5W) at:
-  Night (descending): ~06:10 UTC  — confirmed from CI logs
-  Day   (ascending) : ~18:33 UTC  — calculated
+  Night (descending): ~06:10 UTC  — confirmed from CI logs 2026-04-22
+  Day   (ascending) : ~18:33 UTC  — calculated from orbital mechanics
 
 We target ±VIIRS_PASS_CENTER_WINDOW_MIN around each center.
 If a pass is consistently missed, increase the window by 10 min.
@@ -68,31 +80,20 @@ def hard_timeout(seconds: int, label: str = ""):
 
 
 # =========================================================
-# VECTORIZED LAND FILTER
+# LAND FILTER  (MUR and GOES only — NOT used for VIIRS)
 # =========================================================
-# Previous implementation ran a pure-Python ray-cast loop over every point
-# against every polygon vertex — O(n_points × n_vertices) in Python.
-# For 36k points × 24 polygons × ~100 vertices each = ~86M Python iterations.
-# This implementation vectorizes the ray-casting with numpy, reducing a
-# 5-10 minute operation to under 1 second.
-
 NE_LAND_URL = (
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
     "master/geojson/ne_10m_land.geojson"
 )
-_LAND_POLYS_CACHE = None   # list of np.ndarray rings, shape (n_verts, 2)
+_LAND_RINGS_CACHE = None   # list of np.ndarray shape (n_verts, 2) = [lon, lat]
 
 
-def _load_land_polys_for_bounds(north, south, east, west):
-    """
-    Load NE 1:10m land polygons clipped to the bounding box and cache them.
-    Returns a list of numpy arrays, each shape (n_verts, 2) = [lon, lat].
-    Only the outer ring of each polygon is kept (holes ignored — acceptable
-    for coastal masking where we just want ocean vs not-ocean).
-    """
-    global _LAND_POLYS_CACHE
-    if _LAND_POLYS_CACHE is not None:
-        return _LAND_POLYS_CACHE
+def _load_land_rings(north, south, east, west):
+    """Load NE 1:10m land polygon outer rings clipped to the region bbox."""
+    global _LAND_RINGS_CACHE
+    if _LAND_RINGS_CACHE is not None:
+        return _LAND_RINGS_CACHE
     try:
         r = requests.get(NE_LAND_URL, timeout=(10, 30))
         r.raise_for_status()
@@ -100,98 +101,67 @@ def _load_land_polys_for_bounds(north, south, east, west):
         rings = []
         for f in gj.get("features", []):
             g = f.get("geometry", {})
-            t = g.get("type")
             polys = []
-            if t == "Polygon":
+            if g.get("type") == "Polygon":
                 polys = [g["coordinates"]]
-            elif t == "MultiPolygon":
+            elif g.get("type") == "MultiPolygon":
                 polys = g["coordinates"]
             for poly in polys:
-                ring = np.array(poly[0], dtype=np.float64)  # outer ring only
-                # Quick bbox pre-filter: skip polygons that don't touch our region
+                ring = np.array(poly[0], dtype=np.float64)
                 if (ring[:, 0].max() >= west  and ring[:, 0].min() <= east and
                         ring[:, 1].max() >= south and ring[:, 1].min() <= north):
                     rings.append(ring)
         print(f"  (land filter: loaded {len(rings)} coastline polygons)")
-        _LAND_POLYS_CACHE = rings
+        _LAND_RINGS_CACHE = rings
         return rings
     except Exception as e:
         print(f"  ⚠ land filter: failed to load coastline ({e}); skipping.")
-        _LAND_POLYS_CACHE = []
+        _LAND_RINGS_CACHE = []
         return []
 
 
 def _points_in_ring_vec(lons: np.ndarray, lats: np.ndarray,
                          ring: np.ndarray) -> np.ndarray:
-    """
-    Vectorized ray-casting point-in-polygon test.
-
-    Parameters
-    ----------
-    lons, lats : 1-D float arrays of length N
-    ring       : (M, 2) array of [lon, lat] vertices (closed ring)
-
-    Returns
-    -------
-    inside : boolean array of length N
-    """
-    n   = len(ring)
-    xi  = ring[:, 0]
-    yi  = ring[:, 1]
-    xj  = np.roll(xi, -1)
-    yj  = np.roll(yi, -1)
-
-    # Shape: (N_points, N_verts)
-    # For each point p and each edge (i→j), check if the ray crosses
-    yi_b = yi[np.newaxis, :]   # (1, M)
-    yj_b = yj[np.newaxis, :]
-    xi_b = xi[np.newaxis, :]
-    xj_b = xj[np.newaxis, :]
-    lats_b = lats[:, np.newaxis]   # (N, 1)
+    """Vectorized ray-casting point-in-polygon for N points vs one ring."""
+    xi = ring[:, 0];  yi = ring[:, 1]
+    xj = np.roll(xi, -1);  yj = np.roll(yi, -1)
+    lats_b = lats[:, np.newaxis]
     lons_b = lons[:, np.newaxis]
-
-    cond1 = (yi_b > lats_b) != (yj_b > lats_b)
+    cond1 = (yi > lats_b) != (yj > lats_b)
     with np.errstate(divide="ignore", invalid="ignore"):
-        x_intersect = (xj_b - xi_b) * (lats_b - yi_b) / (yj_b - yi_b + 1e-15) + xi_b
-    cond2 = lons_b < x_intersect
-
-    crossings = np.sum(cond1 & cond2, axis=1)
+        x_int = (xj - xi) * (lats_b - yi) / (yj - yi + 1e-15) + xi
+    crossings = np.sum(cond1 & (lons_b < x_int), axis=1)
     return (crossings % 2) == 1
 
 
-def filter_to_ocean(df: pd.DataFrame, label: str = "") -> pd.DataFrame:
+def filter_to_ocean(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Drop rows that fall on land using vectorized ray-casting.
-    Runs the test against each coastline ring and marks a point as land
-    if it is inside any ring.
+    Drop land points from a MUR or GOES DataFrame using vectorized
+    ray-casting. NOT called for VIIRS — ACSPO pre-masks land in L3U files.
     """
-    rings = _load_land_polys_for_bounds(NORTH, SOUTH, EAST, WEST)
+    rings = _load_land_rings(NORTH, SOUTH, EAST, WEST)
     if not rings:
         return df
 
-    lons = df["lon"].to_numpy(dtype=np.float64)
-    lats = df["lat"].to_numpy(dtype=np.float64)
+    lons    = df["lon"].to_numpy(dtype=np.float64)
+    lats    = df["lat"].to_numpy(dtype=np.float64)
     on_land = np.zeros(len(df), dtype=bool)
 
     for ring in rings:
-        # Only test points against this ring if its bbox overlaps
         rlon_min, rlon_max = ring[:, 0].min(), ring[:, 0].max()
         rlat_min, rlat_max = ring[:, 1].min(), ring[:, 1].max()
-        candidate = (
-            (lons >= rlon_min) & (lons <= rlon_max) &
-            (lats >= rlat_min) & (lats <= rlat_max)
-        )
-        if not candidate.any():
+        cand = ((lons >= rlon_min) & (lons <= rlon_max) &
+                (lats >= rlat_min) & (lats <= rlat_max))
+        if not cand.any():
             continue
         in_ring = np.zeros(len(df), dtype=bool)
-        in_ring[candidate] = _points_in_ring_vec(lons[candidate], lats[candidate], ring)
+        in_ring[cand] = _points_in_ring_vec(lons[cand], lats[cand], ring)
         on_land |= in_ring
 
-    before  = len(df)
-    df      = df[~on_land].reset_index(drop=True)
-    dropped = before - len(df)
-    if dropped > 0:
-        print(f"  (land filter: dropped {dropped} inland, kept {len(df)} ocean)")
+    before = len(df)
+    df     = df[~on_land].reset_index(drop=True)
+    if before - len(df) > 0:
+        print(f"  (land filter: dropped {before - len(df)} inland, kept {len(df)} ocean)")
     return df
 
 
@@ -207,7 +177,7 @@ DIRS = {
 
 NORTH, SOUTH =  39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
-VIIRS_BBOX_PAD = 1.0
+VIIRS_BBOX_PAD = 1.0   # degrees padding for granule bbox slice
 
 
 # =========================================================
@@ -216,6 +186,8 @@ VIIRS_BBOX_PAD = 1.0
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
+# coastwatch.noaa.gov first — more tolerant of GitHub Actions runner IPs
+# than pfeg/upwell which frequently 403 CI traffic.
 MUR_MIRRORS = [
     {"host": ERDDAP_HOST_CW,   "dataset_id": "jplMURSST41", "var": "analysed_sst", "stride": 5, "units": "C"},
     {"host": ERDDAP_HOST_PFEG, "dataset_id": "jplMURSST41", "var": "analysed_sst", "stride": 5, "units": "C"},
@@ -223,6 +195,7 @@ MUR_MIRRORS = [
 ]
 MUR_DAYS_BACK = 5
 
+# stride 2 on 0.05° native = 0.10° — smaller response, avoids hangs
 GOES_CFG = {
     "host":       ERDDAP_HOST_CW,
     "dataset_id": "noaacwBLENDEDsstDLDaily",
@@ -242,11 +215,16 @@ VIIRS_BASE_CANDIDATES = [
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
 VIIRS_HOURS_BACK = 26
 
+# Pass center times in UTC (hour, minute) for Mid-Atlantic (~36N, 75.5W).
+# Night center confirmed from CI logs 2026-04-22.
+# Day center calculated from orbital mechanics (1:30pm local = UTC-5).
 VIIRS_PASS_CENTERS_UTC = [
-    ( 6, 10),   # night descending — confirmed 2026-04-22
+    ( 6, 10),   # night descending — confirmed
     (18, 33),   # day ascending    — calculated
 ]
-VIIRS_PASS_CENTER_WINDOW_MIN = 20   # ±20 min = 5 granules per pass
+# ±minutes around each center. 20 min = 5 granules per pass.
+# Increase to 30 if passes are being missed.
+VIIRS_PASS_CENTER_WINDOW_MIN = 20
 
 
 # =========================================================
@@ -297,12 +275,10 @@ def _throttle(host):
 
 def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
     stride = cfg["stride"]
-    query = (
-        f"{cfg['var']}"
-        f"[({time_iso})]"
-        f"[({south}):{stride}:({north})]"
-        f"[({west}):{stride}:({east})]"
-    )
+    query  = (f"{cfg['var']}"
+              f"[({time_iso})]"
+              f"[({south}):{stride}:({north})]"
+              f"[({west}):{stride}:({east})]")
     return f"{cfg['host']}/griddap/{cfg['dataset_id']}.csv0?{query}"
 
 
@@ -310,7 +286,7 @@ def fetch_erddap_csv(url, label):
     host = _host_of(url)
     if host in _host_blacklisted:
         raise RuntimeError(f"host {host} blacklisted this run")
-    headers = {"User-Agent": USER_AGENT, "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.5"}
+    headers  = {"User-Agent": USER_AGENT, "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.5"}
     last_err = None
     for attempt in range(1, HTTP_RETRIES + 2):
         _throttle(host)
@@ -330,17 +306,14 @@ def fetch_erddap_csv(url, label):
             if attempt <= HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF_S * attempt)
             continue
-        if resp.status_code == 200:
-            return resp.text
-        if resp.status_code == 404:
-            raise RuntimeError("404 — no data for this date")
+        if resp.status_code == 200:   return resp.text
+        if resp.status_code == 404:   raise RuntimeError("404 — no data for this date")
         if resp.status_code == 403:
             _host_blacklisted.add(host)
             raise RuntimeError(f"403 Forbidden — blacklisted: {resp.text[:200]}")
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", "30"))
             if attempt <= HTTP_RETRIES:
-                time.sleep(retry_after)
+                time.sleep(int(resp.headers.get("Retry-After", "30")))
             continue
         last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
         if attempt <= HTTP_RETRIES:
@@ -351,17 +324,12 @@ def fetch_erddap_csv(url, label):
 def parse_erddap_csv0(csv_text, cfg):
     if not csv_text or not csv_text.strip():
         raise RuntimeError("empty response body")
-    df = pd.read_csv(
-        io.StringIO(csv_text),
-        header=None,
-        names=["time", "lat", "lon", "sst"],
-        dtype={"time": str},
-    )
+    df = pd.read_csv(io.StringIO(csv_text), header=None,
+                     names=["time", "lat", "lon", "sst"], dtype={"time": str})
     if df.empty:
         raise RuntimeError("0 data rows")
-    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
-    df["sst"] = pd.to_numeric(df["sst"], errors="coerce")
+    for col in ["lat", "lon", "sst"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["lat", "lon", "sst"])
     if df.empty:
         raise RuntimeError("all SST values NaN")
@@ -371,8 +339,7 @@ def parse_erddap_csv0(csv_text, cfg):
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
-    df = filter_to_ocean(df, label="ingest")
-    return df
+    return filter_to_ocean(df)   # land filter applied to MUR/GOES
 
 
 def write_csv(df, base_path, label):
@@ -382,11 +349,9 @@ def write_csv(df, base_path, label):
         return False
     n_lat    = df["lat"].nunique()
     n_lon    = df["lon"].nunique()
-    expected = n_lat * n_lon
-    coverage = n_pts / expected if expected > 0 else 0
-    threshold = 0.05 if "VIIRS" in label else 0.30
-    if coverage < threshold:
-        print(f"  ⚠ {label}: sparse — {n_pts}/{expected} ({coverage*100:.0f}%)")
+    coverage = n_pts / (n_lat * n_lon) if n_lat * n_lon > 0 else 0
+    if coverage < (0.05 if "VIIRS" in label else 0.30):
+        print(f"  ⚠ {label}: sparse — {n_pts}/{n_lat*n_lon} ({coverage*100:.0f}%)")
     path = base_path + ".csv"
     df.to_csv(path, index=False)
     print(f"  → {path}  ({n_pts} pts, {n_lat} lats × {n_lon} lons)")
@@ -394,9 +359,10 @@ def write_csv(df, base_path, label):
 
 
 def fetch_one_day_erddap(cfg, time_iso, label):
-    url      = build_erddap_csv_url(cfg, time_iso, SOUTH, NORTH, WEST, EAST)
-    csv_text = fetch_erddap_csv(url, label)
-    return parse_erddap_csv0(csv_text, cfg)
+    return parse_erddap_csv0(
+        fetch_erddap_csv(build_erddap_csv_url(cfg, time_iso, SOUTH, NORTH, WEST, EAST), label),
+        cfg
+    )
 
 
 # =========================================================
@@ -409,13 +375,11 @@ def fetch_mur():
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
-        out_path = os.path.join(DIRS["mur"], f"mur_{stamp}.csv")
-        if os.path.exists(out_path):
+        if os.path.exists(os.path.join(DIRS["mur"], f"mur_{stamp}.csv")):
             print(f"  ✓ MUR {stamp} (cached)")
             success += 1
             continue
-        df = None
-        last_err = None
+        df = None;  last_err = None
         for cfg in MUR_MIRRORS:
             mhost = _host_of(cfg["host"])
             if mhost in _host_blacklisted:
@@ -427,7 +391,6 @@ def fetch_mur():
             except Exception as e:
                 last_err = f"{mhost}: {type(e).__name__}: {str(e)[:120]}"
                 print(f"✗ {type(e).__name__}")
-                continue
         if df is None:
             print(f"  ✗ MUR {stamp} — all mirrors failed. Last: {last_err}")
             continue
@@ -445,17 +408,17 @@ def fetch_goes():
     print("\n── GOES-19 geo-polar blended daily composite ──")
     for i in range(0, 4):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
-        time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
         stamp    = ts.strftime("%Y%m%d")
-        out_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}.csv")
-        if os.path.exists(out_path):
+        time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
+        if os.path.exists(os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}.csv")):
             print(f"  ✓ GOES composite {stamp} (cached)")
             return
         try:
             print(f"  GOES {stamp} … ", end="", flush=True)
             df = fetch_one_day_erddap(GOES_CFG, time_iso, f"GOES {stamp}")
             print(f"  ✓ Geo-polar Blended {ts:%Y-%m-%d}")
-            write_csv(df, os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}"), f"GOES composite {stamp}")
+            write_csv(df, os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}"),
+                      f"GOES composite {stamp}")
             return
         except Exception as e:
             print(f"✗ {type(e).__name__}: {str(e)[:80]}")
@@ -466,7 +429,7 @@ def fetch_goes():
 # VIIRS — MULTI-PASS (L3U GRANULE FILE SERVER)
 # =========================================================
 
-def _probe_viirs_base() -> str:
+def _probe_viirs_base():
     for base in VIIRS_BASE_CANDIDATES:
         try:
             r = requests.get(f"{base}/n20/", timeout=(10, 20),
@@ -491,8 +454,9 @@ def _list_viirs_granules(base, platform, year, doy):
     except requests.RequestException as e:
         print(f"  ⚠ dir listing failed {platform} {year}/{doy:03d}: {e}")
         return []
-    found = re.findall(r"(\d{14}-STAR-L3U_GHRSST-SSTsubskin-VIIRS[^\s\"<>]+\.nc)", resp.text)
-    return sorted(set(found))
+    return sorted(set(re.findall(
+        r"(\d{14}-STAR-L3U_GHRSST-SSTsubskin-VIIRS[^\s\"<>]+\.nc)", resp.text
+    )))
 
 
 def _granule_time(filename):
@@ -519,8 +483,13 @@ def _build_target_windows(now_utc):
 
 def _fetch_viirs_granule(base, platform, year, doy, filename):
     """
-    Download one L3U granule, subset to bbox, apply vectorized land filter.
+    Download one ACSPO L3U NetCDF4 granule and subset to bbox.
     Returns (DataFrame, reason). DataFrame is None on failure.
+
+    Land masking is intentionally SKIPPED — NOAA ACSPO pre-masks land
+    pixels as fill values in L3U files. dropna() removes them.
+    Running an additional polygon filter on 36k+ points caused 5-10 min
+    hangs and job timeouts.
     """
     if not _NETCDF4_AVAILABLE:
         return None, "netCDF4 not installed"
@@ -567,12 +536,13 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
 
     lon_grid, lat_grid = np.meshgrid(lon_sub, lat_sub)
     sst_c = np.ma.filled(sst_sub, np.nan).astype(np.float64) - 273.15
+
     df = pd.DataFrame({
         "lat": lat_grid.flatten(),
         "lon": lon_grid.flatten(),
         "sst": sst_c.flatten(),
     })
-    df = df.dropna(subset=["sst"])
+    df = df.dropna(subset=["sst"])   # removes cloud + land fill values
     df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
             (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
@@ -583,9 +553,8 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
-    df = filter_to_ocean(df, label=filename)   # vectorized — fast
-
-    return (df, "ok") if not df.empty else (None, "all pixels inland after land filter")
+    # NO filter_to_ocean() call here — ACSPO handles land masking upstream
+    return df, "ok"
 
 
 def fetch_viirs_passes():
@@ -593,10 +562,9 @@ def fetch_viirs_passes():
         print("\n── VIIRS multi-pass ──\n  skipped (netCDF4 not installed)")
         return
 
-    half_min = VIIRS_PASS_CENTER_WINDOW_MIN
-    centers  = [f"{h:02d}:{m:02d} UTC" for h, m in VIIRS_PASS_CENTERS_UTC]
+    centers = [f"{h:02d}:{m:02d} UTC" for h, m in VIIRS_PASS_CENTERS_UTC]
     print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──")
-    print(f"  Pass centers: {', '.join(centers)}  ±{half_min} min")
+    print(f"  Pass centers: {', '.join(centers)}  ±{VIIRS_PASS_CENTER_WINDOW_MIN} min")
 
     try:
         live_base = _probe_viirs_base()
@@ -612,8 +580,8 @@ def fetch_viirs_passes():
         return
 
     print(f"  Target windows this run: {len(windows)}")
-    for w_start, w_end, label in windows:
-        print(f"    {w_start:%Y-%m-%d %H:%M} – {w_end:%H:%M} UTC  ({label})")
+    for w_start, w_end, lbl in windows:
+        print(f"    {w_start:%Y-%m-%d %H:%M} – {w_end:%H:%M} UTC  ({lbl})")
 
     day_pairs = set()
     for w_start, w_end, _ in windows:
@@ -633,7 +601,8 @@ def fetch_viirs_passes():
                 except ValueError:
                     continue
 
-                in_window = any(w_start <= gran_time <= w_end for w_start, w_end, _ in windows)
+                in_window = any(w_start <= gran_time <= w_end
+                                for w_start, w_end, _ in windows)
                 if not in_window:
                     total_filtered += 1
                     continue
@@ -655,15 +624,11 @@ def fetch_viirs_passes():
                     print(f"✗ {reason}")
                     total_miss += 1
 
-    print(
-        f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
-        f" {total_miss} miss/cloud, {total_filtered} outside windows."
-    )
+    print(f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
+          f" {total_miss} miss/cloud, {total_filtered} outside windows.")
     if total_new == 0 and total_skipped == 0:
-        print(
-            "  ⚠ No VIIRS data produced. Adjust VIIRS_PASS_CENTERS_UTC\n"
-            "    or increase VIIRS_PASS_CENTER_WINDOW_MIN."
-        )
+        print("  ⚠ No VIIRS data produced. Adjust VIIRS_PASS_CENTERS_UTC"
+              " or increase VIIRS_PASS_CENTER_WINDOW_MIN.")
 
 
 # =========================================================
