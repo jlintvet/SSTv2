@@ -48,7 +48,7 @@ except ImportError:
 # HARD TIMEOUT CONTEXT MANAGER
 # =========================================================
 # requests timeout=(connect, read) caps individual socket reads but NOT
-# total wall-clock time if the server dribbles bytes slowly forever.
+# total wall-clock time if the server dribbles bytes slowly.
 # SIGALRM enforces an absolute ceiling. Linux/macOS only (fine for CI).
 
 class _TimeoutError(Exception):
@@ -176,8 +176,8 @@ DIRS = {
 NORTH, SOUTH =  39.00, 33.70
 WEST,  EAST  = -78.89, -72.21
 
-# Expand bbox slightly for VIIRS swath overlap check so we don't
-# miss granules whose swath edge just clips the region corner.
+# Expand bbox slightly for VIIRS swath overlap fetch so swath edges
+# that just clip the region corner are not missed.
 VIIRS_BBOX_PAD = 1.0   # degrees
 
 
@@ -187,22 +187,23 @@ VIIRS_BBOX_PAD = 1.0   # degrees
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
 
-# MUR mirrors.
-# IMPORTANT: blacklist state is per-host, not per-mirror-entry.
-# pfeg and upwell.pfeg share the same GitHub Actions IP blacklist behaviour,
-# so we put coastwatch.noaa.gov first to avoid burning all three on a
-# blacklisted run. If coastwatch.noaa.gov 404s (it sometimes lags MUR by
-# a day), we fall through to pfeg as a second attempt.
+# MUR mirrors in priority order.
+# coastwatch.noaa.gov first — GitHub Actions runner IPs are frequently
+# rate-limited by pfeg/upwell because thousands of CI workflows share
+# the same IP ranges. coastwatch.noaa.gov is more tolerant of CI traffic.
+# A 403 blacklists only that specific host; the next mirror is still tried.
 MUR_MIRRORS = [
     {
-        "host":       ERDDAP_HOST_CW,        # try coastwatch first
+        "host":       ERDDAP_HOST_CW,
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
+        # MUR ERDDAP serves analysed_sst in Celsius despite the underlying
+        # NetCDF variable. Setting "K" produces ~-444F offsets downstream.
         "units":      "C",
     },
     {
-        "host":       ERDDAP_HOST_PFEG,       # pfeg as fallback
+        "host":       ERDDAP_HOST_PFEG,
         "dataset_id": "jplMURSST41",
         "var":        "analysed_sst",
         "stride":     5,
@@ -218,8 +219,8 @@ MUR_MIRRORS = [
 ]
 MUR_DAYS_BACK = 5
 
-# Geo-polar Blended Day+Night. stride 2 on 0.05 deg native = 0.10 deg.
-# Smaller response than stride 1, avoids the hang that stride 1 caused.
+# Geo-polar Blended Day+Night (GOES-19 ABI primary geostationary input).
+# stride 2 on 0.05 deg native = 0.10 deg — smaller response, avoids hangs.
 GOES_CFG = {
     "host":       ERDDAP_HOST_CW,
     "dataset_id": "noaacwBLENDEDsstDLDaily",
@@ -239,17 +240,26 @@ VIIRS_BASE_CANDIDATES = [
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
 VIIRS_HOURS_BACK = 24
 
-# Approximate Mid-Atlantic overpass times (UTC) for afternoon-orbit VIIRS.
-# NPP, N20, N21 all fly ~1:30pm local solar time ascending node.
-# Over 33-39N / 73-79W (UTC-5) that translates to roughly:
-#   Ascending  (daytime)  : ~17:30-18:30 UTC
-#   Descending (nighttime) : ~05:30-06:30 UTC
-# We fetch a +/- 3-hour window around each pass to be safe.
-# This pre-filter cuts the granules we actually download from ~144 to ~12,
-# avoiding 3+ GB of unnecessary transfers just to check bbox overlap.
+# Mid-Atlantic overpass windows for afternoon-orbit VIIRS (NPP, N20, N21).
+#
+# These satellites fly a ~1:30pm local solar time ascending node.
+# For the Mid-Atlantic center (~36N, 75.5W = UTC-5.03):
+#
+#   Ascending  (daytime)  : ~13:30 local = ~18:33 UTC
+#   Descending (nighttime): ~01:30 local = ~06:33 UTC
+#
+# Observed in logs: first bbox hit at 0610 UTC confirms nighttime center.
+# Windows use ±2h padding around each center:
+#
+#   Night:  04:00–09:00 UTC  (center 06:33)
+#   Day:    16:00–21:00 UTC  (center 18:33)
+#
+# Granules outside these windows are over Europe, Pacific, or Southern
+# Ocean and will never intersect the Mid-Atlantic bbox.
+# This filter cuts downloads from ~144/satellite/day to ~12.
 VIIRS_PASS_WINDOWS_UTC = [
-    (15, 21),   # daytime pass:  15:00–21:00 UTC
-    ( 3,  9),   # nighttime pass: 03:00–09:00 UTC
+    (16, 21),   # daytime pass:   16:00–21:00 UTC
+    ( 4,  9),   # nighttime pass: 04:00–09:00 UTC
 ]
 
 
@@ -271,8 +281,8 @@ USER_AGENT        = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
 COORD_DECIMALS = 4
 SST_DECIMALS   = 3
 
-# Per-host blacklist state — isolate each mirror independently so a 403
-# on one host doesn't poison the others.
+# Per-host blacklist — isolate each mirror so a 403 on one host
+# does not prevent retrying the others.
 _last_request_at  = {}
 _host_blacklisted = set()
 _host_conn_resets = {}
@@ -314,9 +324,8 @@ def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
 
 def fetch_erddap_csv(url, label):
     """
-    GET an ERDDAP .csv0 URL.
-    Uses (connect, read) timeout tuple AND a SIGALRM hard ceiling.
-    A 403 blacklists only the specific host, not all mirrors.
+    GET an ERDDAP .csv0 URL with (connect, read) timeout tuple and a
+    SIGALRM hard ceiling. A 403 blacklists only the specific host.
     """
     host = _host_of(url)
     if host in _host_blacklisted:
@@ -354,7 +363,6 @@ def fetch_erddap_csv(url, label):
         if resp.status_code == 404:
             raise RuntimeError("404 — no data for this date")
         if resp.status_code == 403:
-            # Blacklist this host only — other mirrors still usable
             _host_blacklisted.add(host)
             raise RuntimeError(f"403 Forbidden — blacklisted: {resp.text[:200]}")
         if resp.status_code == 429:
@@ -430,14 +438,9 @@ def fetch_one_day_erddap(cfg, time_iso, label):
 def fetch_mur():
     """
     Pull MUR L4 daily snapshots via ERDDAP.
-
-    Mirror order: coastwatch.noaa.gov first, then pfeg, then upwell.pfeg.
-    GitHub Actions runner IPs are frequently rate-limited by pfeg/upwell
-    because thousands of workflows share the same IP ranges. coastwatch.noaa.gov
-    tends to be more tolerant of CI traffic.
-
-    A 403 blacklists only that specific host — the next mirror is still tried.
-    Blacklist state resets between pipeline runs (it's in-process only).
+    Mirror order: coastwatch.noaa.gov first (more tolerant of CI IPs),
+    then pfeg, then upwell.pfeg as last resort.
+    Files already on disk are skipped (cache check before any HTTP call).
     """
     print(f"\n── MUR daily composite (last {MUR_DAYS_BACK} days) ──")
     success = 0
@@ -447,7 +450,6 @@ def fetch_mur():
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T09:00:00Z"
 
-        # Skip if already written in a previous run today
         out_path = os.path.join(DIRS["mur"], f"mur_{stamp}.csv")
         if os.path.exists(out_path):
             print(f"  ✓ MUR {stamp} (cached)")
@@ -492,16 +494,12 @@ def fetch_goes():
     """
     print("\n── GOES-19 geo-polar blended daily composite ──")
 
-    df_latest = None
-    latest_ts = None
-
     for i in range(0, 4):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
         stamp    = ts.strftime("%Y%m%d")
         label    = f"GOES {stamp}"
 
-        # Skip if already written
         out_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}.csv")
         if os.path.exists(out_path):
             print(f"  ✓ GOES composite {stamp} (cached)")
@@ -509,21 +507,16 @@ def fetch_goes():
 
         try:
             print(f"  {label} … ", end="", flush=True)
-            df_latest = fetch_one_day_erddap(GOES_CFG, time_iso, label)
-            latest_ts = ts
+            df = fetch_one_day_erddap(GOES_CFG, time_iso, label)
             print(f"  ✓ Geo-polar Blended {ts:%Y-%m-%d}")
-            break
+            path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
+            write_csv(df, path, f"GOES composite {stamp}")
+            return
         except Exception as e:
             print(f"✗ {type(e).__name__}: {str(e)[:80]}")
             continue
 
-    if df_latest is None:
-        print("  ✗ GOES: no recent data available.")
-        return
-
-    stamp = latest_ts.strftime("%Y%m%d")
-    path  = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
-    write_csv(df_latest, path, f"GOES composite {stamp}")
+    print("  ✗ GOES: no recent data available.")
 
 
 # =========================================================
@@ -531,6 +524,7 @@ def fetch_goes():
 # =========================================================
 
 def _probe_viirs_base() -> str:
+    """Test each candidate URL and return the first live one."""
     for base in VIIRS_BASE_CANDIDATES:
         test_url = f"{base}/n20/"
         try:
@@ -585,17 +579,16 @@ def _granule_time(filename: str) -> datetime:
 def _granule_in_pass_window(gran_time: datetime) -> bool:
     """
     Return True only if this granule falls within a known overpass window
-    for the Mid-Atlantic. Filters out the ~130 granules per day that are
-    over the Pacific, Southern Ocean, etc. and would just waste bandwidth.
+    for the Mid-Atlantic. Filters out granules that are over the Pacific,
+    Europe, Southern Ocean, etc. — saving ~90% of download bandwidth.
 
-    VIIRS afternoon-orbit satellites (NPP, N20, N21) cross ~33-39N / 73-79W
-    (UTC-5) at roughly 1:30pm local solar time:
-      Ascending  (day)   ~17:30–20:30 UTC  → window 15–21 UTC
-      Descending (night) ~05:30–08:30 UTC  → window  3–9  UTC
+    VIIRS afternoon-orbit satellites (NPP, N20, N21) cross ~36N / 75.5W
+    (UTC-5) at ~1:30pm local solar time:
+      Ascending  (day)   center ~18:33 UTC -> window 16:00-21:00 UTC
+      Descending (night) center ~06:33 UTC -> window 04:00-09:00 UTC
 
-    Windows are deliberately wide (+/-3h) to handle orbital drift and
-    ensure we don't miss real passes. The actual bbox check inside
-    _fetch_viirs_granule() is the final arbiter of whether data exists.
+    Observed in CI logs: first bbox hit at 0610 UTC confirms night center.
+    Windows include ±2h padding around each center.
     """
     h = gran_time.hour
     for (start, end) in VIIRS_PASS_WINDOWS_UTC:
@@ -606,22 +599,25 @@ def _granule_in_pass_window(gran_time: datetime) -> bool:
 
 def _fetch_viirs_granule(
     base: str, platform: str, year: int, doy: int, filename: str
-) -> pd.DataFrame:
+) -> tuple:
     """
-    Download one ACSPO L3U NetCDF4 granule, subset to bbox, return
-    DataFrame [lat, lon, sst] in °C. Returns None on any failure.
+    Download one ACSPO L3U NetCDF4 granule (~25 MB global 0.02 deg grid),
+    subset to bbox, return (DataFrame, reason_string).
 
-    L3U files are ~25 MB (global 0.02° grid). Only the bbox slice is kept
-    in memory. Cloud/land pixels are fill values → NaN → dropped — expected
-    for L3U swath data.
+    DataFrame is None on failure. reason_string explains why.
+
+    L3U characteristics:
+      - sea_surface_temperature: shape (1, nlat, nlon), Kelvin
+      - Only QL=5 (clear) pixels populated — cloud/land are fill values
+      - Fill values -> NaN -> dropped from output (expected, not an error)
     """
     if not _NETCDF4_AVAILABLE:
-        return None
+        return None, "netCDF4 not installed"
 
     url  = f"{base}/{platform}/l3u/{year}/{doy:03d}/{filename}"
     host = _host_of(url)
     if host in _host_blacklisted:
-        return None
+        return None, "host blacklisted"
 
     try:
         _throttle(host)
@@ -634,15 +630,13 @@ def _fetch_viirs_granule(
             )
             resp.raise_for_status()
     except _TimeoutError as e:
-        print(f"\n  ⚠ {e}")
-        return None
+        return None, f"hard timeout: {e}"
     except requests.RequestException as e:
-        print(f"  ⚠ download failed {filename}: {e}")
         if isinstance(e, (requests.ConnectionError, requests.Timeout)):
             _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
             if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
                 _host_blacklisted.add(host)
-        return None
+        return None, f"download error: {type(e).__name__}"
 
     try:
         ds = nc.Dataset("inmemory.nc", memory=resp.content)
@@ -651,8 +645,8 @@ def _fetch_viirs_granule(
         lon_full = ds.variables["lon"][:]
         sst_var  = ds.variables["sea_surface_temperature"]  # (1, nlat, nlon) K
 
-        # Padded bbox for index lookup — catches swath edges that just clip
-        pad = VIIRS_BBOX_PAD
+        # Padded bbox for index slice — catches swath edges clipping the region
+        pad      = VIIRS_BBOX_PAD
         lat_mask = (lat_full >= SOUTH - pad) & (lat_full <= NORTH + pad)
         lon_mask = (lon_full >= WEST  - pad) & (lon_full <= EAST  + pad)
         lat_idx  = np.where(lat_mask)[0]
@@ -660,7 +654,7 @@ def _fetch_viirs_granule(
 
         if len(lat_idx) == 0 or len(lon_idx) == 0:
             ds.close()
-            return None
+            return None, "swath does not overlap bbox"
 
         lat_sl  = slice(int(lat_idx[0]), int(lat_idx[-1]) + 1)
         lon_sl  = slice(int(lon_idx[0]), int(lon_idx[-1]) + 1)
@@ -671,8 +665,7 @@ def _fetch_viirs_granule(
         ds.close()
 
     except Exception as e:
-        print(f"  ⚠ NetCDF parse failed {filename}: {e}")
-        return None
+        return None, f"NetCDF parse error: {e}"
 
     lon_grid, lat_grid = np.meshgrid(lon_sub, lat_sub)
     sst_c = np.ma.filled(sst_sub, np.nan).astype(np.float64) - 273.15
@@ -684,7 +677,7 @@ def _fetch_viirs_granule(
     })
     df = df.dropna(subset=["sst"])
 
-    # Clip to exact bbox (padded fetch, exact output)
+    # Clip to exact bbox (fetched with padding, output is exact)
     df = df[
         (df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
         (df["lon"] >= WEST)  & (df["lon"] <= EAST)
@@ -692,26 +685,32 @@ def _fetch_viirs_granule(
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
 
     if df.empty:
-        return None
+        return None, "swath overlaps bbox but all pixels cloud/land masked"
 
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
     df = filter_to_ocean(df, label=filename)
-    return df if not df.empty else None
+
+    if df.empty:
+        return None, "all bbox pixels filtered as inland water"
+
+    return df, "ok"
 
 
 def fetch_viirs_passes():
     """
     Fetch VIIRS ACSPO L3U granules for the last VIIRS_HOURS_BACK hours.
 
-    Key optimisation: only download granules whose timestamp falls within
-    a known overpass window for the Mid-Atlantic. This reduces downloads
-    from ~144 granules/day/satellite to ~12, avoiding 3+ GB of wasted
-    transfers. The full bbox check inside _fetch_viirs_granule() still
-    runs as a final filter.
+    Pass-window pre-filter (_granule_in_pass_window) restricts downloads
+    to granules whose UTC hour falls within known Mid-Atlantic overpass
+    windows. This cuts ~144 downloads/satellite/day down to ~12, avoiding
+    3+ GB of wasted transfers to find the ~4 granules with actual data.
 
-    Typical yield: ~2 passes × 3 satellites = ~6 CSV files per 24h window.
+    The full bbox check inside _fetch_viirs_granule() runs as the exact
+    final filter with a 1-degree padding.
+
+    Typical yield: ~2 passes x 3 satellites = ~6 CSV files per 24h.
     """
     if not _NETCDF4_AVAILABLE:
         print("\n── VIIRS multi-pass ──")
@@ -736,7 +735,8 @@ def fetch_viirs_passes():
 
     total_new      = 0
     total_skipped  = 0
-    total_filtered = 0   # granules skipped by pass-window pre-filter
+    total_filtered = 0   # skipped by pass-window pre-filter
+    total_miss     = 0   # downloaded but swath missed bbox or all-cloud
 
     for platform in VIIRS_PLATFORMS:
         for (year, doy) in sorted(day_pairs):
@@ -750,12 +750,9 @@ def fetch_viirs_passes():
                 except ValueError:
                     continue
 
-                # Time-window filter: skip granules outside 24h window
                 if gran_time < cutoff or gran_time > now_utc:
                     continue
 
-                # Pass-window pre-filter: skip granules not in a known
-                # Mid-Atlantic overpass window — saves ~90% of downloads
                 if not _granule_in_pass_window(gran_time):
                     total_filtered += 1
                     continue
@@ -771,19 +768,31 @@ def fetch_viirs_passes():
                     continue
 
                 print(f"  {platform} {stamp} … ", end="", flush=True)
-                df = _fetch_viirs_granule(live_base, platform, year, doy, fname)
+                df, reason = _fetch_viirs_granule(
+                    live_base, platform, year, doy, fname
+                )
 
                 if df is not None and write_csv(
                     df, out_path, f"VIIRS {platform} {stamp}"
                 ):
                     total_new += 1
                 else:
-                    print("✗ no usable data in bbox")
+                    print(f"✗ {reason}")
+                    total_miss += 1
 
     print(
-        f"  ✓ VIIRS: {total_new} new, {total_skipped} cached,"
-        f" {total_filtered} skipped by pass-window filter."
+        f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
+        f" {total_miss} miss/cloud, {total_filtered} pre-filtered"
+        f" (outside pass window)."
     )
+    if total_new == 0 and total_skipped == 0 and total_miss > 0:
+        print(
+            "  ⚠ All downloaded granules were swath misses or all-cloud.\n"
+            "    If this persists, check VIIRS_PASS_WINDOWS_UTC in config —\n"
+            "    the overpass time may have drifted or the orbital plane\n"
+            "    shifted. Look for the earliest bbox hit in the log above\n"
+            "    and adjust the window start/end hours accordingly."
+        )
 
 
 # =========================================================
@@ -794,6 +803,10 @@ def main():
     print("SST PIPELINE")
     print(f"  UTC  : {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}")
     print(f"  Bbox : {SOUTH}–{NORTH}°N  {WEST}–{EAST}°E")
+    print(f"  VIIRS pass windows: night {VIIRS_PASS_WINDOWS_UTC[1][0]:02d}:00–"
+          f"{VIIRS_PASS_WINDOWS_UTC[1][1]:02d}:00 UTC, "
+          f"day {VIIRS_PASS_WINDOWS_UTC[0][0]:02d}:00–"
+          f"{VIIRS_PASS_WINDOWS_UTC[0][1]:02d}:00 UTC")
     print("=" * 57)
 
     ensure_dirs()
