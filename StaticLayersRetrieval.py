@@ -108,10 +108,29 @@ CONTOUR_DEPTHS_FT = [60, 120, 180, 300, 600, 1200, 1800, 3000, 6000]
 SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ---------------------------------------------------------------------------
 # ERDDAP bathymetry sources — tried in order until one succeeds.
+#
+# Each entry is a tuple of:
+#   (base_url, variable_name, lon_convention)
+#
+# lon_convention is either "neg180" (standard -180→180) or "pos360" (0→360).
+# Servers that use 0–360 require the bbox longitudes to be remapped before
+# building the query URL.  OceanWatch PIFSC and some NCEI instances use 0–360.
+#
+# Source notes (verified April 2026):
+#   coastwatch.pfeg.noaa.gov  — 403s on GitHub Actions shared IPs (rate/UA block)
+#   oceanwatch.pifsc.noaa.gov — confirmed live; uses 0–360 lon convention
+#   ncei.noaa.gov/erddap      — confirmed live; three ETOPO resolutions available
 # ---------------------------------------------------------------------------
 BATHY_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",   "z"),
+    # Primary — PFEG CoastWatch (best coverage; 403s on GHA shared IPs)
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation", "neg180"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",   "z",         "neg180"),
+    # Secondary — OceanWatch PIFSC (0–360 lon convention — remapped automatically)
+    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z",         "pos360"),
+    # Tertiary — NCEI ERDDAP (three resolutions; 15s first, coarser as fallback)
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",          "z",         "neg180"),
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_30s.csvp",          "z",         "neg180"),
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",          "z",         "neg180"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -321,17 +340,40 @@ def _parse_erddap_csvp(text: str) -> list[dict]:
                          "depth_ft": depth_ft, "depth_fathoms": depth_fathoms})
     return data
 def _try_erddap_source(session: requests.Session, base_url: str,
-                       var: str, stride: int) -> list[dict]:
+                       var: str, stride: int,
+                       lon_convention: str = "neg180") -> list[dict]:
+    """
+    Build and fire one ERDDAP griddap CSV request.
+
+    lon_convention: "neg180" — use lons as-is (-180 to 180)
+                    "pos360" — remap negative lons to 0-360 range before
+                               querying, then remap results back to -180-180.
+                               e.g. LON_MIN -78.89 -> 281.11 in the URL.
+    """
+    if lon_convention == "pos360":
+        lon_min_q = LON_MIN + 360.0 if LON_MIN < 0 else LON_MIN
+        lon_max_q = LON_MAX + 360.0 if LON_MAX < 0 else LON_MAX
+    else:
+        lon_min_q = LON_MIN
+        lon_max_q = LON_MAX
+
     url = (
         f"{base_url}"
         f"?{var}"
         f"[({LAT_MIN}):{stride}:({LAT_MAX})]"
-        f"[({LON_MIN}):{stride}:({LON_MAX})]"
+        f"[({lon_min_q}):{stride}:({lon_max_q})]"
     )
-    log.info("  Trying %s ...", base_url)
+    log.info("  Trying %s (lon=%s) ...", base_url, lon_convention)
     r = session.get(url, timeout=TIMEOUT)
     r.raise_for_status()
-    return _parse_erddap_csvp(r.text)
+    data = _parse_erddap_csvp(r.text)
+    # Remap 0-360 longitudes back to -180-180 so the rest of the pipeline
+    # (grid builder, contour generator, bbox clipping) works uniformly.
+    if lon_convention == "pos360":
+        for pt in data:
+            if pt["lon"] > 180.0:
+                pt["lon"] -= 360.0
+    return data
 def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     from requests.exceptions import (
         ConnectionError as ReqConnectionError,
@@ -345,12 +387,12 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     ]))
     TRANSIENT_EXC = (ReqConnectionError, ChunkedEncodingError, ReadTimeout)
     last_err = None
-    for base_url, var in BATHY_SOURCES:
+    for base_url, var, lon_convention in BATHY_SOURCES:
         for stride in stride_ladder:
             log.info("Fetching bathymetry from %s  (stride=%d, ~%.0f m resolution) ...",
                      base_url, stride, stride * 450)
             try:
-                data = _try_erddap_source(session, base_url, var, stride)
+                data = _try_erddap_source(session, base_url, var, stride, lon_convention)
                 if data:
                     ocean = sum(1 for r in data if r["depth_ft"] is not None)
                     log.info("  Got %d points (%d ocean) from %s at stride=%d",
