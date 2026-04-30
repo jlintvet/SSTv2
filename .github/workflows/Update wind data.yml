@@ -39,11 +39,4 @@ jobs:
       - name: Run wind data update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # If you created a separate fine-grained PAT instead of using the
-          # auto-provisioned GITHUB_TOKEN, swap the line above for:
-          # GITHUB_TOKEN: ${{ secrets.WIND_GITHUB_TOKEN }}
-        run: python WindData/updateWindData.py
-
-      - name: Report result
-        if: always()
-        run: echo "Wind data update finished with exit code $?"
+        run: python Getwinddata.py
