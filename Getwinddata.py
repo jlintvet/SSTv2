@@ -143,10 +143,10 @@ def build_velocity_json(pts):
         if ri is None or ci is None:
             continue
         i2 = ri * nx + ci
-        # Negate both components: Open-Meteo gives "wind going toward" (meteorological)
-        # but leaflet-velocity renders "wind coming from", so flip to match Windy display
-        u_data[i2] = -(pt["u"] or 0.0)
-        v_data[i2] = -(pt["v"] or 0.0)
+        # Pass U/V as-is from Open-Meteo (standard meteorological "wind going toward")
+        # Direction convention is handled by angleConvention in leaflet-velocity
+        u_data[i2] = pt["u"] or 0.0
+        v_data[i2] = pt["v"] or 0.0
     return [
         {"header": {**base_header, "parameterNumberName": "eastward_wind",  "parameterNumber": 2}, "data": u_data},
         {"header": {**base_header, "parameterNumberName": "northward_wind", "parameterNumber": 3}, "data": v_data},
