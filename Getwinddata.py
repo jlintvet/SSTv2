@@ -35,40 +35,51 @@ for la in lats:
 
 print(f"Grid: {len(lats)} lats x {len(lons)} lons = {len(grid_lats)} points")
 
-# ── Fetch Open-Meteo via POST ─────────────────────────────────────────────────
-# Use POST + JSON body instead of GET to avoid 414 URI Too Large with 700+ points.
-# Open-Meteo supports POST on the same endpoint with identical params as JSON.
-body = {
-    "latitude":        grid_lats,
-    "longitude":       grid_lons,
-    "hourly":          ["wind_u_component_10m", "wind_v_component_10m", "wind_speed_10m"],
-    "wind_speed_unit": "kn",
-    "forecast_days":   7,
-    "timezone":        "UTC",
-    "cell_selection":  "nearest",
-    "models":          "gfs_seamless",
-}
+# ── Fetch Open-Meteo in batches (GET, 50 points per request) ─────────────────
+# Open-Meteo is GET-only. With 700+ points the URL exceeds server limits (414).
+# Solution: split into batches of 50 points, make multiple requests, merge.
+BATCH_SIZE = 50
 
-print("Fetching from Open-Meteo (POST)...")
-try:
-    resp = requests.post(
+def fetch_batch(lat_batch, lon_batch):
+    params = {
+        "latitude":        ",".join(str(x) for x in lat_batch),
+        "longitude":       ",".join(str(x) for x in lon_batch),
+        "hourly":          "wind_u_component_10m,wind_v_component_10m,wind_speed_10m",
+        "wind_speed_unit": "kn",
+        "forecast_days":   "7",
+        "timezone":        "UTC",
+        "cell_selection":  "nearest",
+        "models":          "gfs_seamless",
+    }
+    r = requests.get(
         "https://api.open-meteo.com/v1/forecast",
-        json=body,
-        timeout=120,
+        params=params,
+        timeout=60,
     )
-    resp.raise_for_status()
-    raw = resp.json()
-except Exception as e:
-    print(f"ERROR: Open-Meteo fetch failed: {e}")
-    sys.exit(1)
+    r.raise_for_status()
+    result = r.json()
+    return result if isinstance(result, list) else [result]
 
-if isinstance(raw, dict):
-    raw = [raw]
+batches = [
+    (grid_lats[i:i+BATCH_SIZE], grid_lons[i:i+BATCH_SIZE])
+    for i in range(0, len(grid_lats), BATCH_SIZE)
+]
+print(f"Fetching from Open-Meteo in {len(batches)} batches of up to {BATCH_SIZE} points...")
+
+raw = []
+for bi, (lat_batch, lon_batch) in enumerate(batches):
+    print(f"  Batch {bi+1}/{len(batches)} ({len(lat_batch)} points)...")
+    try:
+        raw.extend(fetch_batch(lat_batch, lon_batch))
+    except Exception as e:
+        print(f"ERROR: Batch {bi+1} failed: {e}")
+        sys.exit(1)
+
 if not raw:
-    print("ERROR: Empty response from Open-Meteo")
+    print("ERROR: No data returned from Open-Meteo")
     sys.exit(1)
 
-print(f"Got {len(raw)} point responses")
+print(f"Got {len(raw)} point responses total")
 
 # ── Parse per-hour grids ──────────────────────────────────────────────────────
 times   = raw[0].get("hourly", {}).get("time", [])
