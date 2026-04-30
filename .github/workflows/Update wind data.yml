@@ -1,0 +1,49 @@
+# .github/workflows/update_wind_data.yml
+#
+# Runs updateWindData.py every 3 hours (00:15, 03:15, 06:15, ... UTC).
+# The :15 offset avoids the GitHub Actions queue spike on the hour.
+#
+# The script fetches wind forecasts from Open-Meteo and writes
+# WindData/wind_latest.json directly to this repo via the GitHub API.
+# No git commit step needed — the Python script handles that itself.
+#
+# Required secret (repo Settings → Secrets → Actions):
+#   WIND_GITHUB_TOKEN  — a fine-grained PAT with Contents: Read & Write
+#                        on jlintvet/SSTv2  (or use the auto-provisioned
+#                        GITHUB_TOKEN if this workflow lives in the same repo)
+
+name: Update Wind Data
+
+on:
+  schedule:
+    - cron: '15 */3 * * *'   # every 3 hours at :15 past — 00:15, 03:15, 06:15 … UTC
+  workflow_dispatch:          # also adds a "Run workflow" button in the Actions tab for manual runs
+
+jobs:
+  update-wind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10       # kill the job if Open-Meteo or GitHub API hangs
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run wind data update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # If you created a separate fine-grained PAT instead of using the
+          # auto-provisioned GITHUB_TOKEN, swap the line above for:
+          # GITHUB_TOKEN: ${{ secrets.WIND_GITHUB_TOKEN }}
+        run: python WindData/updateWindData.py
+
+      - name: Report result
+        if: always()
+        run: echo "Wind data update finished with exit code $?"
