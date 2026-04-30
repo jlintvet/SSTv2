@@ -35,24 +35,26 @@ for la in lats:
 
 print(f"Grid: {len(lats)} lats x {len(lons)} lons = {len(grid_lats)} points")
 
-# ── Fetch Open-Meteo ──────────────────────────────────────────────────────────
-params = {
-    "latitude":        ",".join(str(x) for x in grid_lats),
-    "longitude":       ",".join(str(x) for x in grid_lons),
-    "hourly":          "wind_u_component_10m,wind_v_component_10m,wind_speed_10m",
+# ── Fetch Open-Meteo via POST ─────────────────────────────────────────────────
+# Use POST + JSON body instead of GET to avoid 414 URI Too Large with 700+ points.
+# Open-Meteo supports POST on the same endpoint with identical params as JSON.
+body = {
+    "latitude":        grid_lats,
+    "longitude":       grid_lons,
+    "hourly":          ["wind_u_component_10m", "wind_v_component_10m", "wind_speed_10m"],
     "wind_speed_unit": "kn",
-    "forecast_days":   "7",   # 7 days = 168 hours
+    "forecast_days":   7,
     "timezone":        "UTC",
     "cell_selection":  "nearest",
     "models":          "gfs_seamless",
 }
 
-print("Fetching from Open-Meteo...")
+print("Fetching from Open-Meteo (POST)...")
 try:
-    resp = requests.get(
+    resp = requests.post(
         "https://api.open-meteo.com/v1/forecast",
-        params=params,
-        timeout=60,
+        json=body,
+        timeout=120,
     )
     resp.raise_for_status()
     raw = resp.json()
