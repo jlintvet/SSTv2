@@ -158,6 +158,7 @@ for h, t in enumerate(times):
     hours.append({
         "time":         t,
         "velocityJSON": build_velocity_json(hour_grids[h]),
+        "grid":         hour_grids[h],   # speed points needed for wind map raster
     })
 
 all_speeds = [
