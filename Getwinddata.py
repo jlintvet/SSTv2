@@ -11,9 +11,10 @@ GITHUB_REPO   = "jlintvet/SSTv2"
 GITHUB_PATH   = "WindData/wind_latest.json"
 GITHUB_BRANCH = "main"
 
-# OBX region grid
-LAT_MIN, LAT_MAX, LAT_STEP = 33.5, 37.0, 0.25
-LON_MIN, LON_MAX, LON_STEP = -77.0, -74.0, 0.25
+# OBX region grid — matches the map display bounds (slightly wider than SST data
+# extent to ensure wind particles cover the full visible map area)
+LAT_MIN, LAT_MAX, LAT_STEP = 32.0, 38.5, 0.25
+LON_MIN, LON_MAX, LON_STEP = -79.0, -72.5, 0.25
 
 # ── Build grid ────────────────────────────────────────────────────────────────
 lats, lons = [], []
@@ -40,7 +41,7 @@ params = {
     "longitude":       ",".join(str(x) for x in grid_lons),
     "hourly":          "wind_u_component_10m,wind_v_component_10m,wind_speed_10m",
     "wind_speed_unit": "kn",
-    "forecast_days":   "2",
+    "forecast_days":   "7",   # 7 days = 168 hours
     "timezone":        "UTC",
     "cell_selection":  "nearest",
     "models":          "gfs_seamless",
