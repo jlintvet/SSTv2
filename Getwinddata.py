@@ -13,7 +13,7 @@ GITHUB_BRANCH = "main"
 
 # OBX region grid — matches the map display bounds (slightly wider than SST data
 # extent to ensure wind particles cover the full visible map area)
-LAT_MIN, LAT_MAX, LAT_STEP = 32.0, 38.5, 0.25
+LAT_MIN, LAT_MAX, LAT_STEP = 32.0, 40.0, 0.25
 LON_MIN, LON_MAX, LON_STEP = -79.0, -72.5, 0.25
 
 # ── Build grid ────────────────────────────────────────────────────────────────
