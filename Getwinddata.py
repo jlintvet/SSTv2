@@ -40,7 +40,9 @@ print(f"Grid: {len(lats)} lats x {len(lons)} lons = {len(grid_lats)} points")
 # Solution: split into batches of 50 points, make multiple requests, merge.
 BATCH_SIZE = 50
 
-def fetch_batch(lat_batch, lon_batch):
+import time
+
+def fetch_batch(lat_batch, lon_batch, retries=3):
     params = {
         "latitude":        ",".join(str(x) for x in lat_batch),
         "longitude":       ",".join(str(x) for x in lon_batch),
@@ -51,14 +53,23 @@ def fetch_batch(lat_batch, lon_batch):
         "cell_selection":  "nearest",
         "models":          "gfs_seamless",
     }
-    r = requests.get(
-        "https://api.open-meteo.com/v1/forecast",
-        params=params,
-        timeout=60,
-    )
-    r.raise_for_status()
-    result = r.json()
-    return result if isinstance(result, list) else [result]
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params=params,
+                timeout=120,
+            )
+            r.raise_for_status()
+            result = r.json()
+            return result if isinstance(result, list) else [result]
+        except Exception as e:
+            if attempt < retries:
+                wait = 5 * attempt
+                print(f"    Attempt {attempt} failed ({e}), retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 batches = [
     (grid_lats[i:i+BATCH_SIZE], grid_lons[i:i+BATCH_SIZE])
@@ -72,8 +83,9 @@ for bi, (lat_batch, lon_batch) in enumerate(batches):
     try:
         raw.extend(fetch_batch(lat_batch, lon_batch))
     except Exception as e:
-        print(f"ERROR: Batch {bi+1} failed: {e}")
+        print(f"ERROR: Batch {bi+1} failed after retries: {e}")
         sys.exit(1)
+    time.sleep(0.3)  # brief pause between batches to avoid rate limiting
 
 if not raw:
     print("ERROR: No data returned from Open-Meteo")
