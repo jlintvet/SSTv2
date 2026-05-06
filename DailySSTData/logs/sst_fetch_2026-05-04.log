@@ -1,47 +1,33 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-05-06 11:43:43
+  UTC  : 2026-05-06 18:49:06
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
   MUR 20260505 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260505 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20260505 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260505 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
-  MUR 20260504 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260504 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  MUR 20260505 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
   (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260504
-  → DailySSTData/MUR/mur_20260504.csv  (8892 pts, 107 lats × 133 lons)
-  MUR 20260503 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260503 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260503
-  → DailySSTData/MUR/mur_20260503.csv  (8892 pts, 107 lats × 133 lons)
-  MUR 20260502 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260502 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260502
-  → DailySSTData/MUR/mur_20260502.csv  (8892 pts, 107 lats × 133 lons)
-  MUR 20260501 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260501 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260501
-  → DailySSTData/MUR/mur_20260501.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260505
+  → DailySSTData/MUR/mur_20260505.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260504 (cached)
+  ✓ MUR 20260503 (cached)
+  ✓ MUR 20260502 (cached)
+  ✓ MUR 20260501 (cached)
 
 ── GOES-19 geo-polar blended daily composite ──
-  GOES 20260506 … ✗ RuntimeError: HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260505 … ✗ RuntimeError: HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  ✓ GOES composite 20260504 (cached)
+  GOES 20260506 … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260505 …   (land filter: dropped 70 inland, kept 2237 ocean)
+  ✓ Geo-polar Blended 2026-05-05
+  → DailySSTData/GOES/Composite/goes_composite_20260505.csv  (2237 pts, 54 lats × 66 lons)
 
 ── VIIRS multi-pass (last 26h — NPP/N20/N21) ──
   Pass centers: 06:10 UTC, 18:33 UTC  ±20 min
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
-  Target windows this run: 2
+  Target windows this run: 3
     2026-05-05 18:13 – 18:53 UTC  (1833UTC)
     2026-05-06 05:50 – 06:30 UTC  (0610UTC)
+    2026-05-06 18:13 – 18:53 UTC  (1833UTC)
   npp 20260505_1820 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260505_1830 ✓ (cached)
   npp 20260505_1840 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -67,10 +53,10 @@ SST PIPELINE
   n21 20260506_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260506_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260506_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260506_0620 …   → DailySSTData/VIIRS/Passes/viirs_n21_20260506_0620.csv  (32048 pts, 265 lats × 329 lons)
+  n21 20260506_0620 ✓ (cached)
   n21 20260506_0630 … ✗ swath overlaps bbox but all pixels cloud/land masked
 
-  VIIRS summary: 1 written, 2 cached, 24 miss/cloud, 598 outside windows.
+  VIIRS summary: 0 written, 3 cached, 24 miss/cloud, 678 outside windows.
 
 =========================================================
 ✓ Pipeline complete
