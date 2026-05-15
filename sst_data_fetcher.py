@@ -25,14 +25,40 @@ by dropna(). Running an additional land filter on VIIRS is redundant
 and was causing 5-10 minute hangs on 36k-point granules. We skip it.
 
 =========================================================
-VIIRS PASS TARGETING
+GOES FALLBACK STRATEGY
 =========================================================
-NPP/N20/N21 cross the Mid-Atlantic (~36N, 75.5W) at:
-  Night (descending): ~06:10 UTC  — confirmed from CI logs 2026-04-22
-  Day   (ascending) : ~18:33 UTC  — calculated from orbital mechanics
+Primary host  : coastwatch.noaa.gov/erddap
+Fallback host : coastwatch.pfeg.noaa.gov/erddap
 
-We target ±VIIRS_PASS_CENTER_WINDOW_MIN around each center.
-If a pass is consistently missed, increase the window by 10 min.
+Dataset IDs tried in order per host:
+  1. noaacwBLENDEDsstDLDaily  — Day+Night diurnal-corrected analysis.
+                                 Fuses GOES-18/19, Himawari-9, METOP-B/C
+                                 AVHRR, Meteosat-9/10, NOAA-20, NOAA-21 VIIRS.
+                                 Broader sensor fusion = more resilient when
+                                 one geostationary source lags or ERDDAP
+                                 returns 502 for the night-only product.
+  2. noaacwBLENDEDsstDaily    — Night-only analysis (narrower source set).
+                                 Kept as secondary because it has the longer
+                                 reanalysis record (2002-present) and may be
+                                 available when the DL variant is not.
+
+All four combinations (2 hosts × 2 dataset IDs) are tried before giving up.
+
+=========================================================
+VIIRS PASS TARGETING — 48-HOUR HOURLY WINDOWS
+=========================================================
+Previous strategy: ±20 min around 2 known overpass centers per day.
+Current strategy : one ±10-min window centered on every UTC hour for
+                   the past 48 hours (48 windows total).
+
+Rationale: orbital drift means pass centers shift over time, and the
+±20-min windows were missing real swaths at the window edges. Hourly
+buckets guarantee full 48h coverage with minimal overlap. Most hourly
+slots will legitimately have no swath over the bbox — those show up as
+"outside windows" in the miss counter and are cheap to skip.
+
+NRT file server retention is ~72h, so 48h is safely within range.
+If you extend beyond ~60h, files may have rolled off the NRT server.
 =========================================================
 """
 import io
@@ -195,14 +221,31 @@ MUR_MIRRORS = [
 ]
 MUR_DAYS_BACK = 5
 
-# stride 2 on 0.05° native = 0.10° — smaller response, avoids hangs
-GOES_CFG = {
-    "host":       ERDDAP_HOST_CW,
-    "dataset_id": "noaacwBLENDEDsstDLDaily",
-    "var":        "analysed_sst",
-    "stride":     2,
-    "units":      "C",
-}
+# ---------------------------------------------------------------------------
+# GOES — host + dataset ID matrix, tried in order
+#
+# Each entry is (host, dataset_id). All four combinations are attempted
+# before the pipeline declares GOES unavailable for this run.
+#
+# noaacwBLENDEDsstDLDaily  — Day+Night diurnal-corrected (primary)
+#   Sources: GOES-18, GOES-19 ABI, Himawari-9 AHI, METOP-B/C AVHRR,
+#            Meteosat-9/10 SEVIRI, NOAA-20 VIIRS, NOAA-21 VIIRS
+#   Advantage: broadest sensor fusion; still valid when one geo source lags
+#
+# noaacwBLENDEDsstDaily    — Night-only analysis (secondary)
+#   Sources: polar orbiters + geo IR (nighttime only)
+#   Advantage: longer reanalysis record (2002-present); may be served when
+#              the DL variant endpoint returns 502
+#
+# Hosts tried in the same order as MUR: noaa.gov first, pfeg fallback.
+# ---------------------------------------------------------------------------
+GOES_CANDIDATES = [
+    {"host": ERDDAP_HOST_CW,   "dataset_id": "noaacwBLENDEDsstDLDaily", "var": "analysed_sst", "stride": 2, "units": "C"},
+    {"host": ERDDAP_HOST_CW,   "dataset_id": "noaacwBLENDEDsstDaily",   "var": "analysed_sst", "stride": 2, "units": "C"},
+    {"host": ERDDAP_HOST_PFEG, "dataset_id": "noaacwBLENDEDsstDLDaily", "var": "analysed_sst", "stride": 2, "units": "C"},
+    {"host": ERDDAP_HOST_PFEG, "dataset_id": "noaacwBLENDEDsstDaily",   "var": "analysed_sst", "stride": 2, "units": "C"},
+]
+GOES_LOOKBACK_DAYS = 4   # try today and 3 prior days per candidate
 
 
 # =========================================================
@@ -213,18 +256,21 @@ VIIRS_BASE_CANDIDATES = [
     "https://coastwatch.noaa.gov/pub/socd/mecb/coastwatch/viirs/nrt",
 ]
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
-VIIRS_HOURS_BACK = 26
 
-# Pass center times in UTC (hour, minute) for Mid-Atlantic (~36N, 75.5W).
-# Night center confirmed from CI logs 2026-04-22.
-# Day center calculated from orbital mechanics (1:30pm local = UTC-5).
-VIIRS_PASS_CENTERS_UTC = [
-    ( 6, 10),   # night descending — confirmed
-    (18, 33),   # day ascending    — calculated
-]
-# ±minutes around each center. 20 min = 5 granules per pass.
-# Increase to 30 if passes are being missed.
-VIIRS_PASS_CENTER_WINDOW_MIN = 20
+# ---------------------------------------------------------------------------
+# 48-hour hourly window strategy
+#
+# One ±VIIRS_WINDOW_HALF_MIN window is generated per UTC hour for the past
+# VIIRS_HOURS_BACK hours (48 windows total). This replaces the previous
+# 2-window pass-center approach, which missed real swaths when overpass
+# timing drifted outside the ±20 min envelope.
+#
+# Most hourly slots will have no swath over the bbox — those are cheap
+# directory-listing misses logged as "outside windows". Slots that do
+# land produce full pass CSVs. NRT server retention is ~72h; 48h is safe.
+# ---------------------------------------------------------------------------
+VIIRS_HOURS_BACK     = 48   # lookback depth — do not exceed ~60 (NRT retention limit)
+VIIRS_WINDOW_HALF_MIN = 10  # ±minutes per hourly bucket
 
 
 # =========================================================
@@ -402,27 +448,43 @@ def fetch_mur():
 
 
 # =========================================================
-# GOES — BLENDED DAILY COMPOSITE
+# GOES — BLENDED DAILY COMPOSITE  (4-candidate fallback matrix)
 # =========================================================
 def fetch_goes():
+    """
+    Try GOES_LOOKBACK_DAYS dates × GOES_CANDIDATES (host + dataset_id pairs).
+    Stops at the first successful write. Logs each attempt clearly so CI
+    output shows exactly which host/dataset combination succeeded or failed.
+    """
     print("\n── GOES-19 geo-polar blended daily composite ──")
-    for i in range(0, 4):
+    print(f"  Candidates: {len(GOES_CANDIDATES)} (2 hosts × 2 dataset IDs)")
+
+    for i in range(GOES_LOOKBACK_DAYS):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
-        if os.path.exists(os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}.csv")):
+        out_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
+
+        if os.path.exists(out_path + ".csv"):
             print(f"  ✓ GOES composite {stamp} (cached)")
             return
-        try:
-            print(f"  GOES {stamp} … ", end="", flush=True)
-            df = fetch_one_day_erddap(GOES_CFG, time_iso, f"GOES {stamp}")
-            print(f"  ✓ Geo-polar Blended {ts:%Y-%m-%d}")
-            write_csv(df, os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}"),
-                      f"GOES composite {stamp}")
-            return
-        except Exception as e:
-            print(f"✗ {type(e).__name__}: {str(e)[:80]}")
-    print("  ✗ GOES: no recent data available.")
+
+        for cfg in GOES_CANDIDATES:
+            host_short = _host_of(cfg["host"]).split(".")[1]  # "noaa" or "pfeg"
+            label      = f"GOES {stamp} [{host_short}/{cfg['dataset_id']}]"
+            if _host_of(cfg["host"]) in _host_blacklisted:
+                print(f"  {label} … skipped (host blacklisted)")
+                continue
+            try:
+                print(f"  {label} … ", end="", flush=True)
+                df = fetch_one_day_erddap(cfg, time_iso, label)
+                print(f"✓")
+                write_csv(df, out_path, label)
+                return   # success — stop trying candidates for this date
+            except Exception as e:
+                print(f"✗ {type(e).__name__}: {str(e)[:80]}")
+
+    print("  ✗ GOES: all candidates exhausted — no recent data available.")
 
 
 # =========================================================
@@ -463,22 +525,24 @@ def _granule_time(filename):
     return datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
 
 
-def _build_target_windows(now_utc):
-    cutoff  = now_utc - timedelta(hours=VIIRS_HOURS_BACK)
-    half    = timedelta(minutes=VIIRS_PASS_CENTER_WINDOW_MIN)
-    seen    = set()
-    windows = []
-    for day_offset in range(3):
-        base_date = (now_utc - timedelta(days=day_offset)).date()
-        for (h, m) in VIIRS_PASS_CENTERS_UTC:
-            center  = datetime(base_date.year, base_date.month, base_date.day,
-                               h, m, 0, tzinfo=timezone.utc)
-            w_start = center - half
-            w_end   = center + half
-            if w_end >= cutoff and w_start <= now_utc and w_start not in seen:
-                seen.add(w_start)
-                windows.append((w_start, w_end, f"{h:02d}{m:02d}UTC"))
-    return sorted(windows)
+def _build_target_windows(now_utc: datetime) -> list[tuple[datetime, datetime]]:
+    """
+    Build one ±VIIRS_WINDOW_HALF_MIN window centered on each UTC hour
+    for the past VIIRS_HOURS_BACK hours (48 windows by default).
+
+    Windows are ordered newest-first so log output reads chronologically
+    when the pipeline iterates forward through the list.
+
+    Each window is a (start, end) tuple of timezone-aware datetimes.
+    """
+    half    = timedelta(minutes=VIIRS_WINDOW_HALF_MIN)
+    # Snap to top of current hour so windows align cleanly
+    anchor  = now_utc.replace(minute=0, second=0, microsecond=0)
+    return [
+        (anchor - timedelta(hours=h) - half,
+         anchor - timedelta(hours=h) + half)
+        for h in range(VIIRS_HOURS_BACK)
+    ]
 
 
 def _fetch_viirs_granule(base, platform, year, doy, filename):
@@ -562,9 +626,7 @@ def fetch_viirs_passes():
         print("\n── VIIRS multi-pass ──\n  skipped (netCDF4 not installed)")
         return
 
-    centers = [f"{h:02d}:{m:02d} UTC" for h, m in VIIRS_PASS_CENTERS_UTC]
     print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──")
-    print(f"  Pass centers: {', '.join(centers)}  ±{VIIRS_PASS_CENTER_WINDOW_MIN} min")
 
     try:
         live_base = _probe_viirs_base()
@@ -575,16 +637,13 @@ def fetch_viirs_passes():
     now_utc = datetime.now(timezone.utc)
     windows = _build_target_windows(now_utc)
 
-    if not windows:
-        print("  ⚠ No pass windows fall within the lookback period.")
-        return
+    print(f"  Hourly windows : {len(windows)}")
+    print(f"  Window range   : {windows[-1][0]:%Y-%m-%d %H:%MZ} → {windows[0][1]:%Y-%m-%d %H:%MZ}")
+    print(f"  Half-width     : ±{VIIRS_WINDOW_HALF_MIN} min per bucket")
 
-    print(f"  Target windows this run: {len(windows)}")
-    for w_start, w_end, lbl in windows:
-        print(f"    {w_start:%Y-%m-%d %H:%M} – {w_end:%H:%M} UTC  ({lbl})")
-
-    day_pairs = set()
-    for w_start, w_end, _ in windows:
+    # Collect every (year, doy) pair spanned by the windows
+    day_pairs: set[tuple[int, int]] = set()
+    for w_start, w_end in windows:
         for dt in (w_start, w_end):
             day_pairs.add((dt.year, dt.timetuple().tm_yday))
 
@@ -602,7 +661,7 @@ def fetch_viirs_passes():
                     continue
 
                 in_window = any(w_start <= gran_time <= w_end
-                                for w_start, w_end, _ in windows)
+                                for w_start, w_end in windows)
                 if not in_window:
                     total_filtered += 1
                     continue
@@ -627,8 +686,8 @@ def fetch_viirs_passes():
     print(f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
           f" {total_miss} miss/cloud, {total_filtered} outside windows.")
     if total_new == 0 and total_skipped == 0:
-        print("  ⚠ No VIIRS data produced. Adjust VIIRS_PASS_CENTERS_UTC"
-              " or increase VIIRS_PASS_CENTER_WINDOW_MIN.")
+        print("  ⚠ No VIIRS data produced. Check NRT server availability"
+              " or increase VIIRS_HOURS_BACK.")
 
 
 # =========================================================
