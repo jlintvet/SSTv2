@@ -86,8 +86,8 @@ TARGET_DATE = (
     else datetime.date.today()
 )
 
-# Output directory — same folder as everything else
-OUTPUT_DIR = Path(__file__).resolve().parent / "DailySST"
+# Output directory — matches GitHub repo path DailySSTData/VIIRS/Bundled/
+OUTPUT_DIR = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Bundled"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TIMEOUT = 60   # seconds per THREDDS/OPeNDAP request
