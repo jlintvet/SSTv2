@@ -139,7 +139,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
         resp = SESSION.get(catalog_url, timeout=30)
         resp.raise_for_status()
         matches = re.findall(
-            r"gridN20VIIRSSCIENCEL3UWW00/[^\"]+\.nc", resp.text
+            r"gridN20VIIRSNRTL3UWW00/[^\"]+\.nc", resp.text
         )
         if not matches:
             log.info("  No .nc files in THREDDS catalog for %s (DOY %03d)", date, doy)
