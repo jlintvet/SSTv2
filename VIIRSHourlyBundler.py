@@ -116,11 +116,11 @@ SESSION = _make_session()
 # ─────────────────────────────────────────────────────────────────────────────
 THREDDS_CATALOG = (
     "https://coastwatch.noaa.gov/thredds/catalog"
-    "/gridN20VIIRSSCIENCEL3UWW00/{year}/{doy:03d}/catalog.xml"
+    "/gridN20VIIRSNRTL3UWW00/{year}/{doy:03d}/catalog.xml"
 )
 THREDDS_OPENDAP = (
     "https://coastwatch.noaa.gov/thredds/dodsC"
-    "/gridN20VIIRSSCIENCEL3UWW00/{year}/{doy:03d}/{nc_name}"
+    "/gridN20VIIRSNRTL3UWW00/{year}/{doy:03d}/{nc_name}"
 )
 
 
