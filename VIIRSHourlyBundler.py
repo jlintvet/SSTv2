@@ -212,7 +212,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 for dim in list(ql.dims):
                     if dim not in (lat_name, lon_name) and ql.sizes[dim] == 1:
                         ql = ql.isel({dim: 0})
-                da = da.where(ql >= 3)
+                da = da.where(ql >= 4)
 
             lats = da[lat_name].values.tolist()
             lons = da[lon_name].values.tolist()
