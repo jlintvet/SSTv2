@@ -167,16 +167,34 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 ds.close()
                 continue
 
-            # Subset to bbox
-            ds = ds.sel({
-                lat_name: slice(BBOX["lat_min"], BBOX["lat_max"]),
-                lon_name: slice(BBOX["lon_min"], BBOX["lon_max"]),
-            })
+            # Subset to bbox — detect coordinate direction so slice order is correct.
+            # ACSPO L3U stores lat descending (90 → -90); ascending is also possible.
+            lat_vals = ds[lat_name].values
+            lat_asc  = float(lat_vals[0]) < float(lat_vals[-1])
+            lat_sl   = (slice(BBOX["lat_min"], BBOX["lat_max"]) if lat_asc
+                        else slice(BBOX["lat_max"], BBOX["lat_min"]))
+            lon_vals = ds[lon_name].values
+            lon_asc  = float(lon_vals[0]) < float(lon_vals[-1])
+            lon_sl   = (slice(BBOX["lon_min"], BBOX["lon_max"]) if lon_asc
+                        else slice(BBOX["lon_max"], BBOX["lon_min"]))
+            ds = ds.sel({lat_name: lat_sl, lon_name: lon_sl})
 
-            # Find SST variable
-            sst_var = next(
-                (v for v in ds.data_vars if "sst" in v.lower()), None
+            # Find SST variable.
+            # GHRSST L3U standard name is 'sea_surface_temperature'; fall back
+            # to other known names.  Explicitly exclude 'sst_dtime' (time offset).
+            SST_NAMES = (
+                "sea_surface_temperature", "analysed_sst",
+                "sst_subskin", "sst_skin", "sst",
             )
+            sst_var = next((v for v in SST_NAMES if v in ds.data_vars), None)
+            if sst_var is None:
+                sst_var = next(
+                    (v for v in ds.data_vars
+                     if "sst" in v.lower()
+                     and "dtime" not in v.lower()
+                     and "flag"  not in v.lower()),
+                    None,
+                )
             if sst_var is None:
                 log.warning("    %02d:00Z — no SST variable, skipping", hour)
                 ds.close()
@@ -187,6 +205,14 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
             for dim in list(da.dims):
                 if dim not in (lat_name, lon_name) and da.sizes[dim] == 1:
                     da = da.isel({dim: 0})
+
+            # Apply quality-level mask if present (ACSPO QL 0–5; keep ≥ 3)
+            if "quality_level" in ds.data_vars:
+                ql = ds["quality_level"].squeeze()
+                for dim in list(ql.dims):
+                    if dim not in (lat_name, lon_name) and ql.sizes[dim] == 1:
+                        ql = ql.isel({dim: 0})
+                da = da.where(ql >= 3)
 
             lats = da[lat_name].values.tolist()
             lons = da[lon_name].values.tolist()
