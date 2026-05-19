@@ -29,9 +29,7 @@ The 200 fm (1200 ft) contour is flagged with shelf_break=true in properties
 for special UI treatment (bolder stroke, permanent label, etc.).
 Outputs into DailySST/
   bathymetry_contours.json  — GeoJSON LineStrings with depth_ft + depth_fathoms
-  bathymetry_grid.json      — Raw 2D depth grid (ft only, int-rounded) for
-                              feature detection. Consumers derive fathoms as
-                              depth_ft / 6.
+  bathymetry_grid.json      — Raw 2D depth grid for feature detection
   noaa_coastline.json       — GeoJSON LineStrings (Natural Earth 10m)
   landmask.json             — GeoJSON Polygons / MultiPolygons (Natural Earth 10m)
   wrecks.json               — GeoJSON FeatureCollection from source GPX files
@@ -60,13 +58,6 @@ BATHY_STRIDE = 1
 # Re-fetch bathymetry only if output files are older than this many days.
 # Bathymetry updates ~annually; 30 days is a safe default for CI runs.
 CACHE_DAYS = 30
-# Bump this whenever write_bathymetry_grid() changes its output schema.
-# _bathy_cache_valid() invalidates any cached bathymetry_grid.json whose
-# meta.schema_version does not match this value, forcing a re-fetch even
-# if the file is newer than CACHE_DAYS.
-#   v1 = depth_ft (1 decimal) + depth_fathoms (2 decimal) grids
-#   v2 = depth_ft only, int-rounded; fathoms derived client-side
-BATHY_GRID_SCHEMA_VERSION = 2
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent / "DailySST"
 TIMEOUT    = 300   # seconds — stride=1 downloads are larger; give extra headroom
 logging.basicConfig(
@@ -107,54 +98,21 @@ NE_LAND_URL      = f"{NE_BASE}/ne_10m_land.geojson"
 CONTOUR_DEPTHS_FT = [60, 120, 180, 300, 600, 1200, 1800, 3000, 6000]
 SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ---------------------------------------------------------------------------
-# ERDDAP bathymetry sources — tried in order until one succeeds.
-#
-# Each entry is a tuple of:
-#   (base_url, variable_name, lon_convention)
-#
-# lon_convention is either "neg180" (standard -180→180) or "pos360" (0→360).
-# Servers that use 0–360 require the bbox longitudes to be remapped before
-# building the query URL.  OceanWatch PIFSC and some NCEI instances use 0–360.
-#
-# Source notes (verified April 2026):
-#   coastwatch.pfeg.noaa.gov  — 403s on GitHub Actions shared IPs (rate/UA block)
-#   oceanwatch.pifsc.noaa.gov — confirmed live; uses 0–360 lon convention
-#   ncei.noaa.gov/erddap      — confirmed live; three ETOPO resolutions available
+# ERDDAP bathymetry sources — tried in order until one succeeds
 # ---------------------------------------------------------------------------
 BATHY_SOURCES = [
-    # Primary — PFEG CoastWatch (best coverage; 403s on GHA shared IPs)
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation", "neg180"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",   "z",         "neg180"),
-    # Secondary — OceanWatch PIFSC (0–360 lon convention — remapped automatically)
-    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z",         "pos360"),
-    # Tertiary — NCEI ERDDAP (three resolutions; 15s first, coarser as fallback)
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",          "z",         "neg180"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_30s.csvp",          "z",         "neg180"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",          "z",         "neg180"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),
+    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z"),
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",           "z"),
 ]
-
-# ---------------------------------------------------------------------------
-# Sanity limits
-# ---------------------------------------------------------------------------
-# Mariana Trench is ~35,876 ft — anything deeper is a fill value leak.
-MAX_OCEAN_DEPTH_FT  = 36_000
-# ERDDAP fill / missing-value sentinels (meters). Any elevation below this
-# threshold is treated as "no data" rather than a real depth.
-ERDDAP_FILL_THRESHOLD_M = -10_000
-
 # ---------------------------------------------------------------------------
 # HTTP session with retry
 # ---------------------------------------------------------------------------
-USER_AGENT = "SSTv2/1.0 (+https://github.com/jlintvet/SSTv2) python-requests"
 def _make_session() -> requests.Session:
     s = requests.Session()
     retry = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
     s.mount("https://", HTTPAdapter(max_retries=retry))
     s.mount("http://",  HTTPAdapter(max_retries=retry))
-    s.headers.update({
-        "User-Agent": USER_AGENT,
-        "Accept":     "text/csv, text/plain, */*",
-    })
     return s
 # ---------------------------------------------------------------------------
 # Cache validation
@@ -174,24 +132,7 @@ def _bathy_cache_valid() -> bool:
             log.info("Cache stale: %s is %d days old (limit: %d) — will re-fetch.",
                      path.name, (datetime.datetime.now() - mtime).days, CACHE_DAYS)
             return False
-    grid_path = OUTPUT_DIR / "bathymetry_grid.json"
-    try:
-        with open(grid_path, "r", encoding="utf-8") as fh:
-            cached_meta = json.load(fh).get("meta", {})
-        cached_version = cached_meta.get("schema_version")
-        if cached_version != BATHY_GRID_SCHEMA_VERSION:
-            log.info(
-                "Cache schema mismatch: %s is schema v%s, current v%d — will re-fetch.",
-                grid_path.name, cached_version, BATHY_GRID_SCHEMA_VERSION,
-            )
-            return False
-    except (OSError, ValueError) as exc:
-        log.info("Cache unreadable (%s) — will re-fetch.", exc)
-        return False
-    log.info(
-        "Bathymetry cache is valid (files < %d days old, schema v%d) — skipping fetch.",
-        CACHE_DAYS, BATHY_GRID_SCHEMA_VERSION,
-    )
+    log.info("Bathymetry cache is valid (files < %d days old) — skipping fetch.", CACHE_DAYS)
     return True
 def _static_cache_valid(path: pathlib.Path) -> bool:
     if path.exists():
@@ -202,13 +143,29 @@ def _static_cache_valid(path: pathlib.Path) -> bool:
 # Wrecks — GPX parsing and JSON output
 # ---------------------------------------------------------------------------
 _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
+
 def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
+    """
+    Parse a GPX 1.1 file and return a list of GeoJSON-style feature dicts.
+
+    Handles both full-namespace GPX (xmlns="http://www.topografix.com/GPX/1/1")
+    and bare/namespace-stripped GPX (as produced by the clean step).
+
+    Properties extracted per waypoint:
+      name   — <name> text
+      symbol — <sym> text (e.g. "Rocks", "Wreck")
+      fs_id  — ID parsed from <desc><![CDATA[ID#XXXXXXXX]]></desc>, or None
+      region — the region label passed in
+      source — WRECK_SOURCE_LABEL
+    """
     try:
         tree = ET.parse(path)
         root = tree.getroot()
     except ET.ParseError as e:
         log.warning("  Could not parse %s: %s", path.name, e)
         return []
+
+    # Support both namespaced and bare GPX tags
     tag = root.tag
     if tag.startswith("{"):
         ns_uri = tag[1:tag.index("}")]
@@ -223,6 +180,7 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
         name_tag = "name"
         sym_tag  = "sym"
         desc_tag = "desc"
+
     features = []
     for wpt in root.findall(wpt_tag, ns):
         try:
@@ -230,17 +188,22 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
             lon = float(wpt.get("lon"))
         except (TypeError, ValueError):
             continue
+
         name_el = wpt.find(name_tag, ns)
         sym_el  = wpt.find(sym_tag,  ns)
         desc_el = wpt.find(desc_tag, ns)
+
         name   = name_el.text.strip() if name_el is not None and name_el.text else ""
         symbol = sym_el.text.strip()  if sym_el  is not None and sym_el.text  else "Rocks"
+
+        # Extract Fishing Status ID from CDATA description, e.g. "ID#377565"
         fs_id = None
         if desc_el is not None and desc_el.text:
             import re
             m = re.search(r"ID#(\d+)", desc_el.text)
             if m:
                 fs_id = m.group(1)
+
         feature = {
             "type": "Feature",
             "geometry": {
@@ -256,12 +219,47 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
         }
         if fs_id is not None:
             feature["properties"]["fs_id"] = fs_id
+
         features.append(feature)
+
     return features
+
+
 def write_wrecks_json() -> None:
+    """
+    Parse all source GPX files defined in WRECK_GPX_FILES, combine into a
+    single GeoJSON FeatureCollection, and write DailySST/wrecks.json.
+
+    Output schema:
+    {
+      "type": "FeatureCollection",
+      "metadata": {
+        "source": "Fishing Status (fishingstatus.com)",
+        "gpx_files": [...],
+        "regions":   [...],
+        "region":    { lat/lon bbox },
+        "symbols":   { "Wreck": "...", "Rocks": "..." }
+      },
+      "feature_count": N,
+      "features": [
+        {
+          "type": "Feature",
+          "geometry": { "type": "Point", "coordinates": [lon, lat] },
+          "properties": {
+            "name":   "...",
+            "symbol": "Rocks" | "Wreck",
+            "fs_id":  "377565",   // omitted if not present in GPX
+            "region": "HatterasNC",
+            "source": "Fishing Status (fishingstatus.com)"
+          }
+        }, ...
+      ]
+    }
+    """
     log.info("Building wrecks.json from %d GPX file(s) ...", len(WRECK_GPX_FILES))
     all_features   = []
     gpx_files_used = []
+
     for gpx_name, region in WRECK_GPX_FILES.items():
         gpx_path = OUTPUT_DIR / gpx_name
         if not gpx_path.exists():
@@ -271,12 +269,15 @@ def write_wrecks_json() -> None:
         log.info("  %-40s → %d waypoints  (region: %s)", gpx_name, len(features), region)
         all_features.extend(features)
         gpx_files_used.append(gpx_name)
+
     if not all_features:
         log.warning("No waypoints found — wrecks.json not written.")
         return
-    regions_present = list(dict.fromkeys(
+
+    regions_present = list(dict.fromkeys(          # preserve insertion order, dedupe
         f["properties"]["region"] for f in all_features
     ))
+
     fc = {
         "type": "FeatureCollection",
         "metadata": {
@@ -295,11 +296,13 @@ def write_wrecks_json() -> None:
         "feature_count": len(all_features),
         "features":      all_features,
     }
+
     dest = OUTPUT_DIR / "wrecks.json"
     tmp  = dest.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(fc, fh, separators=(",", ":"))
     tmp.rename(dest)
+
     size_kb = dest.stat().st_size / 1024
     log.info("wrecks.json written: %d features across %d region(s)  (%.1f KB)",
              len(all_features), len(regions_present), size_kb)
@@ -317,19 +320,6 @@ def _parse_erddap_csvp(text: str) -> list[dict]:
             elev = float(row[2])
         except (IndexError, ValueError):
             continue
-        # ------------------------------------------------------------------
-        # Guard: reject ERDDAP fill / missing-value sentinels BEFORE the
-        # sign check. Common ERDDAP fill values (meters):
-        #   -9.99e34, -9.99e33, 9.96921e36, -32767, -9999
-        # The threshold -10,000 m is well below any real ocean depth
-        # (~-11,034 m at Mariana Trench), so this is lossless.
-        # NaN must be checked explicitly because NaN >= 0 is False, which
-        # would cause it to fall through to the depth calculation.
-        # ------------------------------------------------------------------
-        if math.isnan(elev) or elev < ERDDAP_FILL_THRESHOLD_M:
-            data.append({"lat": lat, "lon": lon, "depth_ft": None, "depth_fathoms": None})
-            continue
-
         if elev >= 0:
             data.append({"lat": lat, "lon": lon, "depth_ft": None, "depth_fathoms": None})
         else:
@@ -340,228 +330,32 @@ def _parse_erddap_csvp(text: str) -> list[dict]:
                          "depth_ft": depth_ft, "depth_fathoms": depth_fathoms})
     return data
 def _try_erddap_source(session: requests.Session, base_url: str,
-                       var: str, stride: int,
-                       lon_convention: str = "neg180") -> list[dict]:
-    """
-    Build and fire one ERDDAP griddap CSV request.
-
-    lon_convention: "neg180" — use lons as-is (-180 to 180)
-                    "pos360" — remap negative lons to 0-360 range before
-                               querying, then remap results back to -180-180.
-                               e.g. LON_MIN -78.89 -> 281.11 in the URL.
-    """
-    if lon_convention == "pos360":
-        lon_min_q = LON_MIN + 360.0 if LON_MIN < 0 else LON_MIN
-        lon_max_q = LON_MAX + 360.0 if LON_MAX < 0 else LON_MAX
-    else:
-        lon_min_q = LON_MIN
-        lon_max_q = LON_MAX
-
+                       var: str, stride: int) -> list[dict]:
     url = (
         f"{base_url}"
         f"?{var}"
         f"[({LAT_MIN}):{stride}:({LAT_MAX})]"
-        f"[({lon_min_q}):{stride}:({lon_max_q})]"
+        f"[({LON_MIN}):{stride}:({LON_MAX})]"
     )
-    log.info("  Trying %s (lon=%s) ...", base_url, lon_convention)
+    log.info("  Trying %s ...", base_url)
     r = session.get(url, timeout=TIMEOUT)
     r.raise_for_status()
-    data = _parse_erddap_csvp(r.text)
-    # Remap 0-360 longitudes back to -180-180 so the rest of the pipeline
-    # (grid builder, contour generator, bbox clipping) works uniformly.
-    if lon_convention == "pos360":
-        for pt in data:
-            if pt["lon"] > 180.0:
-                pt["lon"] -= 360.0
-    return data
+    return _parse_erddap_csvp(r.text)
 def _fetch_bathymetry(session: requests.Session) -> list[dict]:
-    from requests.exceptions import (
-        ConnectionError as ReqConnectionError,
-        ChunkedEncodingError,
-        ReadTimeout,
-    )
-    stride_ladder = list(dict.fromkeys([
-        BATHY_STRIDE,
-        max(BATHY_STRIDE * 2, 2),
-        max(BATHY_STRIDE * 4, 4),
-    ]))
-    TRANSIENT_EXC = (ReqConnectionError, ChunkedEncodingError, ReadTimeout)
+    log.info("Fetching bathymetry  (stride=%d, ~%.0f m resolution) ...",
+             BATHY_STRIDE, BATHY_STRIDE * 450)
     last_err = None
-    for base_url, var, lon_convention in BATHY_SOURCES:
-        for stride in stride_ladder:
-            log.info("Fetching bathymetry from %s  (stride=%d, ~%.0f m resolution) ...",
-                     base_url, stride, stride * 450)
-            try:
-                data = _try_erddap_source(session, base_url, var, stride, lon_convention)
-                if data:
-                    ocean = sum(1 for r in data if r["depth_ft"] is not None)
-                    log.info("  Got %d points (%d ocean) from %s at stride=%d",
-                             len(data), ocean, base_url, stride)
-                    return data
-            except TRANSIENT_EXC as exc:
-                log.warning("  Transient failure at stride=%d (%s) — will retry coarser.",
-                            stride, type(exc).__name__)
-                last_err = exc
-                continue
-            except requests.HTTPError as exc:
-                status = exc.response.status_code if exc.response is not None else None
-                if status == 403:
-                    log.warning(
-                        "  Source rejected the request at stride=%d (HTTP 403 — "
-                        "likely UA or IP policy block at %s). Check the "
-                        "USER_AGENT header and whether this runner IP is banned. "
-                        "Skipping to next source.", stride, base_url,
-                    )
-                else:
-                    log.warning("  Source failed (%s): HTTP %s — skipping to next source.",
-                                base_url, status)
-                last_err = exc
-                break
-            except Exception as exc:
-                log.warning("  Source failed (%s): %s — skipping to next source.",
-                            base_url, exc)
-                last_err = exc
-                break
+    for base_url, var in BATHY_SOURCES:
+        try:
+            data = _try_erddap_source(session, base_url, var, BATHY_STRIDE)
+            if data:
+                ocean = sum(1 for r in data if r["depth_ft"] is not None)
+                log.info("  Got %d points (%d ocean) from %s", len(data), ocean, base_url)
+                return data
+        except Exception as exc:
+            log.warning("  Source failed (%s): %s", base_url, exc)
+            last_err = exc
     raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
-
-
-# ---------------------------------------------------------------------------
-# DIAGNOSTIC: run immediately after _fetch_bathymetry() returns
-# ---------------------------------------------------------------------------
-def _run_depth_diagnostics(rows: list[dict]) -> None:
-    """
-    Print a concise depth-distribution report and flag any points that look
-    like ERDDAP fill-value leaks.  Run this BEFORE building the grid so you
-    can see anomalies in the raw source data.
-
-    Reads:
-      rows  — list of dicts from _parse_erddap_csvp / _fetch_bathymetry
-              each dict has keys: lat, lon, depth_ft (float | None)
-
-    Interpretation guide
-    --------------------
-    • max depth > 36,000 ft  →  fill-value leak in _parse_erddap_csvp
-    • Suspicious lons list   →  those longitude columns are likely causing
-                                the vertical tower artifact
-    • p99 depth              →  if far above expected (~15,000 ft for this
-                                Mid-Atlantic bbox), data quality is suspect
-    """
-    log.info("=" * 60)
-    log.info("DIAGNOSTIC — raw depth statistics (before grid build)")
-    log.info("=" * 60)
-
-    ocean_rows = [r for r in rows if r["depth_ft"] is not None]
-    land_rows  = [r for r in rows if r["depth_ft"] is None]
-
-    log.info("Total points : %d", len(rows))
-    log.info("Ocean points : %d  (depth_ft is not None)", len(ocean_rows))
-    log.info("Land / null  : %d  (depth_ft is None)", len(land_rows))
-
-    if not ocean_rows:
-        log.warning("DIAGNOSTIC — no ocean points found at all. Check bbox / source URL.")
-        log.info("=" * 60)
-        return
-
-    depths = sorted(r["depth_ft"] for r in ocean_rows)
-    n      = len(depths)
-
-    def pct(p):
-        idx = min(int(p / 100 * n), n - 1)
-        return depths[idx]
-
-    log.info("Depth distribution (feet below surface):")
-    log.info("  min  : %10.1f ft", depths[0])
-    log.info("  p01  : %10.1f ft", pct(1))
-    log.info("  p10  : %10.1f ft", pct(10))
-    log.info("  p25  : %10.1f ft", pct(25))
-    log.info("  p50  : %10.1f ft", pct(50))
-    log.info("  p75  : %10.1f ft", pct(75))
-    log.info("  p90  : %10.1f ft", pct(90))
-    log.info("  p99  : %10.1f ft", pct(99))
-    log.info("  max  : %10.1f ft", depths[-1])
-
-    # ── Top-10 deepest points ────────────────────────────────────────────
-    log.info("Top-10 deepest points (most suspicious):")
-    top10 = sorted(ocean_rows, key=lambda r: r["depth_ft"], reverse=True)[:10]
-    for i, pt in enumerate(top10, 1):
-        flag = "  *** FILL VALUE LEAK? ***" if pt["depth_ft"] > MAX_OCEAN_DEPTH_FT else ""
-        log.info("  %2d. lat=%8.4f  lon=%9.4f  depth=%10.1f ft%s",
-                 i, pt["lat"], pt["lon"], pt["depth_ft"], flag)
-
-    # ── Fill-value leak check ────────────────────────────────────────────
-    suspect = [r for r in ocean_rows if r["depth_ft"] > MAX_OCEAN_DEPTH_FT]
-    if suspect:
-        log.error(
-            "DIAGNOSTIC — %d point(s) exceed MAX_OCEAN_DEPTH_FT (%d ft). "
-            "These are almost certainly ERDDAP fill values that slipped through "
-            "_parse_erddap_csvp(). Fix: add fill-value guard in that function.",
-            len(suspect), MAX_OCEAN_DEPTH_FT,
-        )
-    else:
-        log.info("Fill-value check PASSED — no points exceed %d ft.", MAX_OCEAN_DEPTH_FT)
-
-    # ── Longitude-column analysis (tower artifact detector) ─────────────
-    # Group depths by rounded longitude. Any lon column whose max depth
-    # is > 3× the global median is flagged as a likely artifact column.
-    from collections import defaultdict
-    col_max: dict[float, float] = defaultdict(float)
-    for r in ocean_rows:
-        lon_key = round(r["lon"], 4)
-        if r["depth_ft"] > col_max[lon_key]:
-            col_max[lon_key] = r["depth_ft"]
-
-    median_depth = pct(50)
-    threshold    = max(median_depth * 3.0, 5000.0)   # never flag shallower than 5000 ft
-    suspicious_lons = sorted(
-        [(lon, mx) for lon, mx in col_max.items() if mx > threshold],
-        key=lambda x: x[1], reverse=True,
-    )
-    if suspicious_lons:
-        log.warning(
-            "DIAGNOSTIC — %d longitude column(s) have max depth > %.0f ft "
-            "(3× median %.0f ft). These columns may be causing the vertical "
-            "tower artifact:",
-            len(suspicious_lons), threshold, median_depth,
-        )
-        for lon, mx in suspicious_lons[:20]:   # cap at 20 lines
-            log.warning("    lon=%9.4f  max_depth=%10.1f ft", lon, mx)
-    else:
-        log.info(
-            "Tower-artifact check PASSED — no longitude column has max depth "
-            "> %.0f ft (3× median %.0f ft).",
-            threshold, median_depth,
-        )
-
-    # ── Latitude-row analysis (horizontal band artifact detector) ────────
-    row_max: dict[float, float] = defaultdict(float)
-    for r in ocean_rows:
-        lat_key = round(r["lat"], 4)
-        if r["depth_ft"] > row_max[lat_key]:
-            row_max[lat_key] = r["depth_ft"]
-
-    suspicious_lats = sorted(
-        [(lat, mx) for lat, mx in row_max.items() if mx > threshold],
-        key=lambda x: x[1], reverse=True,
-    )
-    if suspicious_lats:
-        log.warning(
-            "DIAGNOSTIC — %d latitude row(s) have max depth > %.0f ft. "
-            "Could indicate a horizontal band artifact:",
-            len(suspicious_lats), threshold,
-        )
-        for lat, mx in suspicious_lats[:20]:
-            log.warning("    lat=%8.4f  max_depth=%10.1f ft", lat, mx)
-    else:
-        log.info(
-            "Latitude-row check PASSED — no latitude row has max depth "
-            "> %.0f ft.", threshold,
-        )
-
-    log.info("=" * 60)
-    log.info("DIAGNOSTIC COMPLETE")
-    log.info("=" * 60)
-
-
 # ---------------------------------------------------------------------------
 # Grid builder
 # ---------------------------------------------------------------------------
@@ -600,46 +394,6 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
             break
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
-
-
-# ---------------------------------------------------------------------------
-# Post-grid sanity check — catches any fill-value leak that survives to grid
-# ---------------------------------------------------------------------------
-def _sanity_check_grid(grid: list, lats: list, lons: list) -> list:
-    """
-    Scan each longitude column in the assembled grid. Any column whose
-    maximum depth exceeds MAX_OCEAN_DEPTH_FT is zeroed out (set to NaN) so
-    the NaN-fill pass can interpolate over it on the next write cycle.
-
-    This is a last-resort safety net. If fill values were properly filtered
-    in _parse_erddap_csvp() this function should find nothing to fix.
-    """
-    suspect_cols = 0
-    for col_idx, lon in enumerate(lons):
-        col_vals = [
-            grid[r][col_idx]
-            for r in range(len(lats))
-            if grid[r][col_idx] is not None and not math.isnan(grid[r][col_idx])
-        ]
-        if col_vals and max(col_vals) > MAX_OCEAN_DEPTH_FT:
-            suspect_cols += 1
-            log.warning(
-                "Grid sanity: zeroing col lon=%.4f (max depth %.0f ft > limit %d ft)",
-                lon, max(col_vals), MAX_OCEAN_DEPTH_FT,
-            )
-            for r in range(len(lats)):
-                grid[r][col_idx] = math.nan
-    if suspect_cols:
-        log.warning(
-            "Grid sanity: zeroed %d column(s). "
-            "Root cause is likely a fill-value leak in _parse_erddap_csvp().",
-            suspect_cols,
-        )
-    else:
-        log.info("Grid sanity check passed — no columns exceeded %d ft.", MAX_OCEAN_DEPTH_FT)
-    return grid
-
-
 # ---------------------------------------------------------------------------
 # Chaikin corner-cutting smoothing
 # ---------------------------------------------------------------------------
@@ -706,19 +460,24 @@ def write_contours(lats: list, lons: list, grid: list) -> None:
     log.info("Contours written: %d features across %d depth levels  (%.1f KB)",
              len(features), len(CONTOUR_DEPTHS_FT), dest.stat().st_size / 1024)
 # ---------------------------------------------------------------------------
-# Bathymetry grid output (schema v2)
+# Bathymetry grid output
 # ---------------------------------------------------------------------------
 def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
     log.info("Writing bathymetry grid JSON ...")
-    grid_ft = []
+    grid_ft      = []
+    grid_fathoms = []
     for row in grid:
         ft_row = []
+        fm_row = []
         for cell in row:
             if math.isnan(cell):
                 ft_row.append(None)
+                fm_row.append(None)
             else:
-                ft_row.append(int(round(cell)))
+                ft_row.append(round(cell,        1))
+                fm_row.append(round(cell / 6.0,  2))
         grid_ft.append(ft_row)
+        grid_fathoms.append(fm_row)
     res_lat = round(lats[1] - lats[0], 6) if len(lats) > 1 else None
     res_lon = round(lons[1] - lons[0], 6) if len(lons) > 1 else None
     payload = {
@@ -727,7 +486,6 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
                                     .isoformat(timespec="seconds")
                                     .replace("+00:00", "Z")),
             "source":              "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
-            "schema_version":      BATHY_GRID_SCHEMA_VERSION,
             "stride":              BATHY_STRIDE,
             "res_lat_deg":         res_lat,
             "res_lon_deg":         res_lon,
@@ -738,16 +496,17 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
                 "lon_min": LON_MIN, "lon_max": LON_MAX,
             },
             "units": {
-                "depth_ft": "feet below surface, rounded to nearest integer (positive = deeper); null = land or no data",
+                "depth_ft":      "feet below surface (positive = deeper); null = land or no data",
+                "depth_fathoms": "fathoms (1 fm = 6 ft exactly); null = land or no data",
             },
-            "fathoms_note":        "Fathoms are not stored. Derive client-side: depth_fathoms = depth_ft / 6 (1 fathom = 6 ft exactly).",
-            "contour_depths_ft":   CONTOUR_DEPTHS_FT,
-            "shelf_break_ft":      SHELF_BREAK_FT,
-            "shelf_break_fathoms": int(SHELF_BREAK_FT / 6),
+            "contour_depths_ft":    CONTOUR_DEPTHS_FT,
+            "shelf_break_ft":       SHELF_BREAK_FT,
+            "shelf_break_fathoms":  int(SHELF_BREAK_FT / 6),
         },
-        "lats":     [round(v, 5) for v in lats],
-        "lons":     [round(v, 5) for v in lons],
-        "depth_ft": grid_ft,
+        "lats":          [round(v, 5) for v in lats],
+        "lons":          [round(v, 5) for v in lons],
+        "depth_ft":      grid_ft,
+        "depth_fathoms": grid_fathoms,
     }
     dest = OUTPUT_DIR / "bathymetry_grid.json"
     tmp  = dest.with_suffix(".tmp")
@@ -875,23 +634,9 @@ def main() -> None:
         log.info("Using cached bathymetry — skipping fetch.")
     else:
         rows = _fetch_bathymetry(session)
-
-        # ------------------------------------------------------------------
-        # DIAGNOSTIC — run immediately after fetch, before any grid work.
-        # Review the log output to identify fill-value leaks and artifact
-        # columns before they propagate into contours / grid JSON.
-        # Remove or comment out this call once the artifact is resolved.
-        # ------------------------------------------------------------------
-        _run_depth_diagnostics(rows)
-
         log.info("Building depth grid ...")
         lats, lons, grid = _build_grid(rows)
         log.info("Grid: %d lats × %d lons", len(lats), len(lons))
-
-        # Post-grid sanity check — zeroes out any column that still exceeds
-        # MAX_OCEAN_DEPTH_FT after grid assembly (last-resort guard).
-        grid = _sanity_check_grid(grid, lats, lons)
-
         write_contours(lats, lons, grid)
         write_bathymetry_grid(lats, lons, grid)
     # ── Coastline lines ─────────────────────────────────────────────────────
@@ -903,6 +648,7 @@ def main() -> None:
     if not _static_cache_valid(OUTPUT_DIR / "landmask.json"):
         write_land_mask(session)
     # ── Wrecks / fishing spots ───────────────────────────────────────────────
+    # Always rebuild — source GPX files can change between runs.
     log.info("=== Wrecks ===")
     write_wrecks_json()
     log.info("=== Done. ===")
