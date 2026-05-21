@@ -1,0 +1,122 @@
+{
+  "version": "1.1",
+  "updated": "2026-05-21",
+  "notes": "Edit parameters here and push to GitHub — no Python changes needed. Weights must sum to 1.0 per species.",
+  "species": {
+    "yellowfin": {
+      "display_name": "Yellowfin Tuna",
+      "color": "#f59e0b",
+      "enabled": true,
+      "sst_target_f": 73,
+      "sst_range_f": [68, 80],
+      "prefer_side": "warm",
+      "depth_range_ft": [300, 3000],
+      "depth_ideal_ft": [400, 1200],
+      "chl_range_mg_m3": [0.10, 0.60],
+      "kd490_max": 0.12,
+      "break_required": true,
+      "break_strength_min": "moderate",
+      "weights": {
+        "sst":   0.35,
+        "break": 0.30,
+        "depth": 0.20,
+        "chl":   0.10,
+        "color": 0.05
+      },
+      "min_zone_score": 0.60,
+      "notes": "Hard temperature breaks near canyon lips 300–1000 ft. Bait concentrations at chlorophyll edges. Blue water preferred but will follow breaks into transition zones. Peak season May–October Mid-Atlantic."
+    },
+    "mahi": {
+      "display_name": "Mahi-Mahi",
+      "color": "#10b981",
+      "enabled": true,
+      "sst_target_f": 80,
+      "sst_range_f": [76, 86],
+      "prefer_side": "warm",
+      "depth_range_ft": [100, 3000],
+      "depth_ideal_ft": [200, 1200],
+      "chl_range_mg_m3": [0.05, 0.40],
+      "kd490_max": 0.10,
+      "break_required": true,
+      "break_strength_min": "weak",
+      "weights": {
+        "sst":   0.30,
+        "break": 0.30,
+        "depth": 0.15,
+        "chl":   0.10,
+        "color": 0.15
+      },
+      "min_zone_score": 0.58,
+      "notes": "Warm side of color change lines. True blue water (kd490 < 0.10). Sargassum edges, floating debris. Pelagic — depth less critical than color break."
+    },
+    "wahoo": {
+      "display_name": "Wahoo",
+      "color": "#3b82f6",
+      "enabled": true,
+      "sst_target_f": 75,
+      "sst_range_f": [70, 82],
+      "prefer_side": "warm",
+      "depth_range_ft": [200, 1500],
+      "depth_ideal_ft": [400, 1000],
+      "chl_range_mg_m3": [0.02, 0.25],
+      "kd490_max": 0.09,
+      "break_required": false,
+      "break_strength_min": "weak",
+      "weights": {
+        "sst":   0.30,
+        "break": 0.20,
+        "depth": 0.25,
+        "chl":   0.10,
+        "color": 0.15
+      },
+      "min_zone_score": 0.58,
+      "notes": "Deep blue water near canyon edges and current boundaries. Less break-dependent than tuna. True offshore species — prefers very clear water."
+    },
+    "bluefin": {
+      "display_name": "Bluefin Tuna",
+      "color": "#6366f1",
+      "enabled": true,
+      "sst_target_f": 63,
+      "sst_range_f": [55, 70],
+      "prefer_side": "cold",
+      "depth_range_ft": [200, 3000],
+      "depth_ideal_ft": [400, 1500],
+      "chl_range_mg_m3": [0.15, 1.50],
+      "kd490_max": 0.20,
+      "break_required": true,
+      "break_strength_min": "moderate",
+      "weights": {
+        "sst":   0.35,
+        "break": 0.30,
+        "depth": 0.18,
+        "chl":   0.12,
+        "color": 0.05
+      },
+      "min_zone_score": 0.60,
+      "notes": "Cold water side of breaks. Canyon edges, cold core eddies. Higher chlorophyll tolerance — follows bait into productive water. Peak: spring and fall migration."
+    },
+    "kingfish": {
+      "display_name": "King Mackerel",
+      "color": "#ef4444",
+      "enabled": true,
+      "sst_target_f": 74,
+      "sst_range_f": [68, 80],
+      "prefer_side": "warm",
+      "depth_range_ft": [30, 300],
+      "depth_ideal_ft": [60, 180],
+      "chl_range_mg_m3": [0.20, 2.00],
+      "kd490_max": 0.30,
+      "break_required": false,
+      "break_strength_min": "weak",
+      "weights": {
+        "sst":   0.35,
+        "break": 0.15,
+        "depth": 0.30,
+        "chl":   0.15,
+        "color": 0.05
+      },
+      "min_zone_score": 0.55,
+      "notes": "Nearshore and mid-range structure. Live bottom, ledges, color changes 30–300 ft. Not a strict blue-water species. Follows Spanish mackerel and baitfish inshore of the shelf break."
+    }
+  }
+}
