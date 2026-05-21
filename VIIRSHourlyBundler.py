@@ -8,6 +8,7 @@ Output files
 ------------
   DailySST/viirs_YYYY-MM-DD.json   — one file per day, all hourly passes
   DailySST/viirs_index.json        — list of available dates (React reads this first)
+  DailySST/viirs_composite.json    — 36-hour blended composite, most-recent wins
 
 Bundle format  (viirs_YYYY-MM-DD.json)
 --------------------------------------
@@ -77,6 +78,9 @@ DAYS_BACK = int(os.environ.get("DAYS_BACK", "5"))
 
 # Keep this many days of bundle files; older ones are deleted
 KEEP_DAYS = 7
+
+# Composite: look back this many hours across daily bundles
+COMPOSITE_WINDOW_HOURS = int(os.environ.get("COMPOSITE_WINDOW_HOURS", "36"))
 
 # Target date override for back-filling
 _date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
@@ -361,6 +365,161 @@ def _purge_old_bundles(keep_days: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Temporal compositor
+# ─────────────────────────────────────────────────────────────────────────────
+def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
+    """
+    Read all existing daily bundle files whose passes fall within the last
+    *window_hours* hours and produce a single composite grid.
+
+    Rule: most-recent non-null value wins at every grid point.
+
+    Returns a composite dict ready to write, or None if no data found.
+
+    Composite JSON format
+    ---------------------
+    {
+      "generated":        "2026-05-20T14:00:00Z",
+      "window_hours":     36,
+      "latSet":           [...],
+      "lonSet":           [...],
+      "sst":              [...],   // flat, null where no coverage in window
+      "age":              [...],   // parallel: hours since observation (null = no data)
+      "min":              68.1,
+      "max":              79.3,
+      "coverage_pct":     74.2,    // % of bbox grid points with any data
+      "oldest_obs_hours": 31.4,    // age of the oldest pixel kept
+      "pass_count":       7        // number of passes merged
+    }
+    """
+    now_utc = datetime.datetime.utcnow()
+    cutoff  = now_utc - datetime.timedelta(hours=window_hours)
+
+    # Gather all bundle files, sorted oldest → newest date
+    bundle_paths = sorted(OUTPUT_DIR.glob("viirs_????-??-??.json"))
+    if not bundle_paths:
+        log.warning("[Compositor] No daily bundle files found in %s", OUTPUT_DIR)
+        return None
+
+    # composite_grid maps (lat_r4, lon_r4) → [sst_f, age_hours]
+    # We walk oldest → newest so later writes always overwrite earlier ones.
+    composite_grid: dict[tuple[float, float], list] = {}
+    pass_count = 0
+
+    for bp in bundle_paths:
+        try:
+            date_str = bp.stem.replace("viirs_", "")
+            bundle_date = datetime.date.fromisoformat(date_str)
+        except ValueError:
+            continue
+
+        try:
+            with open(bp, encoding="utf-8") as fh:
+                bundle = json.load(fh)
+        except Exception as exc:
+            log.warning("[Compositor] Could not read %s: %s", bp.name, exc)
+            continue
+
+        lat_set = bundle.get("latSet", [])
+        lon_set = bundle.get("lonSet", [])
+        n_lons  = len(lon_set)
+        hours   = bundle.get("hours", {})
+
+        for hr_str, hr_data in hours.items():
+            try:
+                hr_int = int(hr_str)
+            except ValueError:
+                continue
+
+            # Reconstruct UTC datetime for this pass
+            pass_dt = datetime.datetime(
+                bundle_date.year, bundle_date.month, bundle_date.day, hr_int,
+                tzinfo=None  # all UTC
+            )
+            if pass_dt < cutoff:
+                continue  # outside the compositing window
+
+            age_hours = (now_utc - pass_dt).total_seconds() / 3600.0
+            sst_flat  = hr_data.get("sst", [])
+
+            for idx, val in enumerate(sst_flat):
+                if val is None:
+                    continue
+                lat_i = idx // n_lons
+                lon_i = idx  % n_lons
+                if lat_i >= len(lat_set) or lon_i >= len(lon_set):
+                    continue
+                key = (round(lat_set[lat_i], 4), round(lon_set[lon_i], 4))
+                # Overwrite: newer pass → smaller age → always replace
+                existing = composite_grid.get(key)
+                if existing is None or age_hours < existing[1]:
+                    composite_grid[key] = [round(float(val), 2), age_hours]
+
+            pass_count += 1
+
+    if not composite_grid:
+        log.warning("[Compositor] No valid pixels found within %d-hour window", window_hours)
+        return None
+
+    # Build union lat/lon sets from composite keys
+    all_lats = sorted({k[0] for k in composite_grid})
+    all_lons = sorted({k[1] for k in composite_grid})
+    lat_idx  = {v: i for i, v in enumerate(all_lats)}
+    lon_idx  = {v: i for i, v in enumerate(all_lons)}
+    n_lats   = len(all_lats)
+    n_lons_c = len(all_lons)
+    total    = n_lats * n_lons_c
+
+    sst_out = [None] * total
+    age_out = [None] * total
+
+    for (lat_r, lon_r), (sst_v, age_v) in composite_grid.items():
+        gi = lat_idx[lat_r]
+        gj = lon_idx[lon_r]
+        flat_i = gi * n_lons_c + gj
+        sst_out[flat_i] = sst_v
+        age_out[flat_i] = round(age_v, 1)
+
+    valid_sst  = [v for v in sst_out if v is not None]
+    valid_ages = [v for v in age_out if v is not None]
+
+    coverage_pct     = round(len(valid_sst) / total * 100, 1) if total else 0.0
+    oldest_obs_hours = round(max(valid_ages), 1) if valid_ages else None
+
+    log.info(
+        "[Compositor] %d passes merged | %d×%d grid | %.1f%% coverage | oldest %.1f h",
+        pass_count, n_lats, n_lons_c, coverage_pct, oldest_obs_hours or 0,
+    )
+
+    return {
+        "generated":        now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "window_hours":     window_hours,
+        "latSet":           [round(v, 4) for v in all_lats],
+        "lonSet":           [round(v, 4) for v in all_lons],
+        "sst":              sst_out,
+        "age":              age_out,
+        "min":              round(min(valid_sst), 1) if valid_sst else None,
+        "max":              round(max(valid_sst), 1) if valid_sst else None,
+        "coverage_pct":     coverage_pct,
+        "oldest_obs_hours": oldest_obs_hours,
+        "pass_count":       pass_count,
+    }
+
+
+def _write_composite(composite: dict) -> None:
+    dest = OUTPUT_DIR / "viirs_composite.json"
+    tmp  = dest.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(composite, fh, separators=(",", ":"))
+    tmp.rename(dest)
+    size_kb = dest.stat().st_size / 1024
+    log.info(
+        "Wrote viirs_composite.json  (%d passes | %.1f%% coverage | %.0f KB)",
+        composite["pass_count"], composite["coverage_pct"], size_kb,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
@@ -401,6 +560,13 @@ def main() -> None:
     _write_index(all_dates)
 
     _purge_old_bundles(KEEP_DAYS)
+
+    # Build and write the temporal composite
+    composite = build_composite(COMPOSITE_WINDOW_HOURS)
+    if composite:
+        _write_composite(composite)
+    else:
+        log.warning("Composite could not be built — no data in window")
 
     log.info("=== Done.  %d bundle(s) written ===", len(written_dates))
 
