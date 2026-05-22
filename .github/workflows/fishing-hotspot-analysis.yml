@@ -2,9 +2,8 @@ name: Fishing Hotspot Analysis
 
 on:
   # ── Primary trigger: run automatically after the VIIRS bundler finishes ──
-  # Replace "VIIRS Bundle" below with the exact `name:` from your bundler workflow.
   workflow_run:
-    workflows: ["VIIRSHourlyBundler"]
+    workflows: ["VIIRS Hourly Bundler"]
     types: [completed]
 
   # ── Manual trigger with optional overrides ──────────────────────────────
@@ -19,7 +18,7 @@ on:
         required: false
         default: ''
       skip_chl:
-        description: 'Skip ERDDAP chlorophyll/kd490 fetch (offline test with SST+bathy only)'
+        description: 'Skip local CHL/kd490 data (offline test with SST+bathy only)'
         required: false
         default: 'false'
         type: choice
@@ -57,7 +56,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests numpy scipy
+          pip install numpy scipy
 
       - name: Resolve analysis date
         id: date
