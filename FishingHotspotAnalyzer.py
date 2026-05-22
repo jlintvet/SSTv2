@@ -5,8 +5,8 @@ Scores ocean grid points for target-species fishing probability by fusing:
   • SST            — VIIRS composite (DailySSTData/VIIRS/Bundled/viirs_composite.json)
   • Temp breaks    — SST gradient magnitude computed from composite
   • Bathymetry     — depth grid (DailySST/bathymetry_grid.json)
-  • Chlorophyll-a  — VIIRS SNPP 8-day via CoastWatch ERDDAP
-  • Sea color Kd490— VIIRS SNPP 8-day via CoastWatch ERDDAP
+  • Chlorophyll-a  — local repo files (SSTv2/Chlorophyll/CHL_YYYYMMDD.json)
+  • Sea color Kd490— local repo files (SSTv2/SeaColor/SEACOLOR_YYYYMMDD.json)
 
 Species habitat parameters live in species_config.json — edit and push to
 GitHub to tune without touching Python.
@@ -17,37 +17,33 @@ Usage:
   python FishingHotspotAnalyzer.py
   SPECIES=yellowfin python FishingHotspotAnalyzer.py   # single species only
   DATE=2026-05-20   python FishingHotspotAnalyzer.py   # specific date
-  SKIP_CHL=1        python FishingHotspotAnalyzer.py   # skip remote fetches (offline test)
+  SKIP_CHL=1        python FishingHotspotAnalyzer.py   # skip CHL/kd490 data
 
 Dependencies:
-  pip install requests numpy --break-system-packages
+  pip install numpy --break-system-packages
   scipy is used for convex hull if available; falls back to bounding polygon.
 """
-import csv
 import datetime
-import io
 import json
 import logging
 import math
 import os
 import pathlib
 import sys
-import time
 from collections import deque
 
 import numpy as np
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-_ROOT       = pathlib.Path(__file__).resolve().parent
-VIIRS_DIR   = _ROOT / "DailySSTData" / "VIIRS" / "Bundled"   # composite input
-STATIC_DIR  = _ROOT / "DailySST"                              # bathymetry input
-OUTPUT_DIR  = _ROOT / "DailySST"                              # hotspot output
-CONFIG_PATH = _ROOT / "species_config.json"
+_ROOT        = pathlib.Path(__file__).resolve().parent
+VIIRS_DIR    = _ROOT / "DailySSTData" / "VIIRS" / "Bundled"   # composite input
+STATIC_DIR   = _ROOT / "DailySST"                              # bathymetry input
+OUTPUT_DIR   = _ROOT / "DailySST"                              # hotspot output
+CONFIG_PATH  = _ROOT / "species_config.json"
+CHL_DIR      = _ROOT / "SSTv2" / "Chlorophyll"                # local CHL files
+SEACOLOR_DIR = _ROOT / "SSTv2" / "SeaColor"                   # local kd490 files
 
 LAT_MIN = 33.70
 LAT_MAX = 39.00
@@ -66,17 +62,9 @@ BREAK_WEAK_THRESHOLD     = 0.4   # °F/° — minimal front
 BREAK_MODERATE_THRESHOLD = 0.8   # °F/° — defined front
 BREAK_STRONG_THRESHOLD   = 1.5   # °F/° — sharp front
 
-# ERDDAP sources — tried in order for each variable
-CHL_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3chla8day.csvp", "chla"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMBchla8day.csvp",  "chlorophyll"),
-]
-KD490_SOURCES = [
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdVH3k4908day.csvp", "kd490"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/erdMBk4908day.csvp",  "k490"),
-]
+# How far back to search for local CHL/kd490 files (days)
+CHL_LOOKBACK_DAYS = 10
 
-TIMEOUT = 120  # seconds per ERDDAP request
 KEEP_HOTSPOT_DAYS = 7  # purge hotspot files older than this
 
 logging.basicConfig(
@@ -85,18 +73,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HTTP session
-# ─────────────────────────────────────────────────────────────────────────────
-def _make_session() -> requests.Session:
-    s = requests.Session()
-    retry = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
-    s.mount("https://", HTTPAdapter(max_retries=retry))
-    s.mount("http://",  HTTPAdapter(max_retries=retry))
-    return s
-
-SESSION = _make_session()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loaders
@@ -128,55 +104,101 @@ def load_bathymetry_grid() -> dict | None:
     return data
 
 
-def _fetch_erddap_variable(sources: list, date: datetime.date,
-                            lookback_days: int = 10) -> dict:
+def _load_grid_json(path: pathlib.Path) -> dict:
     """
-    Fetch a gridded variable from ERDDAP.  Tries each source URL and each
-    date in [date - lookback_days, date] until one succeeds.
-    Returns dict: {(lat, lon) -> value}
+    Parse a grid JSON file produced by DailyChlorophyllandSeaColorRetrieval.py.
+
+    Expected format:
+      { "latSet": [...], "lonSet": [...], "<data_key>": [...], ... }
+    where <data_key> is any list with length == len(latSet) * len(lonSet).
+
+    Returns: {(lat, lon) -> float}  — only valid (>0, non-null) points included.
     """
-    for base_url, var_name in sources:
-        # Try most-recent dates first (ERDDAP returns closest available)
-        for delta in range(0, lookback_days + 1):
-            target_dt = date - datetime.timedelta(days=delta)
-            dt_str = target_dt.isoformat() + "T12:00:00Z"
-            url = (
-                f"{base_url}"
-                f"?{var_name}"
-                f"[({dt_str}):1:({dt_str})]"
-                f"[({LAT_MIN}):1:({LAT_MAX})]"
-                f"[({LON_MIN}):1:({LON_MAX})]"
-            )
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    lat_set = data["latSet"]
+    lon_set = data["lonSet"]
+    n_lat   = len(lat_set)
+    n_lon   = len(lon_set)
+    expected = n_lat * n_lon
+
+    # Auto-detect which key holds the flat data array
+    SKIP_KEYS = {
+        "latSet", "lonSet", "date", "generated", "source", "variable",
+        "min", "max", "coverage_pct", "oldest_obs_hours", "pass_count",
+    }
+    values = None
+    for key, val in data.items():
+        if key not in SKIP_KEYS and isinstance(val, list) and len(val) == expected:
+            values = val
+            log.debug("  Using data key '%s' (%d values)", key, len(val))
+            break
+
+    if values is None:
+        raise ValueError(
+            f"Could not find flat data array of length {expected} in {path.name}. "
+            f"Keys present: {list(data.keys())}"
+        )
+
+    result = {}
+    for li, lat in enumerate(lat_set):
+        for loi, lon in enumerate(lon_set):
+            v = values[li * n_lon + loi]
+            if v is None:
+                continue
             try:
-                log.info("  Fetching %s from %s ...", var_name, base_url.split("/")[2])
-                r = SESSION.get(url, timeout=TIMEOUT)
-                if r.status_code != 200:
-                    log.debug("    HTTP %d — trying next", r.status_code)
-                    continue
-                reader = csv.reader(io.StringIO(r.text))
-                rows   = list(reader)
-                if len(rows) < 3:
-                    continue
-                # Rows: header, units, data...
-                result = {}
-                for row in rows[2:]:
-                    try:
-                        # Columns: time, lat, lon, value
-                        lat = float(row[1])
-                        lon = float(row[2])
-                        val = float(row[3])
-                        if not math.isnan(val) and val > 0:
-                            result[(round(lat, 3), round(lon, 3))] = val
-                    except (IndexError, ValueError):
-                        continue
-                if result:
-                    log.info("  ✓ Got %d %s points (date %s)",
-                             len(result), var_name, target_dt.isoformat())
-                    return result
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if not math.isnan(fv) and fv > 0:
+                result[(round(lat, 3), round(lon, 3))] = fv
+    return result
+
+
+def load_local_chl(date: datetime.date) -> dict:
+    """
+    Load chlorophyll from local repo file: SSTv2/Chlorophyll/CHL_YYYYMMDD.json
+    Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
+    Returns {(lat, lon) -> chl_mg_m3}
+    """
+    for delta in range(CHL_LOOKBACK_DAYS + 1):
+        target = date - datetime.timedelta(days=delta)
+        fname  = f"CHL_{target.strftime('%Y%m%d')}.json"
+        path   = CHL_DIR / fname
+        if path.exists():
+            try:
+                lookup = _load_grid_json(path)
+                log.info("Loaded CHL from %s  (%d valid points, %d days old)",
+                         fname, len(lookup), delta)
+                return lookup
             except Exception as exc:
-                log.debug("    Fetch failed: %s", exc)
-                time.sleep(1)
-    log.warning("  Could not fetch %s from any source — scoring will be neutral.", var_name)
+                log.warning("Failed to parse %s: %s — trying older file.", fname, exc)
+    log.warning("No local CHL file found within %d days — CHL scoring will be neutral.",
+                CHL_LOOKBACK_DAYS)
+    return {}
+
+
+def load_local_kd490(date: datetime.date) -> dict:
+    """
+    Load sea color Kd490 from local repo: SSTv2/SeaColor/SEACOLOR_YYYYMMDD.json
+    Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
+    Returns {(lat, lon) -> kd490}
+    """
+    for delta in range(CHL_LOOKBACK_DAYS + 1):
+        target = date - datetime.timedelta(days=delta)
+        fname  = f"SEACOLOR_{target.strftime('%Y%m%d')}.json"
+        path   = SEACOLOR_DIR / fname
+        if path.exists():
+            try:
+                lookup = _load_grid_json(path)
+                log.info("Loaded kd490 from %s  (%d valid points, %d days old)",
+                         fname, len(lookup), delta)
+                return lookup
+            except Exception as exc:
+                log.warning("Failed to parse %s: %s — trying older file.", fname, exc)
+    log.warning("No local kd490 file found within %d days — kd490 scoring will be neutral.",
+                CHL_LOOKBACK_DAYS)
     return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -662,19 +684,19 @@ def main() -> None:
         bathy_lookup = build_bathy_lookup(bathy)
         log.info("  %d depth points", len(bathy_lookup))
 
-    # ── Fetch remote data ────────────────────────────────────────────────────
-    skip_remote = os.environ.get("SKIP_CHL", "").strip() == "1"
+    # ── Load local CHL / SeaColor data ──────────────────────────────────────
+    skip_chl     = os.environ.get("SKIP_CHL", "").strip() == "1"
     chl_lookup   = {}
     kd490_lookup = {}
 
-    if not skip_remote:
-        log.info("=== Fetching chlorophyll (ERDDAP) ===")
-        chl_lookup = _fetch_erddap_variable(CHL_SOURCES, date)
+    if not skip_chl:
+        log.info("=== Loading chlorophyll from local files ===")
+        chl_lookup = load_local_chl(date)
 
-        log.info("=== Fetching sea color Kd490 (ERDDAP) ===")
-        kd490_lookup = _fetch_erddap_variable(KD490_SOURCES, date)
+        log.info("=== Loading sea color (kd490) from local files ===")
+        kd490_lookup = load_local_kd490(date)
     else:
-        log.info("SKIP_CHL=1 — skipping remote fetches.")
+        log.info("SKIP_CHL=1 — skipping CHL/kd490 data.")
 
     # ── Analyze each species ─────────────────────────────────────────────────
     log.info("=== Scoring species ===")
