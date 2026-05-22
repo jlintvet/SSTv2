@@ -311,8 +311,13 @@ def compute_sst_gradient(composite: dict) -> dict:
 
 def build_bathy_lookup(bathy: dict) -> dict:
     """
-    Convert 2D bathymetry grid to (lat, lon) → depth_ft dict.
+    Convert 2D bathymetry grid to (lat_2dp, lon_2dp) → depth_ft dict.
     bathy.lats is ascending; depth_ft is None for land.
+
+    Keys are rounded to 2 decimal places (0.01° ≈ 1 km) to match the composite
+    SST grid resolution and allow O(1) lookups in build_score_grid.
+    Bathy is at ~0.004° so multiple bathy cells map to each 0.01° bin — the
+    last non-null value wins (depth variation within 1km is negligible for scoring).
     """
     lats    = bathy["lats"]
     lons    = bathy["lons"]
@@ -322,7 +327,7 @@ def build_bathy_lookup(bathy: dict) -> dict:
         for loi, lon in enumerate(lons):
             val = grid_ft[li][loi]
             if val is not None:
-                result[(round(lat, 3), round(lon, 3))] = val
+                result[(round(lat, 2), round(lon, 2))] = val
     return result
 
 
@@ -451,19 +456,17 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     Returns list of (lat, lon, score, meta_dict) sorted by lat.
     """
     results = []
-    bathy_tol   = 0.08   # degrees — ~5 nm tolerance for nearest depth
     for (lat, lon), sst_f in composite_lookup.items():
-        gradient  = gradient_lookup.get((lat, lon))
-        depth_ft  = nearest_value(bathy_lookup, lat, lon, bathy_tol)
+        gradient = gradient_lookup.get((lat, lon))
 
-        # CHL uses 2dp keys (~0.022° grid); SEACOLOR uses 1dp keys (~0.167° grid)
-        # Direct O(1) dict lookup — no expensive nearest-neighbour scan needed
+        # All overlay lookups use rounded keys — O(1) per point, no linear scans
         lat2 = round(lat, 2)
         lon2 = round(lon, 2)
         lat1 = round(lat, 1)
         lon1 = round(lon, 1)
-        chl       = chl_lookup.get((lat2, lon2))
-        kd490_val = kd490_lookup.get((lat1, lon1))
+        depth_ft  = bathy_lookup.get((lat2, lon2))   # bathy keyed at 2dp (~0.004° → 0.01° bin)
+        chl       = chl_lookup.get((lat2, lon2))      # CHL keyed at 2dp (~0.022° grid)
+        kd490_val = kd490_lookup.get((lat1, lon1))    # SEACOLOR keyed at 1dp (~0.167° grid)
 
         sc = combined_score(sst_f, gradient, depth_ft, chl, kd490_val, sp)
 
