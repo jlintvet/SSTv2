@@ -2,7 +2,7 @@
 FishingHotspotAnalyzer.py
 =========================
 Scores ocean grid points for target-species fishing probability by fusing:
-  • SST            — VIIRS composite (DailySST/viirs_composite.json)
+  • SST            — VIIRS composite (DailySSTData/VIIRS/Bundled/viirs_composite.json)
   • Temp breaks    — SST gradient magnitude computed from composite
   • Bathymetry     — depth grid (DailySST/bathymetry_grid.json)
   • Chlorophyll-a  — VIIRS SNPP 8-day via CoastWatch ERDDAP
@@ -43,8 +43,11 @@ from urllib3.util.retry import Retry
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-OUTPUT_DIR  = pathlib.Path(__file__).resolve().parent / "DailySST"
-CONFIG_PATH = pathlib.Path(__file__).resolve().parent / "species_config.json"
+_ROOT       = pathlib.Path(__file__).resolve().parent
+VIIRS_DIR   = _ROOT / "DailySSTData" / "VIIRS" / "Bundled"   # composite input
+STATIC_DIR  = _ROOT / "DailySST"                              # bathymetry input
+OUTPUT_DIR  = _ROOT / "DailySST"                              # hotspot output
+CONFIG_PATH = _ROOT / "species_config.json"
 
 LAT_MIN = 33.70
 LAT_MAX = 39.00
@@ -99,8 +102,8 @@ SESSION = _make_session()
 # Data loaders
 # ─────────────────────────────────────────────────────────────────────────────
 def load_composite(date: datetime.date) -> dict | None:
-    """Load the VIIRS composite JSON for the given date."""
-    path = OUTPUT_DIR / f"viirs_composite.json"   # always the latest composite
+    """Load the VIIRS composite JSON (always the latest, rebuilt each bundler run)."""
+    path = VIIRS_DIR / "viirs_composite.json"
     if not path.exists():
         log.warning("viirs_composite.json not found — run VIIRSHourlyBundler.py first.")
         return None
@@ -114,7 +117,7 @@ def load_composite(date: datetime.date) -> dict | None:
 
 def load_bathymetry_grid() -> dict | None:
     """Load the pre-built bathymetry grid JSON."""
-    path = OUTPUT_DIR / "bathymetry_grid.json"
+    path = STATIC_DIR / "bathymetry_grid.json"
     if not path.exists():
         log.warning("bathymetry_grid.json not found — run StaticLayersRetrieval.py first.")
         return None
@@ -603,6 +606,7 @@ def purge_old_hotspots(keep_days: int) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
     # Date
     date_env = os.environ.get("DATE", "").strip()
