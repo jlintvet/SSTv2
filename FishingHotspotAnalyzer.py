@@ -104,63 +104,79 @@ def load_bathymetry_grid() -> dict | None:
     return data
 
 
-def _load_grid_json(path: pathlib.Path) -> dict:
+def _load_rows_json(path: pathlib.Path, value_key: str,
+                    key_precision: int = 2) -> dict:
     """
-    Parse a grid JSON file produced by DailyChlorophyllandSeaColorRetrieval.py.
+    Parse a point-list JSON file produced by DailyChlorophyllandSeaColorRetrieval.py.
 
-    Expected format:
-      { "latSet": [...], "lonSet": [...], "<data_key>": [...], ... }
-    where <data_key> is any list with length == len(latSet) * len(lonSet).
+    Format:
+      { ..., "rows": [{"lat": f, "lon": f, "<value_key>": f|null, ...}, ...] }
 
-    Returns: {(lat, lon) -> float}  — only valid (>0, non-null) points included.
+    key_precision controls rounding of lat/lon keys:
+      2  (0.01°)  — for CHL at ~0.022° grid spacing
+      1  (0.1°)   — for SEACOLOR at ~0.167° grid spacing
+
+    Returns: {(lat_rounded, lon_rounded) -> float}  — valid (non-null, >0) points only.
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
-    lat_set = data["latSet"]
-    lon_set = data["lonSet"]
-    n_lat   = len(lat_set)
-    n_lon   = len(lon_set)
-    expected = n_lat * n_lon
-
-    # Auto-detect which key holds the flat data array
-    SKIP_KEYS = {
-        "latSet", "lonSet", "date", "generated", "source", "variable",
-        "min", "max", "coverage_pct", "oldest_obs_hours", "pass_count",
-    }
-    values = None
-    for key, val in data.items():
-        if key not in SKIP_KEYS and isinstance(val, list) and len(val) == expected:
-            values = val
-            log.debug("  Using data key '%s' (%d values)", key, len(val))
-            break
-
-    if values is None:
-        raise ValueError(
-            f"Could not find flat data array of length {expected} in {path.name}. "
-            f"Keys present: {list(data.keys())}"
-        )
-
+    rows   = data.get("rows", [])
     result = {}
-    for li, lat in enumerate(lat_set):
-        for loi, lon in enumerate(lon_set):
-            v = values[li * n_lon + loi]
-            if v is None:
-                continue
-            try:
-                fv = float(v)
-            except (TypeError, ValueError):
-                continue
-            if not math.isnan(fv) and fv > 0:
-                result[(round(lat, 3), round(lon, 3))] = fv
+    for row in rows:
+        val = row.get(value_key)
+        if val is None:
+            continue
+        try:
+            fv = float(val)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(fv) or fv <= 0:
+            continue
+        lat = round(float(row["lat"]), key_precision)
+        lon = round(float(row["lon"]), key_precision)
+        result[(lat, lon)] = fv
     return result
+
+
+# Map color_class string → approximate kd490 value (used as kd490 proxy from CHL file)
+_COLOR_CLASS_KD490 = {
+    "blue_water":  0.06,
+    "mixed":       0.10,
+    "green_water": 0.20,
+}
+
+
+def _load_color_class_as_kd490(path: pathlib.Path) -> dict:
+    """
+    Extract color_class from a CHL rows file and convert to approximate kd490.
+    Used as fallback when no dedicated SEACOLOR file is available.
+    CHL is at ~0.022° grid → use 2dp keys.
+    Returns: {(lat_2dp, lon_2dp) -> kd490_approx}
+    """
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    rows   = data.get("rows", [])
+    result = {}
+    for row in rows:
+        cc = row.get("color_class")
+        if cc not in _COLOR_CLASS_KD490:
+            continue
+        lat = round(float(row["lat"]), 2)
+        lon = round(float(row["lon"]), 2)
+        result[(lat, lon)] = _COLOR_CLASS_KD490[cc]
+    return result
+
+
+_SEACOLOR_KEY_PRECISION = 1   # SEACOLOR grid ~0.167° → snap to 0.1°
 
 
 def load_local_chl(date: datetime.date) -> dict:
     """
     Load chlorophyll from local repo file: SSTv2/Chlorophyll/CHL_YYYYMMDD.json
     Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
-    Returns {(lat, lon) -> chl_mg_m3}
+    Returns {(lat_2dp, lon_2dp) -> chl_mg_m3}
     """
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
@@ -168,7 +184,7 @@ def load_local_chl(date: datetime.date) -> dict:
         path   = CHL_DIR / fname
         if path.exists():
             try:
-                lookup = _load_grid_json(path)
+                lookup = _load_rows_json(path, "chlorophyll")
                 log.info("Loaded CHL from %s  (%d valid points, %d days old)",
                          fname, len(lookup), delta)
                 return lookup
@@ -183,7 +199,9 @@ def load_local_kd490(date: datetime.date) -> dict:
     """
     Load sea color Kd490 from local repo: SSTv2/SeaColor/SEACOLOR_YYYYMMDD.json
     Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
-    Returns {(lat, lon) -> kd490}
+
+    Falls back to color_class-derived kd490 from the CHL file if no SEACOLOR file exists.
+    Returns {(lat_2dp, lon_2dp) -> kd490}
     """
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
@@ -191,14 +209,30 @@ def load_local_kd490(date: datetime.date) -> dict:
         path   = SEACOLOR_DIR / fname
         if path.exists():
             try:
-                lookup = _load_grid_json(path)
+                lookup = _load_rows_json(path, "kd490",
+                                         key_precision=_SEACOLOR_KEY_PRECISION)
                 log.info("Loaded kd490 from %s  (%d valid points, %d days old)",
                          fname, len(lookup), delta)
                 return lookup
             except Exception as exc:
                 log.warning("Failed to parse %s: %s — trying older file.", fname, exc)
-    log.warning("No local kd490 file found within %d days — kd490 scoring will be neutral.",
-                CHL_LOOKBACK_DAYS)
+
+    # Fallback: derive kd490 approximation from color_class in the CHL file
+    log.info("No SEACOLOR file found — deriving kd490 from color_class in CHL file.")
+    for delta in range(CHL_LOOKBACK_DAYS + 1):
+        target = date - datetime.timedelta(days=delta)
+        fname  = f"CHL_{target.strftime('%Y%m%d')}.json"
+        path   = CHL_DIR / fname
+        if path.exists():
+            try:
+                lookup = _load_color_class_as_kd490(path)
+                log.info("  kd490 proxy from %s  (%d color_class points, %d days old)",
+                         fname, len(lookup), delta)
+                return lookup
+            except Exception as exc:
+                log.warning("  Failed to read color_class from %s: %s", fname, exc)
+
+    log.warning("No kd490 source found — kd490 scoring will be neutral.")
     return {}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -418,13 +452,18 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     """
     results = []
     bathy_tol   = 0.08   # degrees — ~5 nm tolerance for nearest depth
-    overlay_tol = 0.15   # degrees — CHL/kd490 are coarser resolution
-
     for (lat, lon), sst_f in composite_lookup.items():
         gradient  = gradient_lookup.get((lat, lon))
         depth_ft  = nearest_value(bathy_lookup, lat, lon, bathy_tol)
-        chl       = nearest_value(chl_lookup,   lat, lon, overlay_tol)
-        kd490_val = nearest_value(kd490_lookup, lat, lon, overlay_tol)
+
+        # CHL uses 2dp keys (~0.022° grid); SEACOLOR uses 1dp keys (~0.167° grid)
+        # Direct O(1) dict lookup — no expensive nearest-neighbour scan needed
+        lat2 = round(lat, 2)
+        lon2 = round(lon, 2)
+        lat1 = round(lat, 1)
+        lon1 = round(lon, 1)
+        chl       = chl_lookup.get((lat2, lon2))
+        kd490_val = kd490_lookup.get((lat1, lon1))
 
         sc = combined_score(sst_f, gradient, depth_ft, chl, kd490_val, sp)
 
