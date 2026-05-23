@@ -71,8 +71,8 @@ KEEP_HOTSPOT_DAYS = 7
 # CHL lat/lon is at ~0.04° resolution (4 km CMEMS grid).
 # We snap incoming coordinates to this bin so lookups work regardless
 # of whether the source data has 5-decimal precision like 33.70278.
-CHL_SNAP_DEG = 0.04          # snap CHL lat/lon to nearest 0.04°
-BATHY_SNAP_DEG = 0.02        # bathy grid precision
+CHL_SNAP_DEG   = 0.04   # snap CHL lat/lon to nearest 0.04°
+BATHY_SNAP_DEG = 0.02   # bathy grid precision
 
 # Seasonal scoring multipliers
 SEASONAL_PEAK_MULT  = 1.00   # month is in peak_months
@@ -124,11 +124,6 @@ def _load_rows_json(path: pathlib.Path, value_key: str,
                     snap_step: float = CHL_SNAP_DEG) -> dict:
     """
     Load a rows-format JSON file and return a {(snapped_lat, snapped_lon): value} dict.
-
-    FIX: Previously keyed at round(lat, 2) which silently mismatches CMEMS data
-    whose raw coordinates are e.g. 33.70278 → round-2 gives 33.70 but the
-    composite grid uses round-3 keys like 33.703.  We now snap both CHL and the
-    scoring loop to the same CHL_SNAP_DEG grid so lookups actually hit.
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -191,8 +186,7 @@ def load_local_chl(date: datetime.date) -> dict:
 
 
 def load_local_kd490(date: datetime.date) -> dict:
-    # SeaColor files use a coarser ~0.1° grid; snap accordingly
-    SEACOLOR_SNAP = 0.04   # still snap to 0.04 for consistency with CHL
+    SEACOLOR_SNAP = 0.04
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
         fname  = f"SEACOLOR_{target.strftime('%Y%m%d')}.json"
@@ -301,7 +295,6 @@ def build_bathy_lookup(bathy: dict) -> dict:
         for loi, lon in enumerate(lons):
             val = grid_ft[li][loi]
             if val is not None:
-                # Snap to BATHY_SNAP_DEG so composite (0.02°) points can hit
                 result[(_snap(lat, BATHY_SNAP_DEG), _snap(lon, BATHY_SNAP_DEG))] = val
     return result
 
@@ -318,12 +311,11 @@ def score_sst(sst_f: float, target: float, sst_min: float, sst_max: float) -> fl
 
 def score_break(gradient_mag: float | None) -> float:
     """
-    Score the temperature break strength.
     FIX: Reduced neutral (None) value from 0.30 to 0.20 to stop missing
     gradient data from inflating scores in featureless open water.
     """
     if gradient_mag is None:
-        return 0.20          # was 0.30 — reduced free credit for missing data
+        return 0.20
     if gradient_mag >= BREAK_STRONG_THRESHOLD:
         return 1.0
     if gradient_mag >= BREAK_MODERATE_THRESHOLD:
@@ -350,19 +342,16 @@ def score_depth(depth_ft: float | None, d_min: float, d_max: float,
 
 def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
     """
-    Score chlorophyll concentration.
-    FIX: Reduced neutral (None) value from 0.45 to 0.25 — missing CHL data
-    was contributing nearly a free tenth of a point for high-weight species
-    like Mahi. Added hard low gate at 0.10 for values below half the floor
-    to better disqualify barren blue water with no productivity signal.
-    Note: the hard per-cell disqualification gate for chl_required species
-    is enforced upstream in build_score_grid before this function is called.
+    FIX: Reduced neutral (None) value from 0.45 to 0.25.
+    Added hard low gate at 0.10 for values well below the floor.
+    Hard per-cell disqualification for chl_required species is enforced
+    upstream in build_score_grid before this function is called.
     """
     if chl is None:
-        return 0.25          # was 0.45 — reduced free credit for missing data
+        return 0.25
     if chl <= 0:
-        return 0.05          # was 0.10
-    if chl < chl_min * 0.5:  # well below floor = very poor signal
+        return 0.05
+    if chl < chl_min * 0.5:
         return 0.10
     if chl_min <= chl <= chl_max:
         return 1.0
@@ -374,12 +363,10 @@ def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
 
 def score_color(kd490: float | None, kd490_max: float) -> float:
     """
-    Score water clarity via kd490.
-    FIX: Reduced neutral (None) value from 0.50 to 0.35 — missing kd490
-    data was giving a half-point free credit to zones with no clarity info.
+    FIX: Reduced neutral (None) value from 0.50 to 0.35.
     """
     if kd490 is None:
-        return 0.35          # was 0.50 — reduced free credit for missing data
+        return 0.35
     if kd490 <= kd490_max * 0.5:
         return 1.0
     if kd490 <= kd490_max:
@@ -405,17 +392,19 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     """
     Score every composite grid point for one species.
 
-    FIX: CHL and kd490 lookups now use _snap() with CHL_SNAP_DEG so keys
-    match those built by _load_rows_json().
-
-    FIX: Added hard CHL gate for species with chl_required=true. When CHL
-    data is available and the cell value is below 60% of the species CHL
-    floor, the cell is disqualified entirely rather than just scored low.
-    This prevents depth-contour-hugging clusters in barren blue water from
-    passing the threshold on SST + depth alone (observed with Mahi zones
-    appearing in near-zero CHL deep blue water along the shelf break).
-    Gate is skipped when no CHL data is loaded at all (chl_lookup empty)
-    to avoid silently wiping all zones on data-missing days.
+    Gates applied in order (cell is skipped if any gate fails):
+      1. SST range hard gate  — sst_f outside sst_range_f → skip
+      2. SST score min gate   — s_sst < sst_score_min → skip
+         Prevents cloud-edge false-break zones in wrong-temperature water
+         from scoring high because break/CHL compensate for poor SST fit.
+         Set sst_score_min in species_config.json (0.0 = disabled).
+      3. Depth gate           — depth known and out of range → skip
+      4. CHL hard gate        — chl_required=true and CHL data available
+                                and cell CHL < 60% of floor → skip
+                                Skipped entirely if no CHL file loaded,
+                                to avoid wiping all zones on data-missing days.
+      5. Break cap            — break_required=true and s_break < 0.3
+                                → total capped at 0.50 (not a hard skip)
     """
     results = []
     w = sp["weights"]
@@ -426,17 +415,25 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     kd490_max                = sp["kd490_max"]
     break_required           = sp.get("break_required", False)
     chl_required             = sp.get("chl_required", False)
+    sst_score_min            = sp.get("sst_score_min", 0.0)
     chl_data_available       = len(chl_lookup) > 0
 
     for (lat, lon), sst_f in composite_lookup.items():
+
+        # Gate 1: SST range
         s_sst = score_sst(sst_f, sp["sst_target_f"], sst_min, sst_max)
         if s_sst == 0.0:
             continue
 
-        # Snap composite lat/lon to CHL grid for lookup
-        chl_lat  = _snap(lat, CHL_SNAP_DEG)
-        chl_lon  = _snap(lon, CHL_SNAP_DEG)
-        # Snap composite lat/lon to bathy grid for lookup
+        # Gate 2: SST score minimum
+        # Eliminates cells where SST is technically in range but a poor fit,
+        # preventing strong break scores at cloud edges from rescuing them.
+        if s_sst < sst_score_min:
+            continue
+
+        # Snap to auxiliary grids
+        chl_lat   = _snap(lat, CHL_SNAP_DEG)
+        chl_lon   = _snap(lon, CHL_SNAP_DEG)
         bathy_lat = _snap(lat, BATHY_SNAP_DEG)
         bathy_lon = _snap(lon, BATHY_SNAP_DEG)
 
@@ -445,14 +442,12 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
         chl       = chl_lookup.get((chl_lat, chl_lon))
         kd490_val = kd490_lookup.get((chl_lat, chl_lon))
 
+        # Gate 3: Depth
         s_depth = score_depth(depth_ft, d_min, d_max, d_ideal_min, d_ideal_max)
         if depth_ft is not None and s_depth == 0.0:
             continue
 
-        # Hard CHL gate: disqualify cells with confirmed near-zero CHL for
-        # species that require productive water (chl_required=true).
-        # Only applied when CHL data is actually loaded — avoids silently
-        # wiping all zones on days when CHL files are unavailable.
+        # Gate 4: CHL hard gate (chl_required species only, only when data loaded)
         if chl_required and chl_data_available:
             if chl is None or chl < chl_min * 0.6:
                 continue
@@ -467,6 +462,7 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
                  w["chl"]   * s_chl   +
                  w["color"] * s_color)
 
+        # Gate 5: Break cap (soft — reduces score, does not skip)
         if break_required and s_break < 0.3:
             total = min(0.50, total)
 
@@ -557,10 +553,6 @@ def _break_label(gradient: float | None) -> str:
 # AI / template narrative generation
 # ─────────────────────────────────────────────────────────────────────────────
 def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
-    """
-    Fallback template-based narrative when Claude API is unavailable.
-    Avoids copy-paste feel by varying sentence structure based on actual conditions.
-    """
     month      = date.month
     month_name = calendar.month_name[month]
     prime      = sp.get("prime_months", list(range(1, 13)))
@@ -576,7 +568,6 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     score      = zone.get("habitat_score", zone.get("score", 0))
     area       = zone.get("area_sq_nm", 0)
 
-    # Season assessment
     if month in peak:
         s_season = f"Peak season timing for {name} — this is prime time."
     elif month in prime:
@@ -584,7 +575,6 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     else:
         s_season = f"{month_name} is outside the typical prime season; fish may be scattered."
 
-    # SST assessment — vary phrasing based on how centered within sweet spot
     if sst is not None:
         delta = sst - ((sweet[0] + sweet[1]) / 2)
         if sweet[0] <= sst <= sweet[1]:
@@ -599,7 +589,6 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     else:
         s_sst = "SST data is limited in this area."
 
-    # Break assessment
     break_phrases = {
         "strong":   "There's a sharp temperature break in the zone — concentrate on the seam.",
         "moderate": "A defined temperature break is present; work the edges.",
@@ -608,7 +597,6 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     }
     s_break = break_phrases.get(brk, "")
 
-    # Tactic — vary by side preference and depth
     depth_str = f"{int(depth):,}ft" if depth else "target depth"
     if side == "warm":
         tactic_prefix = f"Set up on the warm side of any edge in {depth_str}"
@@ -623,17 +611,11 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
             chl_note = " Very clear water (low CHL) confirms blue Gulf Stream influence."
 
     s_tactic = f"{tactic_prefix}.{chl_note} Zone covers ~{area} sq nm (score {score:.0%})."
-
     return f"{s_season} {s_sst} {s_break} {s_tactic}"
 
 
 def generate_zone_narrative(date: datetime.date, sp: dict, zone: dict,
                              skip: bool = False) -> str:
-    """
-    Generate a 3-sentence fishing narrative for a zone.
-    Uses Claude API (claude-haiku-4-5) if ANTHROPIC_API_KEY is set.
-    Falls back to template narrative otherwise.
-    """
     if skip:
         return _template_narrative(date, sp, zone)
 
@@ -648,7 +630,6 @@ def generate_zone_narrative(date: datetime.date, sp: dict, zone: dict,
         prime = sp.get("prime_months", [])
         peak  = sp.get("peak_months", [])
         month = date.month
-        month_name = calendar.month_name[month]
 
         if month in peak:
             season_status = "PEAK season"
@@ -668,7 +649,6 @@ def generate_zone_narrative(date: datetime.date, sp: dict, zone: dict,
         adj_score  = zone.get("score", 0)
         center     = zone["center"]
 
-        # Derive plain-English assessments to anchor the narrative
         sst_delta = round(sst - sp["sst_target_f"], 1) if sst else None
         sst_rel = (
             "right on target" if sst_delta is not None and abs(sst_delta) < 0.5
@@ -716,17 +696,16 @@ Rules:
 # Zone summarization
 # ─────────────────────────────────────────────────────────────────────────────
 def zone_from_cluster(cluster: list[tuple], rank: int) -> dict:
-    """Summarize a cluster into a zone dict. Narrative and seasonal data added later."""
-    scores   = [r[2] for r in cluster]
-    metas    = [r[3] for r in cluster]
-    best_idx = scores.index(max(scores))
+    scores    = [r[2] for r in cluster]
+    metas     = [r[3] for r in cluster]
+    best_idx  = scores.index(max(scores))
     best_meta = metas[best_idx]
 
     lats = [r[0] for r in cluster]
     lons = [r[1] for r in cluster]
-    lat_span_nm  = (max(lats) - min(lats)) * 60
-    lon_span_nm  = (max(lons) - min(lons)) * 60 * math.cos(math.radians(sum(lats) / len(lats)))
-    area_sq_nm   = round(lat_span_nm * lon_span_nm, 1)
+    lat_span_nm = (max(lats) - min(lats)) * 60
+    lon_span_nm = (max(lons) - min(lons)) * 60 * math.cos(math.radians(sum(lats) / len(lats)))
+    area_sq_nm  = round(lat_span_nm * lon_span_nm, 1)
 
     polygon = convex_hull_polygon([(r[0], r[1]) for r in cluster])
 
@@ -754,10 +733,10 @@ def zone_from_cluster(cluster: list[tuple], rank: int) -> dict:
             "kd490":          best_meta.get("kd490"),
             "color_score":    best_meta.get("color_score"),
         },
-        "seasonal_factor":  None,
-        "score":            None,
-        "in_season":        None,
-        "narrative":        None,
+        "seasonal_factor": None,
+        "score":           None,
+        "in_season":       None,
+        "narrative":       None,
     }
 
 
@@ -774,11 +753,11 @@ def analyze_species(species_key: str, sp_config: dict,
     log.info("  Analyzing %s ...", sp_config["display_name"])
     if date is None:
         date = datetime.date.today()
-    month     = date.month
-    min_score = sp_config.get("min_zone_score", 0.60)
-    prime     = sp_config.get("prime_months", list(range(1, 13)))
-    peak      = sp_config.get("peak_months", [])
-    seas_mult = score_seasonality(month, prime, peak)
+    month      = date.month
+    min_score  = sp_config.get("min_zone_score", 0.60)
+    prime      = sp_config.get("prime_months", list(range(1, 13)))
+    peak       = sp_config.get("peak_months", [])
+    seas_mult  = score_seasonality(month, prime, peak)
     seas_label = ("peak" if month in peak
                   else ("prime" if month in prime else "off-season"))
 
