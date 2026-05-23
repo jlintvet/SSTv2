@@ -58,7 +58,7 @@ LAT_MAX = 39.00
 LON_MIN = -78.89
 LON_MAX = -72.21
 
-CLUSTER_MIN_CELLS = 8
+CLUSTER_MIN_CELLS = 4
 CLUSTER_SCORE_THRESH = 0.50
 
 BREAK_WEAK_THRESHOLD     = 0.4   # °C per grid-cell (central-diff magnitude)
