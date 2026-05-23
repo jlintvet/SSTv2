@@ -1,0 +1,56 @@
+2026-05-23T00:21:04 [INFO] === FishingHotspotAnalyzer  date=2026-05-23  month=May ===
+2026-05-23T00:21:04 [INFO] Species to analyze: ['yellowfin', 'mahi', 'wahoo', 'bluefin', 'kingfish']
+2026-05-23T00:21:04 [INFO] === Loading local data ===
+2026-05-23T00:21:04 [INFO] Composite loaded: 265 lat × 333 lon, coverage 33.4%
+2026-05-23T00:21:04 [INFO] Bathymetry grid loaded: 1273 × 1604 cells
+2026-05-23T00:21:04 [INFO] Building composite lookup ...
+2026-05-23T00:21:04 [INFO]   29434 ocean SST points
+2026-05-23T00:21:04 [INFO]   Composite step: 0.0200°
+2026-05-23T00:21:04 [INFO] Computing SST gradient (break detection) ...
+2026-05-23T00:21:04 [INFO]   29434 gradient points
+2026-05-23T00:21:04 [INFO] Building bathymetry lookup ...
+2026-05-23T00:21:05 [INFO]   241969 depth points
+2026-05-23T00:21:05 [INFO] === Loading chlorophyll from local files ===
+2026-05-23T00:21:05 [INFO] Loaded CHL from CHL_20260521.json  (16307 valid points, 2 days old)
+2026-05-23T00:21:05 [INFO] === Loading sea color (kd490) from local files ===
+2026-05-23T00:21:05 [INFO] Loaded kd490 from SEACOLOR_20260521.json  (583 valid points, 2 days old)
+2026-05-23T00:21:05 [INFO] ANTHROPIC_API_KEY not set — using template narratives.
+2026-05-23T00:21:05 [INFO] === Scoring species ===
+2026-05-23T00:21:05 [INFO]   Analyzing Yellowfin Tuna ...
+2026-05-23T00:21:06 [INFO]     462 / 772 scored points above 0.60 threshold
+2026-05-23T00:21:06 [INFO]     25 raw cluster(s) found
+2026-05-23T00:21:06 [INFO]     Zone 1: habitat=0.791 × seasonal=0.80 → score=0.633  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 2: habitat=0.767 × seasonal=0.80 → score=0.614  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 3: habitat=0.764 × seasonal=0.80 → score=0.611  (prime)
+2026-05-23T00:21:06 [INFO]     -> 3 zone(s) for Yellowfin Tuna  [seasonality: prime  mult=0.80]
+2026-05-23T00:21:06 [INFO]   Analyzing Mahi-Mahi ...
+2026-05-23T00:21:06 [INFO]     1136 / 1521 scored points above 0.58 threshold
+2026-05-23T00:21:06 [INFO]     25 raw cluster(s) found
+2026-05-23T00:21:06 [INFO]     Zone 1: habitat=0.846 × seasonal=0.80 → score=0.677  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 2: habitat=0.845 × seasonal=0.80 → score=0.676  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 3: habitat=0.840 × seasonal=0.80 → score=0.672  (prime)
+2026-05-23T00:21:06 [INFO]     -> 3 zone(s) for Mahi-Mahi  [seasonality: prime  mult=0.80]
+2026-05-23T00:21:06 [INFO]   Analyzing Wahoo ...
+2026-05-23T00:21:06 [INFO]     445 / 766 scored points above 0.58 threshold
+2026-05-23T00:21:06 [INFO]     23 raw cluster(s) found
+2026-05-23T00:21:06 [INFO]     Zone 1: habitat=0.726 × seasonal=0.80 → score=0.581  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 2: habitat=0.717 × seasonal=0.80 → score=0.574  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 3: habitat=0.706 × seasonal=0.80 → score=0.565  (prime)
+2026-05-23T00:21:06 [INFO]     -> 3 zone(s) for Wahoo  [seasonality: prime  mult=0.80]
+2026-05-23T00:21:06 [INFO]   Analyzing Bluefin Tuna ...
+2026-05-23T00:21:06 [INFO]     336 / 567 scored points above 0.60 threshold
+2026-05-23T00:21:06 [INFO]     20 raw cluster(s) found
+2026-05-23T00:21:06 [INFO]     Zone 1: habitat=0.782 × seasonal=0.80 → score=0.626  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 2: habitat=0.776 × seasonal=0.80 → score=0.621  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 3: habitat=0.731 × seasonal=0.80 → score=0.585  (prime)
+2026-05-23T00:21:06 [INFO]     -> 3 zone(s) for Bluefin Tuna  [seasonality: prime  mult=0.80]
+2026-05-23T00:21:06 [INFO]   Analyzing King Mackerel ...
+2026-05-23T00:21:06 [INFO]     4530 / 5245 scored points above 0.55 threshold
+2026-05-23T00:21:06 [INFO]     61 raw cluster(s) found
+2026-05-23T00:21:06 [INFO]     Zone 1: habitat=0.882 × seasonal=0.80 → score=0.706  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 2: habitat=0.880 × seasonal=0.80 → score=0.704  (prime)
+2026-05-23T00:21:06 [INFO]     Zone 3: habitat=0.795 × seasonal=0.80 → score=0.636  (prime)
+2026-05-23T00:21:06 [INFO]     -> 3 zone(s) for King Mackerel  [seasonality: prime  mult=0.80]
+2026-05-23T00:21:06 [INFO] === Writing output ===
+2026-05-23T00:21:06 [INFO] Wrote fishing_hotspots_2026-05-23.json  (13.6 KB)
+2026-05-23T00:21:06 [INFO] === Done. ===
