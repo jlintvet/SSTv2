@@ -483,7 +483,7 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     """Fallback template-based narrative when Claude API is unavailable."""
     month      = date.month
     month_name = calendar.month_name[month]
-    prime      = sp.get("prime_months", [])
+    prime      = sp.get("prime_months", list(range(1, 13)))
     peak       = sp.get("peak_months", [])
     name       = sp["display_name"]
     cond       = zone["conditions"]
@@ -518,7 +518,7 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
     # Tactic phrase
     depth_str = f" in {int(depth):,}ft of water" if depth else ""
     notes = sp.get("structure_notes", "")
-    s3 = f"Zone scores {score:.2f} — target the {side} side of any break{depth_str}. {notes[:120] if notes else 'Look for current edges and bait concentrations.'}".rstrip(".") + "."
+    s3 = f"Zone scores {score:.2f} — target the {side} side of any break{depth_str}. {notes[:120] if notes else 'Look for current edges and bait concentrations.'}".rstrip(".")  + "."
 
     return f"{s1} {s2} {s3}"
 
