@@ -1,15 +1,11 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-05-23 16:52:27
+  UTC  : 2026-05-23 18:57:57
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20260522 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260522 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260522
-  → DailySSTData/MUR/mur_20260522.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260522 (cached)
   ✓ MUR 20260521 (cached)
   ✓ MUR 20260520 (cached)
   ✓ MUR 20260519 (cached)
@@ -21,18 +17,32 @@ SST PIPELINE
   GOES 20260523 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260523 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260523 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260522 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260522 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260522 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260522 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20260521 (cached)
+  GOES 20260522 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 70 inland, kept 2237 ocean)
+✓
+  → DailySSTData/GOES/Composite/goes_composite_20260522.csv  (2237 pts, 54 lats × 66 lons)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-05-21 16:50Z → 2026-05-23 16:10Z
+  Window range   : 2026-05-21 18:50Z → 2026-05-23 18:10Z
   Half-width     : ±10 min per bucket
-  ⚠ dir listing failed npp 2026/141: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  npp 20260521_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260521_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260522_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260522_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260522_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -105,30 +115,134 @@ SST PIPELINE
   npp 20260522_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260522_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260522_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  ⚠ dir listing failed npp 2026/143: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
-  n20 20260521_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1710 ✓ (cached)
-  n20 20260521_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1850 ✓ (cached)
-  n20 20260521_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260521_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  ⚠ dir listing failed n20 2026/142: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  npp 20260523_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0810 …   ⚠ VIIRS npp 20260523_0810: only 29 pts — skipping write.
+✗ ok
+  npp 20260523_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260523_1750 …   → DailySSTData/VIIRS/Passes/viirs_npp_20260523_1750.csv  (14936 pts, 183 lats × 289 lons)
+  ⚠ dir listing failed n20 2026/141: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  n20 20260522_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0710 ✓ (cached)
+  n20 20260522_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1650 ✓ (cached)
+  n20 20260522_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260522_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260523_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260523_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260523_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -176,57 +290,34 @@ SST PIPELINE
   n20 20260523_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260523_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260523_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  ⚠ dir listing failed n21 2026/141: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  n20 20260523_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260523_1810 …   → DailySSTData/VIIRS/Passes/viirs_n20_20260523_1810.csv  (12825 pts, 180 lats × 296 lons)
+  n21 20260521_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260521_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
   ⚠ dir listing failed n21 2026/142: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
-  n21 20260523_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0600 ✓ (cached)
-  n21 20260523_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260523_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  ⚠ dir listing failed n21 2026/143: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
 
-  VIIRS summary: 0 written, 6 cached, 182 miss/cloud, 290 outside windows.
+  VIIRS summary: 2 written, 5 cached, 278 miss/cloud, 509 outside windows.
 
 =========================================================
 ✓ Pipeline complete
