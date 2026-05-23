@@ -1,20 +1,89 @@
-2026-05-23T12:00:33 [INFO] === FishingHotspotAnalyzer  date=2026-05-23  month=May ===
-Traceback (most recent call last):
-  File "/home/runner/work/SSTv2/SSTv2/FishingHotspotAnalyzer.py", line 921, in <module>
-    main()
-  File "/home/runner/work/SSTv2/SSTv2/FishingHotspotAnalyzer.py", line 839, in main
-    config = json.load(f)
-             ^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/__init__.py", line 293, in load
-    return loads(fp.read(),
-           ^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/__init__.py", line 346, in loads
-    return _default_decoder.decode(s)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/decoder.py", line 337, in decode
-    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/decoder.py", line 353, in raw_decode
-    obj, end = self.scan_once(s, idx)
-               ^^^^^^^^^^^^^^^^^^^^^^
-json.decoder.JSONDecodeError: Expecting ',' delimiter: line 31 column 1292 (char 2421)
+2026-05-23T12:04:26 [INFO] === FishingHotspotAnalyzer  date=2026-05-23  month=May ===
+2026-05-23T12:04:26 [INFO] Species to analyze: ['yellowfin', 'bluefin', 'mahi', 'wahoo', 'kingfish', 'white_marlin', 'blue_marlin']
+2026-05-23T12:04:26 [INFO] === Loading local data ===
+2026-05-23T12:04:26 [INFO] Composite loaded: 265 lat × 333 lon, coverage 33.4%
+2026-05-23T12:04:26 [INFO] Bathymetry grid loaded: 1273 × 1604 cells
+2026-05-23T12:04:26 [INFO] Building composite lookup ...
+2026-05-23T12:04:27 [INFO]   29434 ocean SST points
+2026-05-23T12:04:27 [INFO]   Composite step: 0.0200°
+2026-05-23T12:04:27 [INFO] Computing SST gradient (break detection) ...
+2026-05-23T12:04:27 [INFO]   29434 gradient points
+2026-05-23T12:04:27 [INFO] Building bathymetry lookup ...
+2026-05-23T12:04:28 [INFO]   61368 depth points
+2026-05-23T12:04:28 [INFO] === Loading chlorophyll from local files ===
+2026-05-23T12:04:29 [INFO] Loaded CHL from CHL_20260521.json  (5998 valid points, 2 days old)
+2026-05-23T12:04:29 [INFO] === Loading sea color (kd490) from local files ===
+2026-05-23T12:04:29 [INFO] Loaded kd490 from SEACOLOR_20260521.json  (583 valid points, 2 days old)
+2026-05-23T12:04:29 [INFO] ANTHROPIC_API_KEY set — will generate AI narratives via Claude API.
+2026-05-23T12:04:29 [INFO] === Scoring species ===
+2026-05-23T12:04:29 [INFO]   Analyzing Yellowfin Tuna ...
+2026-05-23T12:04:29 [INFO]     253 / 501 scored points above 0.65 threshold
+2026-05-23T12:04:29 [INFO]     20 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.824 × seasonal=1.00 → score=0.824  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.806 × seasonal=1.00 → score=0.806  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.760 × seasonal=1.00 → score=0.760  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for Yellowfin Tuna  [seasonality: peak  mult=1.00]
+2026-05-23T12:04:29 [INFO]   Analyzing Bluefin Tuna ...
+2026-05-23T12:04:29 [INFO]     96 / 128 scored points above 0.60 threshold
+2026-05-23T12:04:29 [INFO]     8 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.942 × seasonal=0.45 → score=0.424  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.815 × seasonal=0.45 → score=0.367  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 2 zone(s) for Bluefin Tuna  [seasonality: off-season  mult=0.45]
+2026-05-23T12:04:29 [INFO]   Analyzing Mahi-Mahi ...
+2026-05-23T12:04:29 [INFO]     431 / 555 scored points above 0.58 threshold
+2026-05-23T12:04:29 [INFO]     26 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.883 × seasonal=0.80 → score=0.706  (prime)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.842 × seasonal=0.80 → score=0.674  (prime)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.816 × seasonal=0.80 → score=0.653  (prime)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for Mahi-Mahi  [seasonality: prime  mult=0.80]
+2026-05-23T12:04:29 [INFO]   Analyzing Wahoo ...
+2026-05-23T12:04:29 [INFO]     811 / 1150 scored points above 0.58 threshold
+2026-05-23T12:04:29 [INFO]     28 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.791 × seasonal=0.45 → score=0.356  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.752 × seasonal=0.45 → score=0.338  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.732 × seasonal=0.45 → score=0.329  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for Wahoo  [seasonality: off-season  mult=0.45]
+2026-05-23T12:04:29 [INFO]   Analyzing King Mackerel ...
+2026-05-23T12:04:29 [INFO]     904 / 1268 scored points above 0.60 threshold
+2026-05-23T12:04:29 [INFO]     46 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.837 × seasonal=1.00 → score=0.837  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.772 × seasonal=1.00 → score=0.772  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.748 × seasonal=1.00 → score=0.748  (peak)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for King Mackerel  [seasonality: peak  mult=1.00]
+2026-05-23T12:04:29 [INFO]   Analyzing White Marlin ...
+2026-05-23T12:04:29 [INFO]     254 / 393 scored points above 0.60 threshold
+2026-05-23T12:04:29 [INFO]     16 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.869 × seasonal=0.45 → score=0.391  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.869 × seasonal=0.45 → score=0.391  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.842 × seasonal=0.45 → score=0.379  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for White Marlin  [seasonality: off-season  mult=0.45]
+2026-05-23T12:04:29 [INFO]   Analyzing Blue Marlin ...
+2026-05-23T12:04:29 [INFO]     1349 / 1768 scored points above 0.58 threshold
+2026-05-23T12:04:29 [INFO]     35 raw cluster(s) found
+2026-05-23T12:04:29 [INFO]     Zone 1: habitat=0.854 × seasonal=0.45 → score=0.384  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 2: habitat=0.813 × seasonal=0.45 → score=0.366  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     Zone 3: habitat=0.797 × seasonal=0.45 → score=0.359  (off-season)
+2026-05-23T12:04:29 [WARNING]     Narrative API call failed: No module named 'anthropic' — using template.
+2026-05-23T12:04:29 [INFO]     -> 3 zone(s) for Blue Marlin  [seasonality: off-season  mult=0.45]
+2026-05-23T12:04:29 [INFO] === Writing output ===
+2026-05-23T12:04:29 [INFO] Wrote fishing_hotspots_2026-05-23.json  (16.9 KB)
+2026-05-23T12:04:29 [INFO] === Done. ===
