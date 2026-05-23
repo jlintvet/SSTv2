@@ -7,18 +7,31 @@ Scores ocean grid points for target-species fishing probability by fusing:
   • Bathymetry     — depth grid (DailySST/bathymetry_grid.json)
   • Chlorophyll-a  — local repo files (SSTv2/Chlorophyll/CHL_YYYYMMDD.json)
   • Sea color Kd490— local repo files (SSTv2/SeaColor/SEACOLOR_YYYYMMDD.json)
+  • Seasonality    — prime_months / peak_months from species_config.json
+
 Species habitat parameters live in species_config.json — edit and push to
 GitHub to tune without touching Python.
+
 Output: DailySST/fishing_hotspots_YYYY-MM-DD.json
+Each zone includes: habitat_score, seasonal_factor, adjusted_score,
+                    in_season, conditions (with sub-scores), narrative.
+
 Usage:
   python FishingHotspotAnalyzer.py
   SPECIES=yellowfin python FishingHotspotAnalyzer.py   # single species only
   DATE=2026-05-20   python FishingHotspotAnalyzer.py   # specific date
   SKIP_CHL=1        python FishingHotspotAnalyzer.py   # skip CHL/kd490 data
+  SKIP_NARRATIVE=1  python FishingHotspotAnalyzer.py   # skip AI narrative
+
 Dependencies:
   pip install numpy --break-system-packages
+  pip install anthropic --break-system-packages   # optional — for AI narrative
   scipy is used for convex hull if available; falls back to bounding polygon.
+
+Environment variables:
+  ANTHROPIC_API_KEY  — if set, generates AI narrative per zone via Claude API
 """
+import calendar
 import datetime
 import json
 import logging
@@ -28,43 +41,49 @@ import pathlib
 import sys
 from collections import deque
 import numpy as np
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 _ROOT        = pathlib.Path(__file__).resolve().parent
-VIIRS_DIR    = _ROOT / "DailySSTData" / "VIIRS" / "Bundled"   # composite input
-STATIC_DIR   = _ROOT / "DailySST"                              # bathymetry input
-OUTPUT_DIR   = _ROOT / "DailySST"                              # hotspot output
+VIIRS_DIR    = _ROOT / "DailySSTData" / "VIIRS" / "Bundled"
+STATIC_DIR   = _ROOT / "DailySST"
+OUTPUT_DIR   = _ROOT / "DailySST"
 CONFIG_PATH  = _ROOT / "species_config.json"
-CHL_DIR      = _ROOT / "SSTv2" / "Chlorophyll"                # local CHL files
-SEACOLOR_DIR = _ROOT / "SSTv2" / "SeaColor"                   # local kd490 files
+CHL_DIR      = _ROOT / "SSTv2" / "Chlorophyll"
+SEACOLOR_DIR = _ROOT / "SSTv2" / "SeaColor"
+
 LAT_MIN = 33.70
 LAT_MAX = 39.00
 LON_MIN = -78.89
 LON_MAX = -72.21
-# Grid resolution for scoring (degrees) — matches composite resolution ~0.02°
-SCORE_GRID_RES = 0.04   # coarser than composite for speed; interpolated from composite
-# Clustering: minimum cells in a zone, score threshold for hot cells
-CLUSTER_MIN_CELLS = 8        # ~0.04° × 0.04° × 8 cells ≈ 15 nm² minimum
-CLUSTER_SCORE_THRESH = 0.50  # per-cell threshold before weighting
-# Break detection: gradient magnitude °F per degree of lat/lon
-BREAK_WEAK_THRESHOLD     = 0.4   # °F/° — minimal front
-BREAK_MODERATE_THRESHOLD = 0.8   # °F/° — defined front
-BREAK_STRONG_THRESHOLD   = 1.5   # °F/° — sharp front
-# How far back to search for local CHL/kd490 files (days)
+
+CLUSTER_MIN_CELLS = 8
+CLUSTER_SCORE_THRESH = 0.50
+
+BREAK_WEAK_THRESHOLD     = 0.4
+BREAK_MODERATE_THRESHOLD = 0.8
+BREAK_STRONG_THRESHOLD   = 1.5
+
 CHL_LOOKBACK_DAYS = 10
-KEEP_HOTSPOT_DAYS = 7  # purge hotspot files older than this
+KEEP_HOTSPOT_DAYS = 7
+
+# Seasonal scoring multipliers
+SEASONAL_PEAK_MULT  = 1.00   # month is in peak_months
+SEASONAL_PRIME_MULT = 0.80   # month is in prime_months (not peak)
+SEASONAL_OFF_MULT   = 0.45   # month is outside prime season
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data loaders
 # ─────────────────────────────────────────────────────────────────────────────
 def load_composite(date: datetime.date) -> dict | None:
-    """Load the VIIRS composite JSON (always the latest, rebuilt each bundler run)."""
     path = VIIRS_DIR / "viirs_composite.json"
     if not path.exists():
         log.warning("viirs_composite.json not found — run VIIRSHourlyBundler.py first.")
@@ -75,8 +94,8 @@ def load_composite(date: datetime.date) -> dict | None:
              len(data["latSet"]), len(data["lonSet"]),
              data.get("coverage_pct", 0))
     return data
+
 def load_bathymetry_grid() -> dict | None:
-    """Load the pre-built bathymetry grid JSON."""
     path = STATIC_DIR / "bathymetry_grid.json"
     if not path.exists():
         log.warning("bathymetry_grid.json not found — run StaticLayersRetrieval.py first.")
@@ -86,17 +105,9 @@ def load_bathymetry_grid() -> dict | None:
     log.info("Bathymetry grid loaded: %d × %d cells",
              len(data["lats"]), len(data["lons"]))
     return data
+
 def _load_rows_json(path: pathlib.Path, value_key: str,
                     key_precision: int = 2) -> dict:
-    """
-    Parse a point-list JSON file produced by DailyChlorophyllandSeaColorRetrieval.py.
-    Format:
-      { ..., "rows": [{"lat": f, "lon": f, "<value_key>": f|null, ...}, ...] }
-    key_precision controls rounding of lat/lon keys:
-      2  (0.01°)  — for CHL at ~0.022° grid spacing
-      1  (0.1°)   — for SEACOLOR at ~0.167° grid spacing
-    Returns: {(lat_rounded, lon_rounded) -> float}  — valid (non-null, >0) points only.
-    """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     rows   = data.get("rows", [])
@@ -115,19 +126,14 @@ def _load_rows_json(path: pathlib.Path, value_key: str,
         lon = round(float(row["lon"]), key_precision)
         result[(lat, lon)] = fv
     return result
-# Map color_class string → approximate kd490 value (used as kd490 proxy from CHL file)
+
 _COLOR_CLASS_KD490 = {
     "blue_water":  0.06,
     "mixed":       0.10,
     "green_water": 0.20,
 }
+
 def _load_color_class_as_kd490(path: pathlib.Path) -> dict:
-    """
-    Extract color_class from a CHL rows file and convert to approximate kd490.
-    Used as fallback when no dedicated SEACOLOR file is available.
-    CHL is at ~0.022° grid → use 2dp keys.
-    Returns: {(lat_2dp, lon_2dp) -> kd490_approx}
-    """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     rows   = data.get("rows", [])
@@ -140,13 +146,10 @@ def _load_color_class_as_kd490(path: pathlib.Path) -> dict:
         lon = round(float(row["lon"]), 2)
         result[(lat, lon)] = _COLOR_CLASS_KD490[cc]
     return result
-_SEACOLOR_KEY_PRECISION = 1   # SEACOLOR grid ~0.167° → snap to 0.1°
+
+_SEACOLOR_KEY_PRECISION = 1
+
 def load_local_chl(date: datetime.date) -> dict:
-    """
-    Load chlorophyll from local repo file: SSTv2/Chlorophyll/CHL_YYYYMMDD.json
-    Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
-    Returns {(lat_2dp, lon_2dp) -> chl_mg_m3}
-    """
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
         fname  = f"CHL_{target.strftime('%Y%m%d')}.json"
@@ -162,13 +165,8 @@ def load_local_chl(date: datetime.date) -> dict:
     log.warning("No local CHL file found within %d days — CHL scoring will be neutral.",
                 CHL_LOOKBACK_DAYS)
     return {}
+
 def load_local_kd490(date: datetime.date) -> dict:
-    """
-    Load sea color Kd490 from local repo: SSTv2/SeaColor/SEACOLOR_YYYYMMDD.json
-    Searches backwards up to CHL_LOOKBACK_DAYS for the most recent available file.
-    Falls back to color_class-derived kd490 from the CHL file if no SEACOLOR file exists.
-    Returns {(lat_2dp, lon_2dp) -> kd490}
-    """
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
         fname  = f"SEACOLOR_{target.strftime('%Y%m%d')}.json"
@@ -182,7 +180,6 @@ def load_local_kd490(date: datetime.date) -> dict:
                 return lookup
             except Exception as exc:
                 log.warning("Failed to parse %s: %s — trying older file.", fname, exc)
-    # Fallback: derive kd490 approximation from color_class in the CHL file
     log.info("No SEACOLOR file found — deriving kd490 from color_class in CHL file.")
     for delta in range(CHL_LOOKBACK_DAYS + 1):
         target = date - datetime.timedelta(days=delta)
@@ -198,14 +195,11 @@ def load_local_kd490(date: datetime.date) -> dict:
                 log.warning("  Failed to read color_class from %s: %s", fname, exc)
     log.warning("No kd490 source found — kd490 scoring will be neutral.")
     return {}
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Composite → scored grid helpers
+# Composite → lookup helpers
 # ─────────────────────────────────────────────────────────────────────────────
 def build_composite_lookup(composite: dict) -> dict:
-    """
-    Convert flat composite arrays to a (lat, lon) → sst_f dict.
-    composite.latSet is ascending (south→north).
-    """
     lat_set = composite["latSet"]
     lon_set = composite["lonSet"]
     sst_arr = composite["sst"]
@@ -217,60 +211,61 @@ def build_composite_lookup(composite: dict) -> dict:
             if val is not None and val > 0:
                 grid[(round(lat, 3), round(lon, 3))] = val
     return grid
+
 def compute_sst_gradient(composite: dict) -> dict:
     """
-    Compute SST gradient magnitude at each grid point using central differences.
-    Returns dict: {(lat, lon) -> gradient °F per degree lat/lon}
+    Compute SST gradient magnitude using central differences.
+    One-sided differences are used ONLY at true grid edges (domain boundary),
+    NOT at data-void (cloud/null) boundaries — suppressing false breaks.
     """
-    lat_set = composite["latSet"]   # ascending
-    lon_set = composite["lonSet"]   # ascending
+    lat_set = composite["latSet"]
+    lon_set = composite["lonSet"]
     sst_arr = composite["sst"]
     n_lat   = len(lat_set)
     n_lon   = len(lon_set)
     d_lat   = (lat_set[-1] - lat_set[0]) / max(n_lat - 1, 1)
     d_lon   = (lon_set[-1] - lon_set[0]) / max(n_lon - 1, 1)
+
     def val(li, loi):
         v = sst_arr[li * n_lon + loi]
         return v if (v is not None and v > 0) else None
+
     grad = {}
     for li in range(n_lat):
         for loi in range(n_lon):
             v = val(li, loi)
             if v is None:
                 continue
-            # Central differences; use one-sided at edges
-            vN = val(li + 1, loi) if li < n_lat - 1 else None
-            vS = val(li - 1, loi) if li > 0 else None
-            vE = val(li, loi + 1) if loi < n_lon - 1 else None
-            vW = val(li, loi - 1) if loi > 0 else None
+            at_south = (li == 0)
+            at_north = (li == n_lat - 1)
+            at_west  = (loi == 0)
+            at_east  = (loi == n_lon - 1)
+            vN = val(li + 1, loi) if not at_north else None
+            vS = val(li - 1, loi) if not at_south else None
+            vE = val(li, loi + 1) if not at_east  else None
+            vW = val(li, loi - 1) if not at_west  else None
+            # Central diff preferred; one-sided only at true grid edge
             if vN is not None and vS is not None:
                 dlat = (vN - vS) / (2 * d_lat)
-            elif vN is not None:
+            elif vN is not None and at_south:
                 dlat = (vN - v) / d_lat
-            elif vS is not None:
+            elif vS is not None and at_north:
                 dlat = (v - vS) / d_lat
             else:
                 dlat = 0.0
             if vE is not None and vW is not None:
                 dlon = (vE - vW) / (2 * d_lon)
-            elif vE is not None:
+            elif vE is not None and at_west:
                 dlon = (vE - v) / d_lon
-            elif vW is not None:
+            elif vW is not None and at_east:
                 dlon = (v - vW) / d_lon
             else:
                 dlon = 0.0
             magnitude = math.sqrt(dlat ** 2 + dlon ** 2)
             grad[(round(lat_set[li], 3), round(lon_set[loi], 3))] = magnitude
     return grad
+
 def build_bathy_lookup(bathy: dict) -> dict:
-    """
-    Convert 2D bathymetry grid to (lat_2dp, lon_2dp) → depth_ft dict.
-    bathy.lats is ascending; depth_ft is None for land.
-    Keys are rounded to 2 decimal places (0.01° ≈ 1 km) to match the composite
-    SST grid resolution and allow O(1) lookups in build_score_grid.
-    Bathy is at ~0.004° so multiple bathy cells map to each 0.01° bin — the
-    last non-null value wins (depth variation within 1km is negligible for scoring).
-    """
     lats    = bathy["lats"]
     lons    = bathy["lons"]
     grid_ft = bathy["depth_ft"]
@@ -281,17 +276,17 @@ def build_bathy_lookup(bathy: dict) -> dict:
             if val is not None:
                 result[(round(lat, 2), round(lon, 2))] = val
     return result
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Sub-score functions (all return 0.0 – 1.0)
+# Sub-score functions (0.0 – 1.0)
 # ─────────────────────────────────────────────────────────────────────────────
 def score_sst(sst_f: float, target: float, sst_min: float, sst_max: float) -> float:
-    """Gaussian peak at target, zero outside [sst_min, sst_max]."""
     if sst_f < sst_min or sst_f > sst_max:
         return 0.0
     sigma = (sst_max - sst_min) / 4.0
     return math.exp(-0.5 * ((sst_f - target) / sigma) ** 2)
+
 def score_break(gradient_mag: float | None) -> float:
-    """Score 0–1 based on gradient magnitude. None = 0.3 (neutral)."""
     if gradient_mag is None:
         return 0.3
     if gradient_mag >= BREAK_STRONG_THRESHOLD:
@@ -301,46 +296,51 @@ def score_break(gradient_mag: float | None) -> float:
     if gradient_mag >= BREAK_WEAK_THRESHOLD:
         return 0.45
     return 0.15
+
 def score_depth(depth_ft: float | None, d_min: float, d_max: float,
                 d_ideal_min: float, d_ideal_max: float) -> float:
-    """1.0 in ideal range, smooth falloff to edges of acceptable range, 0 outside."""
     if depth_ft is None:
         return 0.0
     if depth_ft < d_min or depth_ft > d_max:
         return 0.0
     if d_ideal_min <= depth_ft <= d_ideal_max:
         return 1.0
-    # Ramp up from d_min to d_ideal_min
     if depth_ft < d_ideal_min:
         span = max(d_ideal_min - d_min, 1)
         return (depth_ft - d_min) / span
-    # Ramp down from d_ideal_max to d_max
     span = max(d_max - d_ideal_max, 1)
     return (d_max - depth_ft) / span
+
 def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
-    """1.0 inside range, partial credit outside, 0.45 if no data."""
     if chl is None:
-        return 0.45   # neutral — no data
+        return 0.45
     if chl <= 0:
         return 0.1
     if chl_min <= chl <= chl_max:
         return 1.0
-    # Partial credit just outside range
     center = (chl_min + chl_max) / 2.0
     spread = (chl_max - chl_min) / 2.0
     dist   = abs(chl - center) - spread
     return max(0.0, 1.0 - dist / spread)
+
 def score_color(kd490: float | None, kd490_max: float) -> float:
-    """Bluer water = lower kd490 = better score. 0.50 if no data."""
     if kd490 is None:
         return 0.50
     if kd490 <= kd490_max * 0.5:
         return 1.0
     if kd490 <= kd490_max:
         return 0.75
-    # Penalty beyond threshold
     excess = (kd490 - kd490_max) / kd490_max
     return max(0.0, 0.5 - excess * 0.5)
+
+def score_seasonality(month: int, prime_months: list, peak_months: list) -> float:
+    """Return seasonal multiplier: 1.0 peak, 0.80 prime, 0.45 off-season."""
+    if month in peak_months:
+        return SEASONAL_PEAK_MULT
+    if month in prime_months:
+        return SEASONAL_PRIME_MULT
+    return SEASONAL_OFF_MULT
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Scoring grid construction
 # ─────────────────────────────────────────────────────────────────────────────
@@ -350,15 +350,12 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     """
     Score every composite grid point for one species.
 
-    Hard gates (point skipped entirely, not added to results):
+    Hard gates:
       • SST outside [sst_min, sst_max]
-      • Depth is known (bathy available) but outside [depth_min, depth_max]
-        — eliminates bay/estuarine water and land-adjacent pixels.
-        — points with no bathy data (depth_ft=None) are NOT hard-gated so
-          truly offshore areas with patchy bathy coverage still score.
+      • Known depth outside [depth_min, depth_max] (depth=None is not gated)
 
     Returns list of (lat, lon, score, meta_dict).
-    meta_dict includes raw values AND per-factor sub-scores for frontend display.
+    meta_dict includes raw values AND per-factor sub-scores.
     """
     results = []
     w = sp["weights"]
@@ -370,39 +367,33 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     break_required           = sp.get("break_required", False)
 
     for (lat, lon), sst_f in composite_lookup.items():
-        # ── SST hard gate ────────────────────────────────────────────────────
         s_sst = score_sst(sst_f, sp["sst_target_f"], sst_min, sst_max)
         if s_sst == 0.0:
-            continue   # out of species SST range — skip
+            continue
 
-        # ── O(1) overlay lookups ─────────────────────────────────────────────
         lat2      = round(lat, 2)
         lon2      = round(lon, 2)
         lat1      = round(lat, 1)
         lon1      = round(lon, 1)
         gradient  = gradient_lookup.get((lat, lon))
-        depth_ft  = bathy_lookup.get((lat2, lon2))   # bathy keyed at 2dp
-        chl       = chl_lookup.get((lat2, lon2))      # CHL keyed at 2dp
-        kd490_val = kd490_lookup.get((lat1, lon1))    # SEACOLOR keyed at 1dp
+        depth_ft  = bathy_lookup.get((lat2, lon2))
+        chl       = chl_lookup.get((lat2, lon2))
+        kd490_val = kd490_lookup.get((lat1, lon1))
 
-        # ── Depth hard gate (known depth only) ───────────────────────────────
         s_depth = score_depth(depth_ft, d_min, d_max, d_ideal_min, d_ideal_max)
         if depth_ft is not None and s_depth == 0.0:
-            continue   # wrong depth zone (too shallow/deep) — skip
+            continue
 
-        # ── Remaining sub-scores ─────────────────────────────────────────────
         s_break = score_break(gradient)
         s_chl   = score_chl(chl, chl_min, chl_max)
         s_color = score_color(kd490_val, kd490_max)
 
-        # ── Weighted total ───────────────────────────────────────────────────
         total = (w["sst"]   * s_sst   +
                  w["break"] * s_break +
                  w["depth"] * s_depth +
                  w["chl"]   * s_chl   +
                  w["color"] * s_color)
 
-        # Cap score if break is required but very weak
         if break_required and s_break < 0.3:
             total = min(0.50, total)
 
@@ -423,34 +414,27 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
         results.append((lat, lon, sc, meta))
 
     return results
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Clustering (flood fill on hot cells)
+# Clustering
 # ─────────────────────────────────────────────────────────────────────────────
 def cluster_hot_cells(scored_points: list[tuple],
                       min_score: float,
                       grid_res: float = 0.04) -> list[list[tuple]]:
-    """
-    Find connected components of cells scoring >= min_score.
-    Adjacency: 8-connected (Moore neighborhood) at grid_res degree spacing.
-    Returns list of clusters, each cluster is list of (lat, lon, score, meta).
-    """
     hot = {(r[0], r[1]): r for r in scored_points if r[2] >= min_score}
     if not hot:
         return []
-    visited = set()
+    visited  = set()
     clusters = []
-    eps = grid_res * 1.5   # adjacency threshold
     for start_key in hot:
         if start_key in visited:
             continue
-        # BFS
         cluster = []
         queue   = deque([start_key])
         visited.add(start_key)
         while queue:
             lat, lon = queue.popleft()
             cluster.append(hot[(lat, lon)])
-            # Check 8 neighbors
             for dlat in [-grid_res, 0, grid_res]:
                 for dlon in [-grid_res, 0, grid_res]:
                     if dlat == 0 and dlon == 0:
@@ -459,35 +443,30 @@ def cluster_hot_cells(scored_points: list[tuple],
                     nlon = round(lon + dlon, 3)
                     nkey = (nlat, nlon)
                     if nkey in hot and nkey not in visited:
-                        # Also accept slight misalignment
                         visited.add(nkey)
                         queue.append(nkey)
         clusters.append(cluster)
     return clusters
+
 def convex_hull_polygon(points: list[tuple]) -> list[list[float]]:
-    """
-    Compute convex hull of (lat, lon) points.
-    Uses scipy if available, otherwise returns bounding polygon.
-    Returns list of [lat, lon] coordinate pairs.
-    """
     if len(points) < 3:
         return [[p[0], p[1]] for p in points]
     try:
         from scipy.spatial import ConvexHull  # type: ignore
-        pts = np.array([[p[0], p[1]] for p in points])
+        pts  = np.array([[p[0], p[1]] for p in points])
         hull = ConvexHull(pts)
         hull_pts = pts[hull.vertices].tolist()
-        hull_pts.append(hull_pts[0])   # close the ring
+        hull_pts.append(hull_pts[0])
         return [[round(p[0], 4), round(p[1], 4)] for p in hull_pts]
     except Exception:
         pass
-    # Fallback: bounding box padded by 0.05°
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
     pad  = 0.05
     s, n = min(lats) - pad, max(lats) + pad
     w, e = min(lons) - pad, max(lons) + pad
     return [[s, w], [n, w], [n, e], [s, e], [s, w]]
+
 def _break_label(gradient: float | None) -> str:
     if gradient is None or gradient < BREAK_WEAK_THRESHOLD:
         return "none"
@@ -496,33 +475,151 @@ def _break_label(gradient: float | None) -> str:
     if gradient < BREAK_STRONG_THRESHOLD:
         return "moderate"
     return "strong"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI / template narrative generation
+# ─────────────────────────────────────────────────────────────────────────────
+def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
+    """Fallback template-based narrative when Claude API is unavailable."""
+    month      = date.month
+    month_name = calendar.month_name[month]
+    prime      = sp.get("prime_months", [])
+    peak       = sp.get("peak_months", [])
+    name       = sp["display_name"]
+    cond       = zone["conditions"]
+    sst        = cond.get("sst_f")
+    sweet      = sp.get("sst_sweet_spot_f", sp["sst_range_f"])
+    brk        = cond.get("break_strength", "none")
+    depth      = cond.get("depth_ft")
+    side       = sp.get("prefer_side", "warm")
+    score      = zone.get("habitat_score", zone.get("score", 0))
+
+    # Season phrase
+    if month in peak:
+        s1 = f"It's {month_name} — peak season for {name} at Hatteras."
+    elif month in prime:
+        s1 = f"It's {month_name}, within the prime season window for {name}."
+    else:
+        s1 = f"It's {month_name}, outside the typical prime season for {name}; fish may be present but encounters less predictable."
+
+    # Conditions phrase
+    if sst and sweet[0] <= sst <= sweet[1]:
+        s2 = f"Water temperature of {sst}°F is right in the sweet spot ({sweet[0]}–{sweet[1]}°F)"
+    elif sst:
+        s2 = f"Water temperature of {sst}°F is within range but off the sweet spot ({sweet[0]}–{sweet[1]}°F)"
+    else:
+        s2 = "SST data is limited in this area"
+    brk_desc = {"strong": "with a sharp temperature break nearby",
+                "moderate": "with a defined temperature break",
+                "weak": "with a subtle temperature gradient",
+                "none": "with no significant temperature break detected"}
+    s2 += f" {brk_desc.get(brk, '')}."
+
+    # Tactic phrase
+    depth_str = f" in {int(depth):,}ft of water" if depth else ""
+    notes = sp.get("structure_notes", "")
+    s3 = f"Zone scores {score:.2f} — target the {side} side of any break{depth_str}. {notes[:120] if notes else 'Look for current edges and bait concentrations.'}".rstrip(".") + "."
+
+    return f"{s1} {s2} {s3}"
+
+
+def generate_zone_narrative(date: datetime.date, sp: dict, zone: dict,
+                             skip: bool = False) -> str:
+    """
+    Generate a 3-4 sentence fishing narrative for a zone.
+    Uses Claude API (claude-haiku-4-5) if ANTHROPIC_API_KEY is set.
+    Falls back to template narrative otherwise.
+    """
+    if skip:
+        return _template_narrative(date, sp, zone)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return _template_narrative(date, sp, zone)
+
+    try:
+        import anthropic  # type: ignore
+        cond  = zone["conditions"]
+        sweet = sp.get("sst_sweet_spot_f", sp["sst_range_f"])
+        prime = sp.get("prime_months", [])
+        peak  = sp.get("peak_months", [])
+        month = date.month
+        if month in peak:
+            season_status = "PEAK season"
+        elif month in prime:
+            season_status = "prime season"
+        else:
+            season_status = "off-season"
+
+        prompt = f"""You are a knowledgeable offshore fishing guide at Cape Hatteras and the Outer Banks, NC.
+Write a 3-sentence fishing narrative for this specific zone. Be practical, specific, and use fisherman's language.
+
+Species: {sp["display_name"]}
+Date: {date.strftime("%B %d, %Y")} — {season_status}
+Seasonal context: {sp.get("seasonal_context", "")}
+
+Zone data:
+  - Habitat score: {zone.get("habitat_score", 0):.2f}  (seasonally adjusted: {zone.get("score", 0):.2f})
+  - Center: {zone["center"][0]:.3f}N, {abs(zone["center"][1]):.3f}W
+  - Area: {zone.get("area_sq_nm", 0)} sq nm
+  - SST: {cond.get("sst_f")}°F  (sweet spot: {sweet[0]}–{sweet[1]}°F, target: {sp["sst_target_f"]}°F)
+  - Break: {cond.get("break_strength")} (score {cond.get("break_score", 0):.2f})
+  - Depth: {cond.get("depth_ft")}ft
+  - Chlorophyll: {cond.get("chl_mg_m3")} mg/m³
+  - kd490 (water clarity): {cond.get("kd490")}
+  - Preferred side: {sp.get("prefer_side")} side of break
+
+Structure notes: {sp.get("structure_notes", "")}
+
+Instructions:
+Sentence 1: Describe current SST and break conditions vs ideal. Be specific about the numbers.
+Sentence 2: Seasonal context — what to expect this time of year and any caveats.
+Sentence 3: Actionable tactical advice for this specific zone.
+Keep total response under 80 words."""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        narrative = message.content[0].text.strip()
+        log.info("    Narrative generated via Claude API (%d chars)", len(narrative))
+        return narrative
+    except Exception as exc:
+        log.warning("    Narrative API call failed: %s — using template.", exc)
+        return _template_narrative(date, sp, zone)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Zone summarization
+# ─────────────────────────────────────────────────────────────────────────────
 def zone_from_cluster(cluster: list[tuple], rank: int) -> dict:
-    """Summarize a cluster into a zone dict for output JSON."""
-    scores = [r[2] for r in cluster]
-    metas  = [r[3] for r in cluster]
+    """Summarize a cluster into a zone dict. Narrative and seasonal data added later."""
+    scores   = [r[2] for r in cluster]
+    metas    = [r[3] for r in cluster]
     best_idx = scores.index(max(scores))
     best_meta = metas[best_idx]
-    best_lat  = cluster[best_idx][0]
-    best_lon  = cluster[best_idx][1]
-    # Compute approximate area in sq nautical miles
+
     lats = [r[0] for r in cluster]
     lons = [r[1] for r in cluster]
     lat_span_nm  = (max(lats) - min(lats)) * 60
     lon_span_nm  = (max(lons) - min(lons)) * 60 * math.cos(math.radians(sum(lats) / len(lats)))
     area_sq_nm   = round(lat_span_nm * lon_span_nm, 1)
+
     polygon = convex_hull_polygon([(r[0], r[1]) for r in cluster])
-    # Centroid weighted by score
-    w_sum = sum(scores)
+
+    w_sum      = sum(scores)
     center_lat = round(sum(r[0] * r[2] for r in cluster) / w_sum, 4)
     center_lon = round(sum(r[1] * r[2] for r in cluster) / w_sum, 4)
+
     return {
-        "rank":       rank,
-        "score":      round(sum(scores) / len(scores), 3),
-        "peak_score": round(max(scores), 3),
-        "cell_count": len(cluster),
-        "area_sq_nm": area_sq_nm,
-        "center":     [center_lat, center_lon],
-        "polygon":    polygon,
+        "rank":          rank,
+        "habitat_score": round(sum(scores) / len(scores), 3),
+        "peak_score":    round(max(scores), 3),
+        "cell_count":    len(cluster),
+        "area_sq_nm":    area_sq_nm,
+        "center":        [center_lat, center_lon],
+        "polygon":       polygon,
         "conditions": {
             "sst_f":          best_meta.get("sst_f"),
             "sst_score":      best_meta.get("sst_score"),
@@ -535,17 +632,35 @@ def zone_from_cluster(cluster: list[tuple], rank: int) -> dict:
             "kd490":          best_meta.get("kd490"),
             "color_score":    best_meta.get("color_score"),
         },
+        # Seasonality and narrative filled in by analyze_species()
+        "seasonal_factor":  None,
+        "score":            None,
+        "in_season":        None,
+        "narrative":        None,
     }
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-species analysis
 # ─────────────────────────────────────────────────────────────────────────────
 def analyze_species(species_key: str, sp_config: dict,
                     composite_lookup: dict, gradient_lookup: dict,
                     bathy_lookup: dict, chl_lookup: dict,
-                    kd490_lookup: dict, composite_step: float = 0.02) -> dict:
-    """Run the full scoring pipeline for one species. Returns zones dict."""
+                    kd490_lookup: dict,
+                    composite_step: float = 0.02,
+                    date: datetime.date | None = None,
+                    skip_narrative: bool = False) -> dict:
+    """Run the full scoring + seasonality + narrative pipeline for one species."""
     log.info("  Analyzing %s ...", sp_config["display_name"])
+    if date is None:
+        date = datetime.date.today()
+    month     = date.month
     min_score = sp_config.get("min_zone_score", 0.60)
+    prime     = sp_config.get("prime_months", list(range(1, 13)))
+    peak      = sp_config.get("peak_months", [])
+    seas_mult = score_seasonality(month, prime, peak)
+    seas_label = ("peak" if month in peak
+                  else ("prime" if month in prime else "off-season"))
+
     scored = build_score_grid(
         composite_lookup, gradient_lookup, bathy_lookup,
         chl_lookup, kd490_lookup, sp_config
@@ -553,15 +668,42 @@ def analyze_species(species_key: str, sp_config: dict,
     hot_count = sum(1 for r in scored if r[2] >= min_score)
     log.info("    %d / %d scored points above %.2f threshold",
              hot_count, len(scored), min_score)
+
     clusters = cluster_hot_cells(scored, min_score, grid_res=composite_step)
     log.info("    %d raw cluster(s) found", len(clusters))
-    # Filter by minimum size, sort by mean score desc
+
     valid = [c for c in clusters if len(c) >= CLUSTER_MIN_CELLS]
     valid.sort(key=lambda c: sum(r[2] for r in c) / len(c), reverse=True)
     top3 = valid[:3]
-    zones = [zone_from_cluster(c, rank=i + 1) for i, c in enumerate(top3)]
-    log.info("    → %d zone(s) for %s", len(zones), sp_config["display_name"])
-    return {"zones": zones, "grid_points_scored": len(scored), "hot_cells": hot_count}
+
+    zones = []
+    for i, c in enumerate(top3):
+        z = zone_from_cluster(c, rank=i + 1)
+        z["seasonal_factor"] = seas_mult
+        z["score"]           = round(z["habitat_score"] * seas_mult, 3)
+        z["in_season"]       = seas_mult >= SEASONAL_PRIME_MULT
+        log.info("    Zone %d: habitat=%.3f × seasonal=%.2f → score=%.3f  (%s)",
+                 i + 1, z["habitat_score"], seas_mult, z["score"], seas_label)
+        z["narrative"] = generate_zone_narrative(date, sp_config, z,
+                                                 skip=skip_narrative)
+        zones.append(z)
+
+    # Re-rank by seasonally adjusted score
+    zones.sort(key=lambda z: z["score"], reverse=True)
+    for i, z in enumerate(zones):
+        z["rank"] = i + 1
+
+    log.info("    -> %d zone(s) for %s  [seasonality: %s  mult=%.2f]",
+             len(zones), sp_config["display_name"], seas_label, seas_mult)
+
+    return {
+        "zones":              zones,
+        "grid_points_scored": len(scored),
+        "hot_cells":          hot_count,
+        "seasonal_factor":    seas_mult,
+        "seasonal_status":    seas_label,
+    }
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Output
 # ─────────────────────────────────────────────────────────────────────────────
@@ -578,6 +720,7 @@ def write_hotspots(date: datetime.date, species_results: dict) -> pathlib.Path:
     tmp.rename(dest)
     log.info("Wrote %s  (%.1f KB)", dest.name, dest.stat().st_size / 1024)
     return dest
+
 def purge_old_hotspots(keep_days: int) -> None:
     cutoff = datetime.date.today() - datetime.timedelta(days=keep_days)
     for p in OUTPUT_DIR.glob("fishing_hotspots_????-??-??.json"):
@@ -588,22 +731,22 @@ def purge_old_hotspots(keep_days: int) -> None:
                 log.info("Purged old hotspot file: %s", p.name)
         except ValueError:
             pass
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    # Date
+
     date_env = os.environ.get("DATE", "").strip()
-    if date_env:
-        date = datetime.date.fromisoformat(date_env)
-    else:
-        date = datetime.date.today()
-    log.info("=== FishingHotspotAnalyzer  date=%s ===", date.isoformat())
-    # Species filter
+    date = datetime.date.fromisoformat(date_env) if date_env else datetime.date.today()
+    log.info("=== FishingHotspotAnalyzer  date=%s  month=%s ===",
+             date.isoformat(), calendar.month_name[date.month])
+
     species_filter = os.environ.get("SPECIES", "").strip().lower() or None
-    # Load species config
+    skip_narrative = os.environ.get("SKIP_NARRATIVE", "").strip() == "1"
+
     if not CONFIG_PATH.exists():
         log.error("species_config.json not found at %s", CONFIG_PATH)
         sys.exit(1)
@@ -617,21 +760,22 @@ def main() -> None:
         all_species = {species_filter: all_species[species_filter]}
     enabled = {k: v for k, v in all_species.items() if v.get("enabled", True)}
     log.info("Species to analyze: %s", list(enabled))
-    # ── Load local data ──────────────────────────────────────────────────────
+
+    # ── Load composite ───────────────────────────────────────────────────────
     log.info("=== Loading local data ===")
     composite = load_composite(date)
     if composite is None:
         log.error("Cannot proceed without composite SST.")
         sys.exit(1)
+
     bathy = load_bathymetry_grid()
     if bathy is None:
         log.warning("Bathymetry unavailable — depth scoring will be neutral.")
-    # Build lookup dicts
+
     log.info("Building composite lookup ...")
     composite_lookup = build_composite_lookup(composite)
     log.info("  %d ocean SST points", len(composite_lookup))
 
-    # Compute actual composite grid step for clustering adjacency
     lat_set = composite["latSet"]
     lon_set = composite["lonSet"]
     lat_step = (lat_set[-1] - lat_set[0]) / max(len(lat_set) - 1, 1)
@@ -642,12 +786,14 @@ def main() -> None:
     log.info("Computing SST gradient (break detection) ...")
     gradient_lookup = compute_sst_gradient(composite)
     log.info("  %d gradient points", len(gradient_lookup))
+
     bathy_lookup = {}
     if bathy:
         log.info("Building bathymetry lookup ...")
         bathy_lookup = build_bathy_lookup(bathy)
         log.info("  %d depth points", len(bathy_lookup))
-    # ── Load local CHL / SeaColor data ──────────────────────────────────────
+
+    # ── Load CHL / SeaColor ──────────────────────────────────────────────────
     skip_chl     = os.environ.get("SKIP_CHL", "").strip() == "1"
     chl_lookup   = {}
     kd490_lookup = {}
@@ -658,7 +804,15 @@ def main() -> None:
         kd490_lookup = load_local_kd490(date)
     else:
         log.info("SKIP_CHL=1 — skipping CHL/kd490 data.")
-    # ── Analyze each species ─────────────────────────────────────────────────
+
+    if skip_narrative:
+        log.info("SKIP_NARRATIVE=1 — using template narratives only.")
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        log.info("ANTHROPIC_API_KEY set — will generate AI narratives via Claude API.")
+    else:
+        log.info("ANTHROPIC_API_KEY not set — using template narratives.")
+
+    # ── Score each species ───────────────────────────────────────────────────
     log.info("=== Scoring species ===")
     results = {}
     for key, sp in enabled.items():
@@ -667,15 +821,18 @@ def main() -> None:
                 key, sp,
                 composite_lookup, gradient_lookup,
                 bathy_lookup, chl_lookup, kd490_lookup,
-                composite_step=composite_step
+                composite_step=composite_step,
+                date=date,
+                skip_narrative=skip_narrative,
             )
         except Exception as exc:
             log.error("  Failed for %s: %s", key, exc, exc_info=True)
             results[key] = {"zones": [], "error": str(exc)}
-    # ── Write output ─────────────────────────────────────────────────────────
+
     log.info("=== Writing output ===")
     write_hotspots(date, results)
     purge_old_hotspots(KEEP_HOTSPOT_DAYS)
     log.info("=== Done. ===")
+
 if __name__ == "__main__":
     main()
