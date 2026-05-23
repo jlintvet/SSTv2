@@ -70,6 +70,7 @@ jobs:
 
       - name: Run FishingHotspotAnalyzer
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATE:     ${{ steps.date.outputs.date }}
           SPECIES:  ${{ github.event.inputs.species || '' }}
           SKIP_CHL: ${{ github.event.inputs.skip_chl == 'true' && '1' || '0' }}
