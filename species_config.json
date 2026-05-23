@@ -1,7 +1,7 @@
 {
   "version": "2.0",
   "updated": "2026-05-23",
-  "notes": "Edit parameters here and push to GitHub — no Python changes needed. Weights must sum to 1.0 per species. prime_months/peak_months use 1-12. sst_sweet_spot_f is the ideal sub-range within sst_range_f.",
+  "notes": "Edit parameters here and push to GitHub — no Python changes needed. Weights must sum to 1.0 per species. prime_months/peak_months use 1-12. sst_sweet_spot_f is the ideal sub-range within sst_range_f. chl_required=true enables a hard disqualification gate for cells below 60% of the chl floor.",
   "species": {
     "yellowfin": {
       "display_name": "Yellowfin Tuna",
@@ -15,6 +15,7 @@
       "depth_ideal_ft": [1000, 2000],
       "chl_range_mg_m3": [0.10, 0.60],
       "kd490_max": 0.12,
+      "chl_required": false,
       "break_required": true,
       "break_strength_min": "strong",
       "weights": {
@@ -42,6 +43,7 @@
       "depth_ideal_ft": [300, 600],
       "chl_range_mg_m3": [0.15, 1.50],
       "kd490_max": 0.20,
+      "chl_required": false,
       "break_required": true,
       "break_strength_min": "moderate",
       "weights": {
@@ -65,10 +67,11 @@
       "sst_range_f": [72, 82],
       "sst_sweet_spot_f": [75, 78],
       "prefer_side": "warm",
-      "depth_range_ft": [300, 900],
-      "depth_ideal_ft": [300, 500],
+      "depth_range_ft": [400, 800],
+      "depth_ideal_ft": [400, 600],
       "chl_range_mg_m3": [0.08, 0.50],
       "kd490_max": 0.14,
+      "chl_required": true,
       "break_required": false,
       "break_strength_min": "weak",
       "weights": {
@@ -81,7 +84,7 @@
       "prime_months": [5, 6, 7, 8],
       "peak_months":  [6, 7],
       "min_zone_score": 0.62,
-      "structure_notes": "Floating weedlines, Sargassum mats, debris, FADs. Temperature breaks with associated color change (blue-green transition). Chlorophyll front matters as much as SST.",
+      "structure_notes": "Floating weedlines, Sargassum mats, debris, FADs. Temperature breaks with associated color change (blue-green transition). Chlorophyll front matters as much as SST. Zones with near-zero CHL are disqualified — Mahi are not found in barren blue water.",
       "seasonal_context": "Schools are often schoolie-sized (5–15 lbs) this early in the season but bigger bulls and cows show up fast. May-Jul best for gaffers. Smaller class fish outside that window. They ride the warm side of color changes and travel along the break. Mahi actually tolerate moderate chlorophyll water better, they follow Sargassum which concentrates in convergence zones with elevated chlorophyll. Look for weed lines that form along chlorophyll fronts. Intersections of SST + chlorophyll will help identify where those Sargassum lines are likely accumulating, they tend to pile up where two water masses meet."
     },
     "wahoo": {
@@ -96,6 +99,7 @@
       "depth_ideal_ft": [150, 300],
       "chl_range_mg_m3": [0.02, 0.30],
       "kd490_max": 0.10,
+      "chl_required": false,
       "break_required": false,
       "break_strength_min": "weak",
       "weights": {
@@ -123,6 +127,7 @@
       "depth_ideal_ft": [50, 120],
       "chl_range_mg_m3": [0.20, 2.00],
       "kd490_max": 0.30,
+      "chl_required": false,
       "break_required": false,
       "break_strength_min": "weak",
       "weights": {
@@ -150,6 +155,7 @@
       "depth_ideal_ft": [240, 480],
       "chl_range_mg_m3": [0.02, 0.20],
       "kd490_max": 0.08,
+      "chl_required": false,
       "break_required": true,
       "break_strength_min": "weak",
       "weights": {
@@ -177,6 +183,7 @@
       "depth_ideal_ft": [600, 3000],
       "chl_range_mg_m3": [0.02, 0.25],
       "kd490_max": 0.10,
+      "chl_required": false,
       "break_required": false,
       "break_strength_min": "weak",
       "weights": {
