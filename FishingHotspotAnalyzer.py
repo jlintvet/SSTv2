@@ -355,12 +355,14 @@ def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
     was contributing nearly a free tenth of a point for high-weight species
     like Mahi. Added hard low gate at 0.10 for values below half the floor
     to better disqualify barren blue water with no productivity signal.
+    Note: the hard per-cell disqualification gate for chl_required species
+    is enforced upstream in build_score_grid before this function is called.
     """
     if chl is None:
         return 0.25          # was 0.45 — reduced free credit for missing data
     if chl <= 0:
         return 0.05          # was 0.10
-    if chl < chl_min * 0.5:  # hard gate: well below floor = very poor
+    if chl < chl_min * 0.5:  # well below floor = very poor signal
         return 0.10
     if chl_min <= chl <= chl_max:
         return 1.0
@@ -404,9 +406,16 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     Score every composite grid point for one species.
 
     FIX: CHL and kd490 lookups now use _snap() with CHL_SNAP_DEG so keys
-    match those built by _load_rows_json(). Previously round(lat, 2) produced
-    33.70 which never matched CMEMS coords snapped to 33.70278 → 33.70 at 0.04°,
-    because the composite grid emits 33.703 at round-3.
+    match those built by _load_rows_json().
+
+    FIX: Added hard CHL gate for species with chl_required=true. When CHL
+    data is available and the cell value is below 60% of the species CHL
+    floor, the cell is disqualified entirely rather than just scored low.
+    This prevents depth-contour-hugging clusters in barren blue water from
+    passing the threshold on SST + depth alone (observed with Mahi zones
+    appearing in near-zero CHL deep blue water along the shelf break).
+    Gate is skipped when no CHL data is loaded at all (chl_lookup empty)
+    to avoid silently wiping all zones on data-missing days.
     """
     results = []
     w = sp["weights"]
@@ -416,6 +425,8 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     chl_min, chl_max         = sp["chl_range_mg_m3"]
     kd490_max                = sp["kd490_max"]
     break_required           = sp.get("break_required", False)
+    chl_required             = sp.get("chl_required", False)
+    chl_data_available       = len(chl_lookup) > 0
 
     for (lat, lon), sst_f in composite_lookup.items():
         s_sst = score_sst(sst_f, sp["sst_target_f"], sst_min, sst_max)
@@ -437,6 +448,14 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
         s_depth = score_depth(depth_ft, d_min, d_max, d_ideal_min, d_ideal_max)
         if depth_ft is not None and s_depth == 0.0:
             continue
+
+        # Hard CHL gate: disqualify cells with confirmed near-zero CHL for
+        # species that require productive water (chl_required=true).
+        # Only applied when CHL data is actually loaded — avoids silently
+        # wiping all zones on days when CHL files are unavailable.
+        if chl_required and chl_data_available:
+            if chl is None or chl < chl_min * 0.6:
+                continue
 
         s_break = score_break(gradient)
         s_chl   = score_chl(chl, chl_min, chl_max)
