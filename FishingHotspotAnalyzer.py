@@ -317,8 +317,13 @@ def score_sst(sst_f: float, target: float, sst_min: float, sst_max: float) -> fl
 
 
 def score_break(gradient_mag: float | None) -> float:
+    """
+    Score the temperature break strength.
+    FIX: Reduced neutral (None) value from 0.30 to 0.20 to stop missing
+    gradient data from inflating scores in featureless open water.
+    """
     if gradient_mag is None:
-        return 0.3
+        return 0.20          # was 0.30 — reduced free credit for missing data
     if gradient_mag >= BREAK_STRONG_THRESHOLD:
         return 1.0
     if gradient_mag >= BREAK_MODERATE_THRESHOLD:
@@ -344,10 +349,19 @@ def score_depth(depth_ft: float | None, d_min: float, d_max: float,
 
 
 def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
+    """
+    Score chlorophyll concentration.
+    FIX: Reduced neutral (None) value from 0.45 to 0.25 — missing CHL data
+    was contributing nearly a free tenth of a point for high-weight species
+    like Mahi. Added hard low gate at 0.10 for values below half the floor
+    to better disqualify barren blue water with no productivity signal.
+    """
     if chl is None:
-        return 0.45
+        return 0.25          # was 0.45 — reduced free credit for missing data
     if chl <= 0:
-        return 0.1
+        return 0.05          # was 0.10
+    if chl < chl_min * 0.5:  # hard gate: well below floor = very poor
+        return 0.10
     if chl_min <= chl <= chl_max:
         return 1.0
     center = (chl_min + chl_max) / 2.0
@@ -357,8 +371,13 @@ def score_chl(chl: float | None, chl_min: float, chl_max: float) -> float:
 
 
 def score_color(kd490: float | None, kd490_max: float) -> float:
+    """
+    Score water clarity via kd490.
+    FIX: Reduced neutral (None) value from 0.50 to 0.35 — missing kd490
+    data was giving a half-point free credit to zones with no clarity info.
+    """
     if kd490 is None:
-        return 0.50
+        return 0.35          # was 0.50 — reduced free credit for missing data
     if kd490 <= kd490_max * 0.5:
         return 1.0
     if kd490 <= kd490_max:
