@@ -15,8 +15,8 @@ Bundle format  (viirs_YYYY-MM-DD.json)
 {
   "date": "2026-05-18",
   "generated": "2026-05-18T14:22:00Z",
-  "latSet": [33.70, 33.72, ...],        // ascending
-  "lonSet": [-78.89, -78.87, ...],      // ascending
+  "latSet": [33.70, 33.72, ...],        // ascending, fixed 0.02° grid
+  "lonSet": [-78.89, -78.87, ...],      // ascending, fixed 0.02° grid
   "available_hours": [6, 9, 12, 15],   // UTC hours present in this file
   "hours": {
     "12": {
@@ -74,11 +74,34 @@ BBOX = {
     "lon_max": -72.21,
 }
 
+# Fixed regular output grid — all bundles and the composite use exactly this
+# grid so React's bilinear interpolation always gets a uniform lat/lon set.
+GRID_STEP = 0.02   # degrees
+
+def _make_fixed_grid():
+    """Build the canonical lat/lon arrays for the full bbox at GRID_STEP."""
+    lats, lons = [], []
+    lat = BBOX["lat_min"]
+    while lat <= BBOX["lat_max"] + 1e-9:
+        lats.append(round(lat, 4))
+        lat = round(lat + GRID_STEP, 4)
+    lon = BBOX["lon_min"]
+    while lon <= BBOX["lon_max"] + 1e-9:
+        lons.append(round(lon, 4))
+        lon = round(lon + GRID_STEP, 4)
+    return lats, lons
+
+FIXED_LATS, FIXED_LONS = _make_fixed_grid()
+FIXED_LAT_IDX = {v: i for i, v in enumerate(FIXED_LATS)}
+FIXED_LON_IDX = {v: i for i, v in enumerate(FIXED_LONS)}
+N_LATS = len(FIXED_LATS)
+N_LONS = len(FIXED_LONS)
+
 # How many calendar days to bundle (today + N-1 prior days)
 DAYS_BACK = int(os.environ.get("DAYS_BACK", "5"))
 
-# Keep this many days of bundle files; older ones are deleted
-KEEP_DAYS = 7
+# Keep this many days of daily bundle files; older ones are deleted
+KEEP_DAYS = 5
 
 # Composite: look back this many hours across daily bundles
 COMPOSITE_WINDOW_HOURS = int(os.environ.get("COMPOSITE_WINDOW_HOURS", "36"))
@@ -87,6 +110,15 @@ COMPOSITE_WINDOW_HOURS = int(os.environ.get("COMPOSITE_WINDOW_HOURS", "36"))
 # bounding box.  Clean passes score 0.45–0.75; fragmented edge-of-swath passes
 # score 0.10–0.25.  Set to 0.0 to disable.
 MIN_PASS_DENSITY = float(os.environ.get("MIN_PASS_DENSITY", "0.30"))
+
+# Composite quality gates — if either threshold is not met the new composite is
+# discarded and the existing viirs_composite.json is left untouched.  This
+# prevents the UI from showing a mostly-blank map after a cloudy run.
+#   COMPOSITE_MIN_PASSES    — how many distinct hourly passes must contribute
+#   COMPOSITE_MIN_COVERAGE  — what fraction (0-100%) of the full bbox grid must
+#                             have at least one valid observation
+COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "2")))
+COMPOSITE_MIN_COVERAGE = float(os.environ.get("COMPOSITE_MIN_COVERAGE", "35.0"))
 
 # Target date override for back-filling
 _date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
@@ -109,6 +141,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HTTP session with retry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,6 +153,43 @@ def _make_session() -> requests.Session:
     return s
 
 SESSION = _make_session()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Grid snapping helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def _snap_to_fixed(raw_val: float, step: float, origin: float) -> float:
+    """Snap a raw coordinate to the nearest fixed grid point."""
+    return round(origin + round((raw_val - origin) / step) * step, 4)
+
+
+def _pass_to_fixed_grid(vals_f: np.ndarray,
+                        raw_lats: list, raw_lons: list) -> list:
+    """
+    Resample a raw pass (irregular or fine-grained lat/lon) onto FIXED_LATS/FIXED_LONS
+    using nearest-neighbour assignment.  Each raw pixel votes for the nearest
+    fixed grid cell; the last writer wins (fine for ~0.02° source data).
+
+    Returns a flat list of length N_LATS * N_LONS with float or None values.
+    """
+    flat = [None] * (N_LATS * N_LONS)
+
+    for ri, raw_lat in enumerate(raw_lats):
+        snapped_lat = _snap_to_fixed(raw_lat, GRID_STEP, FIXED_LATS[0])
+        gi = FIXED_LAT_IDX.get(snapped_lat)
+        if gi is None:
+            continue
+        for ci, raw_lon in enumerate(raw_lons):
+            snapped_lon = _snap_to_fixed(raw_lon, GRID_STEP, FIXED_LONS[0])
+            gj = FIXED_LON_IDX.get(snapped_lon)
+            if gj is None:
+                continue
+            v = vals_f[ri, ci]
+            if math.isfinite(v):
+                flat[gi * N_LONS + gj] = round(float(v), 2)
+
+    return flat
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # THREDDS catalog fetch — one day at a time
@@ -141,7 +211,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
     filter before being returned.
 
     Returns a list of (hour_utc, sst_fahrenheit_2d, lats, lons) tuples.
-    sst_fahrenheit_2d is a 2-D numpy array (lats × lons) with NaN for gaps.
+    sst_fahrenheit_2d is a 2-D numpy array (lats x lons) with NaN for gaps.
     """
     doy  = date.timetuple().tm_yday
     year = date.year
@@ -171,7 +241,6 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
         try:
             ds = xr.open_dataset(opendap, engine="netcdf4")
 
-            # Find lat / lon coordinate names
             lat_name = next((c for c in ds.coords if "lat" in c.lower()), None)
             lon_name = next((c for c in ds.coords if "lon" in c.lower()), None)
             if not lat_name or not lon_name:
@@ -179,8 +248,6 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 ds.close()
                 continue
 
-            # Subset to bbox — detect coordinate direction so slice order is correct.
-            # ACSPO L3U stores lat descending (90 → -90); ascending is also possible.
             lat_vals = ds[lat_name].values
             lat_asc  = float(lat_vals[0]) < float(lat_vals[-1])
             lat_sl   = (slice(BBOX["lat_min"], BBOX["lat_max"]) if lat_asc
@@ -191,9 +258,6 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                         else slice(BBOX["lon_max"], BBOX["lon_min"]))
             ds = ds.sel({lat_name: lat_sl, lon_name: lon_sl})
 
-            # Find SST variable.
-            # GHRSST L3U standard name is 'sea_surface_temperature'; fall back
-            # to other known names.  Explicitly exclude 'sst_dtime' (time offset).
             SST_NAMES = (
                 "sea_surface_temperature", "analysed_sst",
                 "sst_subskin", "sst_skin", "sst",
@@ -213,12 +277,10 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 continue
 
             da = ds[sst_var].squeeze()
-            # Drop any size-1 dims that aren't lat/lon
             for dim in list(da.dims):
                 if dim not in (lat_name, lon_name) and da.sizes[dim] == 1:
                     da = da.isel({dim: 0})
 
-            # Apply quality-level mask if present (ACSPO QL 0–5; keep ≥ 4)
             if "quality_level" in ds.data_vars:
                 ql = ds["quality_level"].squeeze()
                 for dim in list(ql.dims):
@@ -228,13 +290,12 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
 
             lats = da[lat_name].values.tolist()
             lons = da[lon_name].values.tolist()
-            vals = da.values.astype(float)  # (n_lats, n_lons)
+            vals = da.values.astype(float)
 
-            # Convert Kelvin → Celsius → Fahrenheit if needed
             finite = vals[np.isfinite(vals)]
             if len(finite) and finite.mean() > 200:
-                vals = vals - 273.15  # K → C
-            vals_f = vals * 9.0 / 5.0 + 32.0  # C → F
+                vals = vals - 273.15
+            vals_f = vals * 9.0 / 5.0 + 32.0
 
             valid = np.sum(np.isfinite(vals_f))
             if valid == 0:
@@ -242,17 +303,15 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 ds.close()
                 continue
 
-            # ── Spatial coherence filter ──────────────────────────────────────
-            # Compute local density: valid pixels ÷ bounding-box area of valid
-            # data.  Clean passes are dense within their swath (0.45–0.75).
-            # Fragmented edge-of-swath passes scatter isolated islands across the
-            # full bbox → low density (0.10–0.25) → skip.
+            # Spatial coherence filter
             valid_mask = np.isfinite(vals_f)
             rows_with_data = np.any(valid_mask, axis=1)
             cols_with_data = np.any(valid_mask, axis=0)
             if rows_with_data.any() and cols_with_data.any():
-                r0, r1 = int(np.where(rows_with_data)[0][0]),  int(np.where(rows_with_data)[0][-1])
-                c0, c1 = int(np.where(cols_with_data)[0][0]),  int(np.where(cols_with_data)[0][-1])
+                r0 = int(np.where(rows_with_data)[0][0])
+                r1 = int(np.where(rows_with_data)[0][-1])
+                c0 = int(np.where(cols_with_data)[0][0])
+                c1 = int(np.where(cols_with_data)[0][-1])
                 bbox_pixels = (r1 - r0 + 1) * (c1 - c0 + 1)
                 local_density = valid / bbox_pixels if bbox_pixels > 0 else 0.0
             else:
@@ -265,10 +324,9 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 )
                 ds.close()
                 continue
-            # ─────────────────────────────────────────────────────────────────
 
             log.info(
-                "    %02d:00Z — %d valid pixels  %.1f–%.1f °F  (density %.0f%%)",
+                "    %02d:00Z — %d valid pixels  %.1f-%.1f F  (density %.0f%%)",
                 hour, valid,
                 float(np.nanmin(vals_f)), float(np.nanmax(vals_f)),
                 local_density * 100,
@@ -283,50 +341,25 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bundle builder
+# Bundle builder — always outputs on the fixed canonical grid
 # ─────────────────────────────────────────────────────────────────────────────
 def _build_bundle(date: datetime.date,
                   passes: list[tuple[int, np.ndarray, list, list]]) -> dict:
     """
-    Given a list of (hour, sst_2d, lats, lons) from one day, build the compact
-    bundle dict.  latSet / lonSet are the union of all pass grids, rounded to
-    4 decimal places.  Each hour's sst is a flat array aligned to that shared
-    grid.
+    Build the daily bundle using the fixed canonical grid (FIXED_LATS/FIXED_LONS).
+    Every pass is resampled onto that grid via nearest-neighbour snapping so
+    the output latSet/lonSet is always uniform — no gaps, no irregular steps.
+    This is critical for React's bilinear interpolation to work correctly.
     """
-    all_lats: set[float] = set()
-    all_lons: set[float] = set()
-    for _, _, lats, lons in passes:
-        all_lats.update(round(v, 4) for v in lats)
-        all_lons.update(round(v, 4) for v in lons)
-
-    lat_set = sorted(all_lats)          # ascending
-    lon_set = sorted(all_lons)          # ascending
-    lat_idx = {v: i for i, v in enumerate(lat_set)}
-    lon_idx = {v: i for i, v in enumerate(lon_set)}
-    n_lats  = len(lat_set)
-    n_lons  = len(lon_set)
-
     hours_dict: dict[str, dict] = {}
     available_hours: list[int] = []
 
     for hour, vals_f, lats, lons in passes:
-        flat = [None] * (n_lats * n_lons)
-        for ri, la in enumerate(lats):
-            la_r = round(la, 4)
-            gi = lat_idx.get(la_r)
-            if gi is None:
-                continue
-            for ci, lo in enumerate(lons):
-                lo_r = round(lo, 4)
-                gj = lon_idx.get(lo_r)
-                if gj is None:
-                    continue
-                v = vals_f[ri, ci]
-                if math.isfinite(v):
-                    flat[gi * n_lons + gj] = round(float(v), 2)
+        flat = _pass_to_fixed_grid(vals_f, lats, lons)
 
         valid_vals = [v for v in flat if v is not None]
         if not valid_vals:
+            log.info("    %02d:00Z — no pixels landed on fixed grid, skipping", hour)
             continue
 
         hours_dict[str(hour)] = {
@@ -335,14 +368,19 @@ def _build_bundle(date: datetime.date,
             "max": round(max(valid_vals), 1),
         }
         available_hours.append(hour)
+        log.info(
+            "    %02d:00Z — %d/%d fixed grid cells filled  %.1f-%.1f F",
+            hour, len(valid_vals), N_LATS * N_LONS,
+            min(valid_vals), max(valid_vals),
+        )
 
     available_hours.sort()
 
     return {
         "date":            str(date),
         "generated":       datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "latSet":          [round(v, 4) for v in lat_set],
-        "lonSet":          [round(v, 4) for v in lon_set],
+        "latSet":          FIXED_LATS,
+        "lonSet":          FIXED_LONS,
         "available_hours": available_hours,
         "hours":           hours_dict,
     }
@@ -359,7 +397,7 @@ def _write_bundle(date: datetime.date, bundle: dict) -> Path:
     tmp.rename(dest)
     size_kb = dest.stat().st_size / 1024
     log.info(
-        "Wrote %s  (%d hours, %d×%d grid, %.0f KB)",
+        "Wrote %s  (%d hours, %d x %d grid, %.0f KB)",
         dest.name,
         len(bundle["available_hours"]),
         len(bundle["latSet"]),
@@ -386,7 +424,12 @@ def _write_index(available_dates: list[str]) -> None:
 
 
 def _purge_old_bundles(keep_days: int) -> None:
+    """
+    Delete daily bundle files older than keep_days.
+    viirs_index.json and viirs_composite.json are never deleted here.
+    """
     cutoff = datetime.date.today() - datetime.timedelta(days=keep_days)
+    purged = 0
     for path in OUTPUT_DIR.glob("viirs_????-??-??.json"):
         try:
             file_date = datetime.date.fromisoformat(path.stem.replace("viirs_", ""))
@@ -395,52 +438,35 @@ def _purge_old_bundles(keep_days: int) -> None:
         if file_date < cutoff:
             path.unlink()
             log.info("Purged old bundle: %s", path.name)
+            purged += 1
+    if purged == 0:
+        log.info("No old bundles to purge (keeping last %d days)", keep_days)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Temporal compositor — gap-fill strategy
+# Temporal compositor — always outputs on the fixed canonical grid
 # ─────────────────────────────────────────────────────────────────────────────
 def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
     """
     Read all existing daily bundle files whose passes fall within the last
-    *window_hours* hours and produce a single composite grid.
+    window_hours hours and produce a single composite on the fixed canonical grid.
 
-    Strategy: gap-fill only.
-    Passes are processed newest-first.  Each pass claims any pixel it covers;
-    older passes only fill pixels not yet claimed.  This preserves the sharp
-    thermal front boundaries of the most recent clean swath while using older
-    data only to fill genuine cloud gaps.
+    Strategy: gap-fill only (newest pass wins, older only fills empty cells).
 
-    Composite JSON format
-    ---------------------
-    {
-      "generated":        "2026-05-20T14:00:00Z",
-      "window_hours":     36,
-      "latSet":           [...],
-      "lonSet":           [...],
-      "sst":              [...],   // flat, null where no coverage in window
-      "age":              [...],   // parallel: hours since observation (null = no data)
-      "min":              68.1,
-      "max":              79.3,
-      "coverage_pct":     74.2,    // % of bbox grid points with any data
-      "oldest_obs_hours": 31.4,    // age of the oldest gap-fill pixel kept
-      "pass_count":       7        // number of passes merged
-    }
+    The composite always uses FIXED_LATS / FIXED_LONS so React gets a uniform
+    regular grid regardless of which satellite passes contributed.
     """
     now_utc = datetime.datetime.utcnow()
     cutoff  = now_utc - datetime.timedelta(hours=window_hours)
 
-    # Gather all bundle files, sorted newest → oldest so fresher passes fill first.
     bundle_paths = sorted(OUTPUT_DIR.glob("viirs_????-??-??.json"), reverse=True)
     if not bundle_paths:
         log.warning("[Compositor] No daily bundle files found in %s", OUTPUT_DIR)
         return None
 
-    # Gap-fill composite: the freshest pass claims its pixels first; older passes
-    # only fill cells that are still empty (cloud gaps in newer observations).
-    # This preserves sharp thermal front boundaries from the most recent swath
-    # instead of blurring them by mixing data from different times.
-    composite_grid: dict[tuple[float, float], list] = {}
+    # flat composite arrays on the fixed grid
+    sst_out = [None] * (N_LATS * N_LONS)
+    age_out = [None] * (N_LATS * N_LONS)
     pass_count = 0
 
     for bp in bundle_paths:
@@ -457,25 +483,22 @@ def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
             log.warning("[Compositor] Could not read %s: %s", bp.name, exc)
             continue
 
-        lat_set = bundle.get("latSet", [])
-        lon_set = bundle.get("lonSet", [])
-        n_lons  = len(lon_set)
-        hours   = bundle.get("hours", {})
+        bundle_lat_set = bundle.get("latSet", [])
+        bundle_lon_set = bundle.get("lonSet", [])
+        bundle_n_lons  = len(bundle_lon_set)
+        hours          = bundle.get("hours", {})
 
-        # Process hours newest-first within each day bundle
         for hr_str, hr_data in sorted(hours.items(), key=lambda x: int(x[0]), reverse=True):
             try:
                 hr_int = int(hr_str)
             except ValueError:
                 continue
 
-            # Reconstruct UTC datetime for this pass
             pass_dt = datetime.datetime(
                 bundle_date.year, bundle_date.month, bundle_date.day, hr_int,
-                tzinfo=None  # all UTC
             )
             if pass_dt < cutoff:
-                continue  # outside the compositing window
+                continue
 
             age_hours = (now_utc - pass_dt).total_seconds() / 3600.0
             sst_flat  = hr_data.get("sst", [])
@@ -483,68 +506,91 @@ def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
             for idx, val in enumerate(sst_flat):
                 if val is None:
                     continue
-                lat_i = idx // n_lons
-                lon_i = idx  % n_lons
-                if lat_i >= len(lat_set) or lon_i >= len(lon_set):
+
+                lat_i = idx // bundle_n_lons
+                lon_i = idx  % bundle_n_lons
+                if lat_i >= len(bundle_lat_set) or lon_i >= len(bundle_lon_set):
                     continue
-                key = (round(lat_set[lat_i], 4), round(lon_set[lon_i], 4))
-                # Gap-fill only: never overwrite a pixel already claimed by a
-                # fresher pass — older data only fills genuinely empty cells.
-                if key not in composite_grid:
-                    composite_grid[key] = [round(float(val), 2), age_hours]
+
+                raw_lat = bundle_lat_set[lat_i]
+                raw_lon = bundle_lon_set[lon_i]
+
+                # Snap bundle coord to fixed grid
+                snapped_lat = _snap_to_fixed(raw_lat, GRID_STEP, FIXED_LATS[0])
+                snapped_lon = _snap_to_fixed(raw_lon, GRID_STEP, FIXED_LONS[0])
+                gi = FIXED_LAT_IDX.get(snapped_lat)
+                gj = FIXED_LON_IDX.get(snapped_lon)
+                if gi is None or gj is None:
+                    continue
+
+                flat_i = gi * N_LONS + gj
+                if sst_out[flat_i] is None:   # gap-fill only
+                    sst_out[flat_i] = round(float(val), 2)
+                    age_out[flat_i] = round(age_hours, 1)
 
             pass_count += 1
-
-    if not composite_grid:
-        log.warning("[Compositor] No valid pixels found within %d-hour window", window_hours)
-        return None
-
-    # Build union lat/lon sets from composite keys
-    all_lats = sorted({k[0] for k in composite_grid})
-    all_lons = sorted({k[1] for k in composite_grid})
-    lat_idx  = {v: i for i, v in enumerate(all_lats)}
-    lon_idx  = {v: i for i, v in enumerate(all_lons)}
-    n_lats   = len(all_lats)
-    n_lons_c = len(all_lons)
-    total    = n_lats * n_lons_c
-
-    sst_out = [None] * total
-    age_out = [None] * total
-
-    for (lat_r, lon_r), (sst_v, age_v) in composite_grid.items():
-        gi = lat_idx[lat_r]
-        gj = lon_idx[lon_r]
-        flat_i = gi * n_lons_c + gj
-        sst_out[flat_i] = sst_v
-        age_out[flat_i] = round(age_v, 1)
 
     valid_sst  = [v for v in sst_out if v is not None]
     valid_ages = [v for v in age_out if v is not None]
 
-    coverage_pct     = round(len(valid_sst) / total * 100, 1) if total else 0.0
-    oldest_obs_hours = round(max(valid_ages), 1) if valid_ages else None
+    if not valid_sst:
+        log.warning("[Compositor] No valid pixels found within %d-hour window", window_hours)
+        return None
+
+    total        = N_LATS * N_LONS
+    coverage_pct = round(len(valid_sst) / total * 100, 1)
+    oldest_hours = round(max(valid_ages), 1) if valid_ages else None
 
     log.info(
-        "[Compositor] %d passes merged | %d×%d grid | %.1f%% coverage | oldest %.1f h",
-        pass_count, n_lats, n_lons_c, coverage_pct, oldest_obs_hours or 0,
+        "[Compositor] %d passes merged | %d x %d fixed grid | %.1f%% coverage | oldest %.1f h",
+        pass_count, N_LATS, N_LONS, coverage_pct, oldest_hours or 0,
     )
 
     return {
         "generated":        now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "window_hours":     window_hours,
-        "latSet":           [round(v, 4) for v in all_lats],
-        "lonSet":           [round(v, 4) for v in all_lons],
+        "latSet":           FIXED_LATS,
+        "lonSet":           FIXED_LONS,
         "sst":              sst_out,
         "age":              age_out,
-        "min":              round(min(valid_sst), 1) if valid_sst else None,
-        "max":              round(max(valid_sst), 1) if valid_sst else None,
+        "min":              round(min(valid_sst), 1),
+        "max":              round(max(valid_sst), 1),
         "coverage_pct":     coverage_pct,
-        "oldest_obs_hours": oldest_obs_hours,
+        "oldest_obs_hours": oldest_hours,
         "pass_count":       pass_count,
     }
 
 
-def _write_composite(composite: dict) -> None:
+def _write_composite_if_sufficient(composite: dict) -> bool:
+    """
+    Write viirs_composite.json only if the composite meets both quality gates:
+      - pass_count  >= COMPOSITE_MIN_PASSES
+      - coverage_pct >= COMPOSITE_MIN_COVERAGE
+
+    If either gate fails the existing file is left untouched so the UI
+    continues to show the last good composite instead of a blank map.
+
+    Returns True if the file was written, False if it was skipped.
+    """
+    passes   = composite["pass_count"]
+    coverage = composite["coverage_pct"]
+
+    if passes < COMPOSITE_MIN_PASSES:
+        log.warning(
+            "[Compositor] Skipping write — only %d pass(es) merged, need >= %d. "
+            "Keeping existing viirs_composite.json.",
+            passes, COMPOSITE_MIN_PASSES,
+        )
+        return False
+
+    if coverage < COMPOSITE_MIN_COVERAGE:
+        log.warning(
+            "[Compositor] Skipping write — coverage %.1f%% below %.1f%% threshold. "
+            "Keeping existing viirs_composite.json.",
+            coverage, COMPOSITE_MIN_COVERAGE,
+        )
+        return False
+
     dest = OUTPUT_DIR / "viirs_composite.json"
     tmp  = dest.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -552,16 +598,22 @@ def _write_composite(composite: dict) -> None:
     tmp.rename(dest)
     size_kb = dest.stat().st_size / 1024
     log.info(
-        "Wrote viirs_composite.json  (%d passes | %.1f%% coverage | %.0f KB)",
-        composite["pass_count"], composite["coverage_pct"], size_kb,
+        "Wrote viirs_composite.json  (%d passes | %.1f%% coverage | %d x %d grid | %.0f KB)",
+        passes, coverage,
+        len(composite["latSet"]), len(composite["lonSet"]),
+        size_kb,
     )
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
-    log.info("=== VIIRSHourlyBundler  target=%s  days_back=%d ===", TARGET_DATE, DAYS_BACK)
+    log.info(
+        "=== VIIRSHourlyBundler  target=%s  days_back=%d  keep=%d  grid=%dx%d ===",
+        TARGET_DATE, DAYS_BACK, KEEP_DAYS, N_LATS, N_LONS,
+    )
 
     dates_to_process = [
         TARGET_DATE - datetime.timedelta(days=i)
@@ -589,19 +641,34 @@ def main() -> None:
         _write_bundle(date, bundle)
         written_dates.append(str(date))
 
-    # Collect ALL existing bundles (including ones from prior runs not re-fetched today)
+    # Collect ALL existing bundles (including ones from prior runs)
     all_dates = sorted({
         path.stem.replace("viirs_", "")
         for path in OUTPUT_DIR.glob("viirs_????-??-??.json")
     })
     _write_index(all_dates)
 
+    # Purge daily bundles older than KEEP_DAYS (keeps at most 5 days)
     _purge_old_bundles(KEEP_DAYS)
 
-    # Build and write the temporal composite
+    # Build the temporal composite and write it only if quality gates pass.
+    # If gates fail, the existing viirs_composite.json is left untouched so
+    # the UI continues to show the last good composite.
     composite = build_composite(COMPOSITE_WINDOW_HOURS)
     if composite:
-        _write_composite(composite)
+        written = _write_composite_if_sufficient(composite)
+        if not written:
+            existing = OUTPUT_DIR / "viirs_composite.json"
+            if existing.exists():
+                log.info(
+                    "Composite quality gates not met — existing file retained (%s).",
+                    existing.name,
+                )
+            else:
+                log.warning(
+                    "Composite quality gates not met and no existing file found. "
+                    "UI will show no composite data until a sufficient composite is built."
+                )
     else:
         log.warning("Composite could not be built — no data in window")
 
