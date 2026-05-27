@@ -1,16 +1,15 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-05-26 21:29:57
+  UTC  : 2026-05-26 23:02:13
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
   MUR 20260525 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260525 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20260525 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260525 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
-    code=403;
-    message="Forbidden: Access Forbidden -- Your IP address is on thi
+  MUR 20260525 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20260525
+  → DailySSTData/MUR/mur_20260525.csv  (8892 pts, 107 lats × 133 lons)
   ✓ MUR 20260524 (cached)
   ✓ MUR 20260523 (cached)
   ✓ MUR 20260522 (cached)
@@ -20,24 +19,17 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260526 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260526 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260526 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
-  GOES 20260526 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
-  GOES 20260525 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 70 inland, kept 2237 ocean)
+  GOES 20260526 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260526 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260525 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: dropped 70 inland, kept 2237 ocean)
 ✓
   → DailySSTData/GOES/Composite/goes_composite_20260525.csv  (2237 pts, 54 lats × 66 lons)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-05-24 21:50Z → 2026-05-26 21:10Z
+  Window range   : 2026-05-24 23:50Z → 2026-05-26 23:10Z
   Half-width     : ±10 min per bucket
-  npp 20260524_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260524_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260524_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260524_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260524_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260524_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260524_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -47,7 +39,7 @@ SST PIPELINE
   npp 20260525_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260525_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260525_0250 … ✗ hard timeout: hard timeout (90s) exceeded: 20260525025000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_NPP-ACSPO_V2.80-v02.0-fv01.0.nc
   npp 20260525_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -84,7 +76,7 @@ SST PIPELINE
   npp 20260525_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260525_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260525_1500 … ✗ hard timeout: hard timeout (90s) exceeded: 20260525150000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_NPP-ACSPO_V2.80-v02.0-fv01.0.nc
   npp 20260525_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260525_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -168,16 +160,14 @@ SST PIPELINE
   npp 20260526_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260526_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260526_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260526_1910 … ✗ hard timeout: hard timeout (90s) exceeded: 20260526191000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_NPP-ACSPO_V2.80-v02.0-fv01.0.nc
-  npp 20260526_1950 … ✗ hard timeout: hard timeout (90s) exceeded: 20260526195000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_NPP-ACSPO_V2.80-v02.0-fv01.0.nc
+  npp 20260526_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260526_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260526_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260526_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260524_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260526_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260526_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260526_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260526_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260524_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260525_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260525_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -246,44 +236,4 @@ SST PIPELINE
   n20 20260525_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260525_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260525_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260525_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260525_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260525_2300 … ✗ hard timeout: hard timeout (90s) exceeded: 20260525230000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_N20-ACSPO_V2.80-v02.0-fv01.0.nc
-  n20 20260525_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260525_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0550 …   → DailySSTData/VIIRS/Passes/viirs_n20_20260526_0550.csv  (3098 pts, 129 lats × 269 lons)
-  n20 20260526_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0700 … ✗ hard timeout: hard timeout (90s) exceeded: 20260526070000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_N20-ACSPO_V2.80-v02.0-fv01.0.nc
-  n20 20260526_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260526_1150 … 
+  n20 20260525_2210 … 
