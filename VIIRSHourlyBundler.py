@@ -110,6 +110,11 @@ COMPOSITE_WINDOW_HOURS = int(os.environ.get("COMPOSITE_WINDOW_HOURS", "36"))
 # score 0.10–0.25.  Set to 0.0 to disable.
 MIN_PASS_DENSITY = float(os.environ.get("MIN_PASS_DENSITY", "0.30"))
 
+# Hard minimum valid-pixel count.  Passes with fewer pixels than this are
+# discarded even if they pass the density check (e.g. 9-pixel edge-of-swath
+# fragments that happen to be tightly clustered).
+MIN_PASS_PIXELS = int(os.environ.get("MIN_PASS_PIXELS", "500"))
+
 # Composite quality gates — if either threshold is not met the new composite is
 # discarded and the existing viirs_composite.json is left untouched.
 COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "2")))
@@ -343,6 +348,14 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 local_density = valid / bbox_pixels if bbox_pixels > 0 else 0.0
             else:
                 local_density = 0.0
+
+            if valid < MIN_PASS_PIXELS:
+                log.info(
+                    "    %02d:00Z — too few pixels (%d < %d minimum), skipping",
+                    hour, valid, MIN_PASS_PIXELS,
+                )
+                ds.close()
+                continue
 
             if local_density < MIN_PASS_DENSITY:
                 log.info(
