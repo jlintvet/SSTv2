@@ -47,7 +47,6 @@ Usage
 """
 
 import datetime
-import io
 import json
 import logging
 import math
@@ -112,11 +111,7 @@ COMPOSITE_WINDOW_HOURS = int(os.environ.get("COMPOSITE_WINDOW_HOURS", "36"))
 MIN_PASS_DENSITY = float(os.environ.get("MIN_PASS_DENSITY", "0.30"))
 
 # Composite quality gates — if either threshold is not met the new composite is
-# discarded and the existing viirs_composite.json is left untouched.  This
-# prevents the UI from showing a mostly-blank map after a cloudy run.
-#   COMPOSITE_MIN_PASSES    — how many distinct hourly passes must contribute
-#   COMPOSITE_MIN_COVERAGE  — what fraction (0-100%) of the full bbox grid must
-#                             have at least one valid observation
+# discarded and the existing viirs_composite.json is left untouched.
 COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "2")))
 COMPOSITE_MIN_COVERAGE = float(os.environ.get("COMPOSITE_MIN_COVERAGE", "35.0"))
 
@@ -141,7 +136,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # HTTP session with retry
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,13 +148,44 @@ def _make_session() -> requests.Session:
 
 SESSION = _make_session()
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Grid snapping helpers
 # ─────────────────────────────────────────────────────────────────────────────
 def _snap_to_fixed(raw_val: float, step: float, origin: float) -> float:
     """Snap a raw coordinate to the nearest fixed grid point."""
     return round(origin + round((raw_val - origin) / step) * step, 4)
+
+
+def _fill_row_gaps(flat: list, n_lats: int, n_lons: int, max_gap: int = 2) -> list:
+    """
+    Vertically interpolate over small null gaps in each longitude column.
+
+    VIIRS scan-line geometry leaves systematic 1–2 row gaps when raw pixels are
+    snapped to a regular grid, producing visible horizontal stripes in the
+    rendered composite.  This pass fills only short null runs (≤ max_gap rows)
+    that are sandwiched between valid values, leaving real cloud holes intact.
+    """
+    result = flat[:]
+    for lon_i in range(n_lons):
+        i = 0
+        while i < n_lats:
+            if result[i * n_lons + lon_i] is None:
+                # find end of null run
+                j = i
+                while j < n_lats and result[j * n_lons + lon_i] is None:
+                    j += 1
+                gap = j - i
+                if gap <= max_gap and i > 0 and j < n_lats:
+                    v0 = result[(i - 1) * n_lons + lon_i]
+                    v1 = result[j       * n_lons + lon_i]
+                    if v0 is not None and v1 is not None:
+                        for k in range(gap):
+                            t = (k + 1) / (gap + 1)
+                            result[(i + k) * n_lons + lon_i] = round(v0 + t * (v1 - v0), 2)
+                i = j
+            else:
+                i += 1
+    return result
 
 
 def _pass_to_fixed_grid(vals_f: np.ndarray,
@@ -170,10 +195,12 @@ def _pass_to_fixed_grid(vals_f: np.ndarray,
     using nearest-neighbour assignment.  Each raw pixel votes for the nearest
     fixed grid cell; the last writer wins (fine for ~0.02° source data).
 
+    A vertical gap-fill pass is applied afterward to eliminate horizontal stripe
+    artifacts caused by VIIRS scan-line geometry.
+
     Returns a flat list of length N_LATS * N_LONS with float or None values.
     """
     flat = [None] * (N_LATS * N_LONS)
-
     for ri, raw_lat in enumerate(raw_lats):
         snapped_lat = _snap_to_fixed(raw_lat, GRID_STEP, FIXED_LATS[0])
         gi = FIXED_LAT_IDX.get(snapped_lat)
@@ -188,7 +215,7 @@ def _pass_to_fixed_grid(vals_f: np.ndarray,
             if math.isfinite(v):
                 flat[gi * N_LONS + gj] = round(float(v), 2)
 
-    return flat
+    return _fill_row_gaps(flat, N_LATS, N_LONS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -347,16 +374,14 @@ def _build_bundle(date: datetime.date,
                   passes: list[tuple[int, np.ndarray, list, list]]) -> dict:
     """
     Build the daily bundle using the fixed canonical grid (FIXED_LATS/FIXED_LONS).
-    Every pass is resampled onto that grid via nearest-neighbour snapping so
-    the output latSet/lonSet is always uniform — no gaps, no irregular steps.
-    This is critical for React's bilinear interpolation to work correctly.
+    Every pass is resampled onto that grid via nearest-neighbour snapping (with
+    stripe gap-fill) so the output latSet/lonSet is always uniform.
     """
     hours_dict: dict[str, dict] = {}
     available_hours: list[int] = []
 
     for hour, vals_f, lats, lons in passes:
         flat = _pass_to_fixed_grid(vals_f, lats, lons)
-
         valid_vals = [v for v in flat if v is not None]
         if not valid_vals:
             log.info("    %02d:00Z — no pixels landed on fixed grid, skipping", hour)
@@ -452,9 +477,8 @@ def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
     window_hours hours and produce a single composite on the fixed canonical grid.
 
     Strategy: gap-fill only (newest pass wins, older only fills empty cells).
-
-    The composite always uses FIXED_LATS / FIXED_LONS so React gets a uniform
-    regular grid regardless of which satellite passes contributed.
+    A vertical stripe gap-fill is applied to the final composite to eliminate
+    any residual scan-line banding before writing.
     """
     now_utc = datetime.datetime.utcnow()
     cutoff  = now_utc - datetime.timedelta(hours=window_hours)
@@ -506,29 +530,27 @@ def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
             for idx, val in enumerate(sst_flat):
                 if val is None:
                     continue
-
                 lat_i = idx // bundle_n_lons
                 lon_i = idx  % bundle_n_lons
                 if lat_i >= len(bundle_lat_set) or lon_i >= len(bundle_lon_set):
                     continue
-
                 raw_lat = bundle_lat_set[lat_i]
                 raw_lon = bundle_lon_set[lon_i]
-
-                # Snap bundle coord to fixed grid
                 snapped_lat = _snap_to_fixed(raw_lat, GRID_STEP, FIXED_LATS[0])
                 snapped_lon = _snap_to_fixed(raw_lon, GRID_STEP, FIXED_LONS[0])
                 gi = FIXED_LAT_IDX.get(snapped_lat)
                 gj = FIXED_LON_IDX.get(snapped_lon)
                 if gi is None or gj is None:
                     continue
-
                 flat_i = gi * N_LONS + gj
                 if sst_out[flat_i] is None:   # gap-fill only
                     sst_out[flat_i] = round(float(val), 2)
                     age_out[flat_i] = round(age_hours, 1)
 
             pass_count += 1
+
+    # Fill residual scan-line stripe gaps in the composite
+    sst_out = _fill_row_gaps(sst_out, N_LATS, N_LONS)
 
     valid_sst  = [v for v in sst_out if v is not None]
     valid_ages = [v for v in age_out if v is not None]
@@ -564,12 +586,9 @@ def build_composite(window_hours: int = COMPOSITE_WINDOW_HOURS) -> dict | None:
 def _write_composite_if_sufficient(composite: dict) -> bool:
     """
     Write viirs_composite.json only if the composite meets both quality gates:
-      - pass_count  >= COMPOSITE_MIN_PASSES
+      - pass_count   >= COMPOSITE_MIN_PASSES
       - coverage_pct >= COMPOSITE_MIN_COVERAGE
-
-    If either gate fails the existing file is left untouched so the UI
-    continues to show the last good composite instead of a blank map.
-
+    If either gate fails the existing file is left untouched.
     Returns True if the file was written, False if it was skipped.
     """
     passes   = composite["pass_count"]
@@ -648,12 +667,10 @@ def main() -> None:
     })
     _write_index(all_dates)
 
-    # Purge daily bundles older than KEEP_DAYS (keeps at most 5 days)
+    # Purge daily bundles older than KEEP_DAYS
     _purge_old_bundles(KEEP_DAYS)
 
     # Build the temporal composite and write it only if quality gates pass.
-    # If gates fail, the existing viirs_composite.json is left untouched so
-    # the UI continues to show the last good composite.
     composite = build_composite(COMPOSITE_WINDOW_HOURS)
     if composite:
         written = _write_composite_if_sufficient(composite)
