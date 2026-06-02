@@ -543,7 +543,7 @@ def fetch_chl_daily(session: requests.Session, date: datetime.date,
             "CHL",
         )
     else:
-        # ── 2. Fall back to ERDDAP sources ────────────────────────────────
+        # ── 2. Fall back to ERDDAP sources (already ocean-masked by data source) ──
         result = _fetch_day(session, CHL_DAILY_SOURCES, date)
         if result is None:
             log.warning("  No CHL daily data for %s.", date.isoformat())
