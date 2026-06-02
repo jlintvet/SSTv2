@@ -1,6 +1,8 @@
 # SST Rendering Pipeline — Frontend
 
-This document describes how `TestSST.jsx` renders SST, chlorophyll, and sea color data onto the Mapbox basemap. If you break rendering, read this before changing anything.
+This document describes how the Leaflet-based `SSTHeatmapLeaflet.jsx` (and its dev counterpart `SSTHeatmapLeaflet_chl_range.jsx`) renders SST, chlorophyll, and sea color data onto the CartoDB basemap. If you break rendering, read this before changing anything.
+
+> **Architecture note:** The app was originally Mapbox-based (`TestSST.jsx`). It was migrated to Leaflet (`SSTHeatmapLeaflet.jsx`). Some notes in older git history refer to Mapbox-specific problems (`styledata`, `addSource`, `addLayer`) that no longer apply. The pipeline described here is the current Leaflet version.
 
 ---
 
@@ -13,12 +15,12 @@ Every one of these was a dead end. They will feel plausible again if you're new 
 **Symptom:** Ocean-colored blocks appear over Virginia, Maryland, eastern NC, Chesapeake Bay, Pamlico Sound.
 
 **What doesn't work:**
-- Inserting the SST raster layer below Mapbox's land layers via z-order. Mapbox's `light-v11` paints `landcover` *before* `water` in the style order, so any layer inserted above `water` will also be above `landcover`. There is no single z-index slot in `light-v11` where SST sits over water but under land. Don't waste time on `map.addLayer(..., beforeLayerId)` tricks.
-- Relying on the source data (MUR, GOES Blended) to mark land as NaN. These are L4 SST products. They fill Chesapeake Bay, Rappahannock River, Pamlico Sound, and other inland water bodies with real water temperatures because those *are* water. As far as JPL/NOAA are concerned, there's nothing to filter.
-- A browser-side raster mask that pokes transparent holes in the canvas. Conceptually correct, but `raster-resampling: linear` in Mapbox then interpolates across the transparent holes and smears ocean color back over land at display time.
+- Relying on the source data (MUR, GOES Blended) to mark land as NaN. These are L4 SST products. They fill Chesapeake Bay, Rappahannock River, Pamlico Sound, and other inland water bodies with real water temperatures because those *are* water.
+- A browser-side raster mask that pokes transparent holes in the canvas. Bilinear interpolation in the renderer then bleeds ocean color back across the transparent holes.
+- Filtering CMEMS CHL/SeaColor rows using the MUR ocean mask (`mask==1`). MUR's open-ocean definition **includes Chesapeake Bay and Pamlico Sound**, so `mask==1` does NOT exclude estuaries. Do not add MUR mask filtering to `DailyChlorophyllandSeaColorRetrieval.py`.
 
 **What works:**
-Filter out all inland points at **ingest time** using Natural Earth 1:10m coastline. The CSVs written to `DailySSTData/` contain only true-Atlantic-ocean points. The browser-side mask is then redundant but harmless. See `SST_DATA_PIPELINE.md` for the ingest side.
+Filter out inland points at **ingest time** using the prebaked Natural Earth coastline mask. The CSVs written to `DailySSTData/` contain only true-Atlantic-ocean points. The browser-side `waterMaskRef` mask provides a secondary check.
 
 ---
 
@@ -26,7 +28,7 @@ Filter out all inland points at **ingest time** using Natural Earth 1:10m coastl
 
 **Symptom:** Outer Banks and mid-Atlantic coast appear to have SST painted north of where the coastline actually is. The offset grows with latitude.
 
-**Cause:** Our canvas is painted in equirectangular pixel space (each row is equal lat degrees). Mapbox's `image` source renders it in Web Mercator space, where 1° of latitude occupies more vertical screen pixels near the poles than near the equator. The canvas gets linearly stretched between the two lat/lon corner points *after* they're projected to Mercator — so rows near the top land too far north and rows near the bottom land too far south.
+**Cause:** Canvas painted in equirectangular pixel space (equal lat degrees per row). Leaflet renders image overlays in Web Mercator space. The canvas gets linearly stretched between the two corner points after Mercator projection, so rows near the top land too far north.
 
 **Fix:** Paint the canvas in Mercator-Y space. For each canvas row `py`:
 
@@ -38,245 +40,158 @@ const mY = mercYNorth - (py / (CANVAS_H - 1)) * (mercYNorth - mercYSouth);
 const lat = invMercY(mY);
 ```
 
-Then snap `lat` to the nearest grid row. This is in `gridToDataURL()` in `TestSST.jsx`. If you ever see coastline drift returning, check that this Mercator inversion is still there.
-
-**This applies to ALL three layers (SST, chlorophyll, sea color).** `gridToDataURL` handles it for all of them since they all go through the same function. Do not add per-layer projection logic.
+This is in `gridToDataURL()`. **This applies to ALL three layers (SST, chlorophyll, sea color).** Do not add per-layer projection logic.
 
 ---
 
 ### 3. Hourly / GOES Comp buttons show "No data available"
 
-**Cause:** `normalizeSSTResponse()` had a `firstGrid.length > 100` threshold that rejected small grids as malformed. The backend functions `getVIIRSData` and `getGOESCompositeData` return legit `{days: [...]}` responses, just with fewer points.
+**Cause:** `normalizeSSTResponse()` had a `firstGrid.length > 100` threshold that rejected small grids as malformed.
 
 **Fix:** Threshold is now `> 0`. Any non-empty grid is accepted.
 
 ---
 
-### 4. Chlorophyll and sea color layers flicker continuously
+### 4. Sea color layer shifted north/south
 
-**Symptom:** The overlay layer flashes on and off repeatedly, never settling. Console shows `[SST:map] styledata — forcing re-paint` repeating dozens of times (observed: 72×).
+**Symptom:** Sea color data appears shifted relative to coastline. SST and chlorophyll are correctly aligned.
 
-**Cause:** The `styledata` event handler was triggering `setWaterMaskVersion` on every Mapbox internal tile reload. Each `waterMaskVersion` bump caused the overlay `useEffect` to remove and re-add the overlay layer, which itself triggered another `styledata` event — a perfect infinite loop.
+**Cause:** Sea color (KD490) from CMEMS is a coarse ~0.17° grid (~1,280 rows). When passed directly to `gridToDataURL` on its own grid, the bilinear interpolation finds few valid neighbor quads near the data edges, causing `wsum < 0.25` transparency halos that look like a shift. More importantly: using the native coarse-grid bounds places the image at slightly different coordinates than the SST reference grid.
 
-**Fix:** Add a 3-second cooldown to the `styledata` handler and increase the debounce from 150ms to 500ms:
-
-```js
-let styleReloadTimer = null;
-let lastRepaintAt = 0;
-map.on("styledata", () => {
-  if (styleReloadTimer) clearTimeout(styleReloadTimer);
-  styleReloadTimer = setTimeout(() => {
-    try {
-      const now = Date.now();
-      if (!map.getLayer("sst-layer") && (now - lastRepaintAt) > 3000) {
-        lastRepaintAt = now;
-        setWaterMaskVersion(v => v + 1);
-      }
-    } catch(_) {}
-  }, 500);
-});
-```
-
-Do not revert the debounce to 150ms or remove the cooldown — the loop will return.
+**Fix:** Pre-expand the sea color grid onto the SST reference grid (`latSet/lonSet`) using bilinear interpolation via `expandCoarseGrid()`. Then pass `latSet/lonSet` and the expanded grid to `gridToDataURL`. This guarantees the image bounds are identical to the SST layer. See the `expandCoarseGrid` function in `SSTHeatmapLeaflet.jsx`.
 
 ---
 
-### 5. Sea color layer shifts north/south (Mercator + coarse grid)
+### 5. Chlorophyll layer shifted west relative to coastline
 
-**Symptom:** Sea color data appears shifted northward at the top of the map and southward at the bottom. Chlorophyll and SST are correctly aligned.
+**Symptom:** The entire CHL data overlay appears shifted west when compared against SST or the basemap coastline. SST and sea color are correctly aligned. The shift is significant — data appears on land or in incorrect water bodies.
 
-**Cause:** Sea color has a much coarser grid than chlorophyll (32×39 at ~0.16° spacing vs 239×270 for chlorophyll). When `gridToDataURL` performs bilinear interpolation on a coarse grid, it finds very few valid neighbor quads near the edges of the data, causing `wsum < 0.25` transparency halos and apparent shift. The fix is NOT to change `gridToDataURL`, NOT to override the Mapbox image coordinates with `dataBounds`, and NOT to use `latSet/lonSet` (SST grid) as the canvas dimensions — all of these were tried and broke other layers.
+**Cause:** CHL from CMEMS Sentinel-3 OLCI 300m (`cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D`) uses a native ~0.011° grid. When rendered on its own native grid (`latSet2/lonSet2`), the image bounds (computed as `lonWest - lonStep/2` to `lonEast + lonStep/2`) end up at slightly different coordinates than the SST reference grid. Even though the CMEMS coordinate values in the JSON are correct (verified: lon -78.8861 to -72.2139), the image gets placed at misaligned bounds in Leaflet's `imageOverlay`.
 
 **What doesn't work:**
-- Passing `latSet/lonSet` (SST grid dimensions) instead of `latSet2/lonSet2` to `gridToDataURL` for the overlay — makes chlorophyll render as polka dots because SST grid points don't align with chlorophyll key strings.
-- Overriding the Mapbox `addSource` coordinates with `dataBounds` or the SST source's coordinates — shifts chlorophyll east of the coastline.
-- Nearest-neighbor resampling in a pre-expansion step — produces blocky square pixels.
+- Modifying `gridToDataURL` bounds calculation — doc says "do not modify this function."
+- Adding exclusion boxes for Chesapeake Bay / Pamlico Sound — the data is correctly positioned, the whole layer is just shifted.
+- Filtering with the MUR ocean mask — MUR includes estuaries, this filters the wrong things.
+- Adding a coordinate offset correction in Python — coordinates in the JSON are already correct.
 
-**What works:** Pre-expand the sea color grid onto the SST grid using **bilinear interpolation** before passing to `gridToDataURL`. This produces a dense grid keyed to `latSet/lonSet` coordinates, which `gridToDataURL` can interpolate smoothly. The `addSource` coordinates continue to use `imgWest/imgEast/imgNorth/imgSouth` from the `gridToDataURL` return value — unchanged.
+**Fix:** Apply the same pattern as sea color — pre-expand CHL onto the SST reference grid using `expandCoarseGrid()`, then pass `latSet/lonSet` to `gridToDataURL`. This ensures CHL uses the same image bounds as SST.
 
-```js
-function expandCoarseGrid(latSet2, lonSet2, overlayGrid, targetLatSet, targetLonSet) {
-  const expanded = {};
-  for (const lat of targetLatSet) {
-    let r0 = 0;
-    for (let i = 0; i < latSet2.length - 1; i++) {
-      if (lat <= latSet2[i] && lat >= latSet2[i + 1]) { r0 = i; break; }
-    }
-    const r1 = Math.min(r0 + 1, latSet2.length - 1);
-    const latFrac = latSet2[r0] === latSet2[r1] ? 0 :
-      (latSet2[r0] - lat) / (latSet2[r0] - latSet2[r1]);
-
-    for (const lon of targetLonSet) {
-      let c0 = 0;
-      for (let i = 0; i < lonSet2.length - 1; i++) {
-        if (lon >= lonSet2[i] && lon <= lonSet2[i + 1]) { c0 = i; break; }
-      }
-      const c1 = Math.min(c0 + 1, lonSet2.length - 1);
-      const lonFrac = lonSet2[c0] === lonSet2[c1] ? 0 :
-        (lon - lonSet2[c0]) / (lonSet2[c1] - lonSet2[c0]);
-
-      const vNW = overlayGrid[`${latSet2[r0]}_${lonSet2[c0]}`];
-      const vNE = overlayGrid[`${latSet2[r0]}_${lonSet2[c1]}`];
-      const vSW = overlayGrid[`${latSet2[r1]}_${lonSet2[c0]}`];
-      const vSE = overlayGrid[`${latSet2[r1]}_${lonSet2[c1]}`];
-
-      let sum = 0, wsum = 0;
-      const wNW = (1 - latFrac) * (1 - lonFrac);
-      const wNE = (1 - latFrac) * lonFrac;
-      const wSW = latFrac * (1 - lonFrac);
-      const wSE = latFrac * lonFrac;
-
-      if (vNW != null && Number.isFinite(vNW)) { sum += vNW * wNW; wsum += wNW; }
-      if (vNE != null && Number.isFinite(vNE)) { sum += vNE * wNE; wsum += wNE; }
-      if (vSW != null && Number.isFinite(vSW)) { sum += vSW * wSW; wsum += wSW; }
-      if (vSE != null && Number.isFinite(vSE)) { sum += vSE * wSE; wsum += wSE; }
-
-      if (wsum >= 0.25) expanded[`${lat}_${lon}`] = sum / wsum;
-    }
-  }
-  return expanded;
-}
-```
-
-In the overlay `useEffect`, **only the sea color branch** uses this expansion:
+In the overlay `useEffect`:
 
 ```js
-// Sea color only — pre-expand coarse grid onto SST resolution before painting
-const expandedGrid = expandCoarseGrid(latSet2, lonSet2, overlayGrid, latSet, lonSet);
-Promise.resolve(gridToDataURL(latSet, lonSet, expandedGrid, min2, max2, colorFn, waterMaskRef.current))
+const useRefGrid = activeDataLayer === "seacolor" || activeDataLayer === "chlorophyll";
+const renderLatSet = useRefGrid ? latSet : latSet2;
+const renderLonSet = useRefGrid ? lonSet : lonSet2;
+const renderGrid   = useRefGrid ? expandCoarseGrid(latSet2, lonSet2, overlayGrid, latSet, lonSet) : overlayGrid;
 ```
 
-The chlorophyll branch passes `latSet2, lonSet2, overlayGrid` directly — unchanged.
-
-**The `addSource` coordinates are always `imgWest/imgEast/imgNorth/imgSouth` from the `gridToDataURL` return for both layers. Never override these.**
+Since CHL at ~0.011° is close to the SST grid at 0.01°, `expandCoarseGrid` produces nearly identical values — no quality loss. Cloud-covered cells (null in the CMEMS data) are excluded from interpolation; if no valid neighbor exists, the expanded cell is omitted and renders transparent.
 
 ---
 
-## Layer architecture
+## Layer architecture (Leaflet)
 
 ```
 ┌──────────────────────────────────────────┐
-│ Mapbox symbol layers (labels, roads)     │ ← drawn last (top)
+│ Leaflet markers / popups                 │ ← top
 ├──────────────────────────────────────────┤
-│ SST raster (sst-source / sst-layer)      │ ← inserted before first symbol
+│ Fish hotspot SVG overlays                │
 ├──────────────────────────────────────────┤
-│ Chlorophyll / SeaColor overlay           │ ← same insertion point
+│ Bathymetry / wreck markers               │
 ├──────────────────────────────────────────┤
-│ Isotherm / temp-break contour lines      │
+│ Isotherm / temp-break polylines          │
 ├──────────────────────────────────────────┤
-│ Bathymetry contour lines                 │
+│ CHL / SeaColor / Composite imageOverlay  │ ← overlayLayerRef
 ├──────────────────────────────────────────┤
-│ Mapbox water (blue fill)                 │
-│ Mapbox landcover (gray fill)             │ ← SST would paint over
-│ Mapbox background                        │    this if not filtered
+│ SST imageOverlay                         │ ← sstOverlayRef
+├──────────────────────────────────────────┤
+│ Wind velocity (L.velocityLayer)          │
+├──────────────────────────────────────────┤
+│ CartoDB tile layer                       │ ← bottom
 └──────────────────────────────────────────┘
 ```
 
-SST must be **ocean-only by the time it hits the canvas**. Layer z-order cannot save you — the ingest has to filter inland points.
+Leaflet image overlays sit above the tile layer automatically. SST is rendered first, then the CHL/SeaColor/Composite overlay on top. No z-index tricks needed.
+
+SST must still be **ocean-only by the time it hits the canvas**. The basemap's land areas show through transparent pixels — so land-filtered SST is correct. The `waterMaskRef` ocean mask function is passed to `gridToDataURL` as `isOcean` to skip land pixels.
 
 ---
 
 ## The `gridToDataURL` function
 
-Lives in `TestSST.jsx`. Signature: `gridToDataURL(latSet, lonSet, grid, valMin, valMax, colorFn, isOcean) → {dataURL, west, east, north, south}`.
+Lives in `SSTHeatmapLeaflet.jsx`. Signature: `gridToDataURL(latSet, lonSet, grid, valMin, valMax, colorFn, isOcean, rangeMin, rangeMax) → Promise<{dataURL, west, east, north, south}>`.
 
 Contract:
 - `latSet` descending (north → south), `lonSet` ascending (west → east).
 - `grid` is a flat object keyed by `"${lat}_${lon}"` strings.
-- `isOcean` is the frontend coastline mask function (redundant now that ingest filters, but still checked as a safety net).
-- Canvas is **fixed 512 × 400 pixels**, independent of source grid resolution.
-- Each canvas pixel resolves to a geographic lat/lon via inverse Mercator (see problem 2 above).
-- Each pixel value is **bilinearly interpolated** from the 4 surrounding source-grid cells. Do NOT revert to nearest-neighbor — that makes the display blocky, and `raster-resampling: linear` on the Mapbox layer only smooths pixel edges, it cannot recover smooth gradient from blocky source pixels.
-- Missing neighbors (NaN or land-filtered) drop out of the weighted sum, renormalized by `wsum`. If `wsum < 0.25`, the pixel is left transparent.
-- Return includes four lat/lon corners expanded by half a grid cell on each side — this aligns pixel centers with cell centers.
-- **Do not modify this function to fix overlay alignment issues.** The function is correct. Overlay alignment problems are solved upstream by `expandCoarseGrid` (sea color) or are a sign of incorrect arguments being passed.
+- `isOcean` is the frontend coastline mask function; checked per pixel. Pass `waterMaskRef.current`.
+- Canvas is **fixed 512 × 400 pixels**.
+- Each canvas pixel resolves to a geographic lat/lon via inverse Mercator (problem 2 above).
+- Each pixel value is **bilinearly interpolated** from the 4 surrounding source-grid cells.
+- Missing or null neighbors drop out of the weighted sum (renormalized by `wsum`). If `wsum < 0.25`, pixel is transparent.
+- Returns bounds expanded by half a grid cell on each side — aligns pixel centers with cell centers.
+- Returns a `dataURL` as a blob URL (revoke these on cleanup via `blobUrlsRef.current`).
+- **Do not modify this function to fix overlay alignment issues.** Alignment problems are solved upstream by `expandCoarseGrid` or by correcting arguments.
 
 ---
 
 ## Overlay `useEffect` — correct call pattern
 
 ```
-SST layer:       gridToDataURL(latSet,  lonSet,  grid,          ...)  ← SST grid, direct
-Chlorophyll:     gridToDataURL(latSet2, lonSet2, overlayGrid,   ...)  ← CHL own grid, direct
-Sea color:       gridToDataURL(latSet,  lonSet,  expandedGrid,  ...)  ← expanded onto SST grid
+SST layer:       gridToDataURL(latSet,  lonSet,  grid,             ...)  ← SST grid, direct
+Chlorophyll:     gridToDataURL(latSet,  lonSet,  expandedCHL,      ...)  ← expanded onto SST grid
+Sea color:       gridToDataURL(latSet,  lonSet,  expandedSeaColor, ...)  ← expanded onto SST grid
+Composite:       gridToDataURL(latSet2, lonSet2, overlayGrid,      ...)  ← composite own grid, direct
 ```
 
-All three use `imgWest/imgEast/imgNorth/imgSouth` from the return value for `map.addSource` coordinates.
+Both CHL and SeaColor use `expandCoarseGrid(latSet2, lonSet2, overlayGrid, latSet, lonSet)` before calling `gridToDataURL`. The composite layer uses its own grid directly (it is already on the same resolution as SST).
+
+The overlay bounds (`[[south, west], [north, east]]`) passed to `L.imageOverlay` always come from the `gridToDataURL` return value — never hardcoded.
 
 ---
 
 ## Water mask plumbing
 
-The mask is built once per map mount, from a prebaked binary mask at `DailySSTData/ocean_mask.json` (falls back to Natural Earth 1:10m if unavailable). It produces a `(lat, lon) => boolean` function: true = ocean.
+Built once per map mount from a prebaked binary mask at `DailySSTData/ocean_mask.json` (falls back to Natural Earth 1:10m download if unavailable). Produces a `(lat, lon) => boolean` function: true = ocean.
 
-Storage pattern is specific and intentional:
-- `waterMaskRef` (`useRef`) — **authoritative**, survives re-renders and Mapbox style reloads.
-- `waterMaskVersion` (`useState`, counter) — changing this triggers dependent effects to re-run. Incremented whenever a new mask is stored.
+Storage:
+- `waterMaskRef` (`useRef`) — authoritative, survives re-renders.
+- `waterMaskVersion` (`useState`, counter) — incrementing triggers dependent effects to re-run.
 - `maskBuildStartedRef` — guards against building the mask more than once per mount.
 
-The SST and overlay effects both depend on `waterMaskVersion`. Both defer rendering if `waterMaskRef.current` is null.
-
-The `styledata` listener watches for Mapbox wiping user-added layers. It has a 500ms debounce and a 3-second cooldown to prevent the infinite re-render loop described in problem 4 above.
+SST and overlay effects both depend on `waterMaskVersion` and defer rendering if `waterMaskRef.current` is null.
 
 ---
 
-## Auth and region access layer
+## CHL data pipeline (Python → frontend)
 
-The app uses Supabase (not Base44) for user authentication and subscription management. This is intentional — Base44 auth was avoided to allow future migration off Base44 without re-building auth.
+**Backend:** `DailyChlorophyllandSeaColorRetrieval.py` runs via GitHub Actions. Fetches CMEMS `cmems_obs-oc_glo_bgc-plankton_nrt_l3-olci-300m_P1D` (Sentinel-3 OLCI, 300m) with `CMEMS_STRIDE = 4` (effective ~1.2km). Returns ~71,939 rows per day (all grid cells including cloud-covered nulls). Lon normalization: `lon - 360 if lon > 180 else lon` ensures lons are negative (-78.89 to -72.21). Coord range logged as: `lat 33.7028–38.9972  lon -78.8861–-72.2139`.
 
-**Key files:**
-- `src/lib/supabase.js` — Supabase client singleton with hardcoded project URL and anon key.
-- `src/hooks/useAuth.js` — wraps Supabase session state, fires on `onAuthStateChange`.
-- `src/hooks/useRegionAccess.js` — fetches `user_subscriptions` row, creates free trial on first login, expires trials, provides `permittedRegions`/`daysLeft`/`tier` via React context.
-- `src/components/auth/AuthGate.jsx` — shows login/register modal when no session exists. Wraps authenticated children in `RegionAccessProvider` so subscription data is fetched exactly once.
-- `src/components/auth/TrialBanner.jsx` — dismissible banner shown when `tier === 'free_trial'`.
-- `src/components/auth/UserMenu.jsx` — avatar dropdown with tier, region, sign out.
-- `src/components/region/RegionGate.jsx` — checks `permittedRegions.includes(region)`. Shows `RegionSelect` page if access denied.
-- `src/pages/RegionSelect.jsx` — region selection page showing all east coast regions. Only `outer_banks` is selectable; others are greyed out as coming soon.
+**Frontend loading:** `getChlorophyllData` Base44 function fetches CHL JSON and returns `{ days: [{ date, grid: [{lat, lon, chlorophyll}], stats: {min, max} }] }`. `normalizeSSTResponse` passes this through as-is (since `data.days` already has a valid grid). The `stats` field is required by the overlay `useEffect` for `min2/max2`.
 
-**Supabase tables:**
-- `auth.users` — managed by Supabase. View in Authentication → Users.
-- `public.user_subscriptions` — `user_id`, `tier`, `regions[]`, `trial_ends_at`, `stripe_customer_id`. Edit rows directly in Table Editor to manually extend trials or activate subscriptions.
-- `public.regions` — `slug`, `label`, `bounds` (jsonb). Currently seeded with `outer_banks`.
-
-**Subscription tiers:** `free_trial` → `active` → `expired` / `cancelled`. Stripe webhooks will flip `tier` to `active` on payment (not yet implemented — `handleUpgrade` is a placeholder alert).
-
-**Email confirmation redirect:** Supabase → Authentication → URL Configuration → Site URL must be set to `https://lintvetsstv2.base44.app`. If users get a `localhost refused to connect` error after clicking their confirmation email, this setting has been reset.
-
-**`RegionAccessProvider` context pattern:** `useRegionAccess` must be called inside `RegionAccessProvider`. The provider is mounted by `AuthGate` only after a valid session exists. Calling `useRegionAccess` outside the provider throws. This is intentional — it prevents subscription fetches from firing for unauthenticated users and ensures the fetch happens exactly once regardless of how many components call the hook.
+**Key variables in overlay `useEffect`:**
+- `day.grid` → array of `{lat, lon, chlorophyll}` objects
+- `latSet2/lonSet2` → unique sorted lat/lon arrays from `day.grid` (the native CMEMS grid)
+- `overlayGrid` → `{ "${lat}_${lon}": chlorophyll_value }` (includes null values for cloud)
+- `renderGrid` → result of `expandCoarseGrid(latSet2, lonSet2, overlayGrid, latSet, lonSet)` (on SST grid)
 
 ---
 
-## Diagnostic logging
+## Auth and region access
 
-All frontend SST code emits `[SST:*]` and `[MASK]` log lines. Keep these in place.
+The app uses Supabase for auth and subscriptions, not Base44 auth. Key files:
+- `src/lib/supabase.js` — client singleton.
+- `src/hooks/useAuth.js` — wraps Supabase session state.
+- `src/hooks/useRegionAccess.js` — fetches `user_subscriptions`, creates free trial on first login.
+- `src/components/auth/AuthGate.jsx` — shows login modal when no session; wraps children in `RegionAccessProvider`.
 
-**Healthy startup sequence looks like:**
-```
-[SST:MUR] response shape: Object
-[SST:MUR] Grid OK: N lats × M lons ...
-[SST:map] style.load fired
-[SST:layer] mask not ready yet, deferring paint
-[MASK] prebaked loaded in Xms (266×335, 11139 bytes)
-[MASK] spot checks — Richmond VA (37.5,-77.4): LAND(ok), mid-Atlantic (36.5,-74.5): OCEAN(ok)
-[SST:map] styledata — forcing re-paint   ← should appear only 1-2 times, not dozens
-```
+**Supabase tables:** `auth.users`, `public.user_subscriptions` (`user_id`, `tier`, `regions[]`, `trial_ends_at`), `public.regions`.
 
-**Warning signs:**
-- `styledata — forcing re-paint` appearing more than 3 times → infinite loop, check the cooldown guard.
-- `[SST:MUR] WARNING: Grid appears SCATTERED` → backend returning non-grid data, not a frontend issue.
-- `[SST:layer] mask not ready yet` appearing repeatedly → mask build failed, check network tab for `ocean_mask.json`.
-
-Spot-check values in `[MASK]`:
-- Richmond VA (37.5, -77.4) must be **LAND**.
-- Mid-Atlantic (36.5, -74.5) must be **OCEAN**.
-- If either is inverted, the mask orientation is broken.
+**Email confirmation redirect:** Supabase → Authentication → URL Configuration → Site URL must be `https://lintvetsstv2.base44.app`. If users get `localhost refused to connect` after clicking confirmation email, this setting was reset.
 
 ---
 
-## Constants that matter
-
-These must match across frontend, backend, and ingest:
+## Constants — must match across frontend, backend, ingest
 
 ```
 NORTH = 39.00
@@ -285,17 +200,14 @@ WEST  = -78.89
 EAST  = -72.21
 ```
 
-If you change these in one place, change them everywhere or the mask and coordinate-snap logic will silently misalign.
-
 ---
 
-## If rendering breaks, check these in order
+## If rendering breaks, check in this order
 
-1. **Flicker / continuous repaint** → check `styledata` handler has 500ms debounce + 3s cooldown (problem 4).
-2. **SST or chlorophyll shifts north/south** → check Mercator math is still in `gridToDataURL` (problem 2).
-3. **Sea color shifts north/south** → check `expandCoarseGrid` is being called for sea color branch and result is passed as `expandedGrid` to `gridToDataURL` with `latSet/lonSet` (problem 5).
-4. **Chlorophyll shows polka dots** → someone passed `latSet/lonSet` instead of `latSet2/lonSet2` to `gridToDataURL` for chlorophyll. Revert.
-5. **Chlorophyll or sea color shifted east of coastline** → someone overrode `addSource` coordinates with `dataBounds` or SST source coordinates. Revert to `imgWest/imgEast/imgNorth/imgSouth`.
-6. **Mask not applying** → check `waterMaskRef.current` is not null before calling `gridToDataURL`. Both SST and overlay effects guard on this.
-7. **Users get localhost error on email confirmation** → fix Supabase Site URL (auth section above).
-8. **Users land on upgrade screen after login** → check `user_subscriptions` table in Supabase — row may not have been created. Check `useRegionAccess` insert error in console.
+1. **CHL shifted west** → check that `expandCoarseGrid` is called for the chlorophyll branch and result passed with `latSet/lonSet` to `gridToDataURL` (problem 5). Both CHL and SeaColor should use this pattern.
+2. **SeaColor shifted** → same as above — check `expandCoarseGrid` is being called for sea color branch (problem 4).
+3. **SST or any layer shifts north/south** → check Mercator math is still in `gridToDataURL` (problem 2).
+4. **CHL overlay blank / no data** → check `day.stats` exists; `min2=day.stats.min` will throw if stats is missing. Also check `expandCoarseGrid` result isn't empty (all nulls from full cloud cover).
+5. **Mask not applying** → check `waterMaskRef.current` is not null before calling `gridToDataURL`.
+6. **Users get localhost error on email confirmation** → fix Supabase Site URL.
+7. **Users land on upgrade screen after login** → check `user_subscriptions` table — row may not exist.
