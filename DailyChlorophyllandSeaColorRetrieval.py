@@ -433,6 +433,9 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
             lon_key = "longitude" if "longitude" in ds.coords else "lon"
             lats = ds[lat_key].values
             lons = ds[lon_key].values
+            # Normalize 0–360 longitudes to –180/180 (some CMEMS products use 0-360 internally)
+            lons = [lon - 360 if lon > 180 else lon for lon in lons]
+            import numpy as _np; lons = _np.array(lons)
 
             # Shape may be (time, lat, lon) or (lat, lon); squeeze time dim.
             vals = ds[variable].values
@@ -460,6 +463,8 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
 
             log.info("    ✓ CMEMS %d rows, %d ocean cells (stride=%d, ~%.0fm res)",
                      len(rows), ocean, s, 300 * s)
+            log.info("    CMEMS coord range: lat %.4f–%.4f  lon %.4f–%.4f",
+                     float(lats[0]), float(lats[-1]), float(lons[0]), float(lons[-1]))
             return rows
 
     except Exception as exc:
@@ -528,8 +533,7 @@ def fetch_chl_daily(session: requests.Session, date: datetime.date,
     log.info("  CHL daily  %s", date.isoformat())
 
     # ── 1. Try CMEMS Sentinel-3 OLCI 300m (primary — highest resolution) ──
-    # CMEMS OLCI CHL coordinates are offset vs ERDDAP VIIRS — use ERDDAP until resolved.
-    cmems_rows = None  # _fetch_cmems_subset(CMEMS_CHL_DATASET_ID, "CHL", date)
+    cmems_rows = _fetch_cmems_subset(CMEMS_CHL_DATASET_ID, "CHL", date)
     if cmems_rows is not None:
         rows, label, base_url, variable = (
             cmems_rows,
