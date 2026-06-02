@@ -426,6 +426,7 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
                 return None
 
             ds = xr.open_dataset(str(out_path))
+            log.info("    CMEMS NetCDF variables: %s", list(ds.data_vars))
 
             # Sentinel-3 OLCI NetCDF uses 'latitude'/'longitude' coordinate names.
             # Some products use 'lat'/'lon' — fall back gracefully.
