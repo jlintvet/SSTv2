@@ -528,7 +528,8 @@ def fetch_chl_daily(session: requests.Session, date: datetime.date,
     log.info("  CHL daily  %s", date.isoformat())
 
     # ── 1. Try CMEMS Sentinel-3 OLCI 300m (primary — highest resolution) ──
-    cmems_rows = _fetch_cmems_subset(CMEMS_CHL_DATASET_ID, "CHL", date)
+    # CMEMS OLCI CHL coordinates are offset vs ERDDAP VIIRS — use ERDDAP until resolved.
+    cmems_rows = None  # _fetch_cmems_subset(CMEMS_CHL_DATASET_ID, "CHL", date)
     if cmems_rows is not None:
         rows, label, base_url, variable = (
             cmems_rows,
