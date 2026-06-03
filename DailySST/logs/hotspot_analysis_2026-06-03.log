@@ -1,108 +1,108 @@
-2026-06-03T04:29:16 [INFO] === FishingHotspotAnalyzer  date=2026-06-03  month=June ===
-2026-06-03T04:29:16 [INFO] Species to analyze: ['yellowfin', 'bluefin', 'mahi', 'wahoo', 'kingfish', 'white_marlin', 'blue_marlin']
-2026-06-03T04:29:16 [INFO] === Loading local data ===
-2026-06-03T04:29:16 [INFO] Composite loaded: 266 lat × 335 lon, coverage 47.5%
-2026-06-03T04:29:16 [INFO] Bathymetry grid loaded: 1273 × 1604 cells
-2026-06-03T04:29:16 [INFO] Building composite lookup ...
-2026-06-03T04:29:16 [INFO]   42321 ocean SST points
-2026-06-03T04:29:16 [INFO]   Composite step: 0.0200°
-2026-06-03T04:29:16 [INFO] Computing SST gradient (break detection) ...
-2026-06-03T04:29:16 [INFO]   42321 gradient points
-2026-06-03T04:29:16 [INFO] Building bathymetry lookup ...
-2026-06-03T04:29:18 [INFO]   61368 depth points
-2026-06-03T04:29:18 [INFO] === Loading chlorophyll from local files ===
-2026-06-03T04:29:18 [INFO] Loaded CHL from CHL_20260601.json  (831 valid points, 2 days old)
-2026-06-03T04:29:18 [INFO] === Loading sea color (kd490) from local files ===
-2026-06-03T04:29:18 [INFO] Loaded kd490 from SEACOLOR_20260531.json  (755 valid points, 3 days old)
-2026-06-03T04:29:18 [INFO] ANTHROPIC_API_KEY set — will generate AI narratives via Claude API.
-2026-06-03T04:29:18 [INFO] === Scoring species ===
-2026-06-03T04:29:18 [INFO]   Analyzing Yellowfin Tuna ...
-2026-06-03T04:29:18 [INFO]     147 / 600 scored points above 0.65 threshold
-2026-06-03T04:29:18 [INFO]     23 raw cluster(s) found
-2026-06-03T04:29:18 [INFO]     Zone 1: habitat=0.758 × seasonal=1.00 → score=0.758  (peak)
-2026-06-03T04:29:21 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:21 [INFO]     Narrative generated via Claude API (499 chars)
-2026-06-03T04:29:21 [INFO]     Zone 2: habitat=0.751 × seasonal=1.00 → score=0.751  (peak)
-2026-06-03T04:29:23 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:23 [INFO]     Narrative generated via Claude API (524 chars)
-2026-06-03T04:29:23 [INFO]     Zone 3: habitat=0.708 × seasonal=1.00 → score=0.708  (peak)
-2026-06-03T04:29:26 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:27 [INFO]     Narrative generated via Claude API (581 chars)
-2026-06-03T04:29:27 [INFO]     -> 3 zone(s) for Yellowfin Tuna  [seasonality: peak  mult=1.00]
-2026-06-03T04:29:27 [INFO]   Analyzing Bluefin Tuna ...
-2026-06-03T04:29:27 [INFO]     724 / 743 scored points above 0.60 threshold
-2026-06-03T04:29:27 [INFO]     28 raw cluster(s) found
-2026-06-03T04:29:27 [INFO]     Zone 1: habitat=0.859 × seasonal=0.45 → score=0.387  (off-season)
-2026-06-03T04:29:29 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:29 [INFO]     Narrative generated via Claude API (588 chars)
-2026-06-03T04:29:29 [INFO]     Zone 2: habitat=0.856 × seasonal=0.45 → score=0.385  (off-season)
-2026-06-03T04:29:32 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:32 [INFO]     Narrative generated via Claude API (627 chars)
-2026-06-03T04:29:32 [INFO]     Zone 3: habitat=0.845 × seasonal=0.45 → score=0.380  (off-season)
-2026-06-03T04:29:35 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:35 [INFO]     Narrative generated via Claude API (572 chars)
-2026-06-03T04:29:35 [INFO]     -> 3 zone(s) for Bluefin Tuna  [seasonality: off-season  mult=0.45]
-2026-06-03T04:29:35 [INFO]   Analyzing Mahi-Mahi ...
-2026-06-03T04:29:35 [INFO]     5 / 9 scored points above 0.64 threshold
-2026-06-03T04:29:35 [INFO]     2 raw cluster(s) found
-2026-06-03T04:29:35 [INFO]     -> 0 zone(s) for Mahi-Mahi  [seasonality: peak  mult=1.00]
-2026-06-03T04:29:35 [INFO]   Analyzing Wahoo ...
-2026-06-03T04:29:35 [INFO]     817 / 1390 scored points above 0.58 threshold
-2026-06-03T04:29:35 [INFO]     24 raw cluster(s) found
-2026-06-03T04:29:35 [INFO]     Zone 1: habitat=0.762 × seasonal=0.45 → score=0.343  (off-season)
-2026-06-03T04:29:39 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:39 [INFO]     Narrative generated via Claude API (625 chars)
-2026-06-03T04:29:39 [INFO]     Zone 2: habitat=0.751 × seasonal=0.45 → score=0.338  (off-season)
-2026-06-03T04:29:41 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:41 [INFO]     Narrative generated via Claude API (534 chars)
-2026-06-03T04:29:41 [INFO]     Zone 3: habitat=0.745 × seasonal=0.45 → score=0.335  (off-season)
-2026-06-03T04:29:44 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:44 [INFO]     Narrative generated via Claude API (566 chars)
-2026-06-03T04:29:44 [INFO]     -> 3 zone(s) for Wahoo  [seasonality: off-season  mult=0.45]
-2026-06-03T04:29:44 [INFO]   Analyzing King Mackerel ...
-2026-06-03T04:29:44 [INFO]     734 / 1095 scored points above 0.60 threshold
-2026-06-03T04:29:44 [INFO]     57 raw cluster(s) found
-2026-06-03T04:29:44 [INFO]     Zone 1: habitat=0.823 × seasonal=0.80 → score=0.658  (prime)
-2026-06-03T04:29:46 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:46 [INFO]     Narrative generated via Claude API (526 chars)
-2026-06-03T04:29:46 [INFO]     Zone 2: habitat=0.782 × seasonal=0.80 → score=0.626  (prime)
-2026-06-03T04:29:49 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:49 [INFO]     Narrative generated via Claude API (593 chars)
-2026-06-03T04:29:49 [INFO]     Zone 3: habitat=0.774 × seasonal=0.80 → score=0.619  (prime)
-2026-06-03T04:29:52 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:52 [INFO]     Narrative generated via Claude API (582 chars)
-2026-06-03T04:29:52 [INFO]     -> 3 zone(s) for King Mackerel  [seasonality: prime  mult=0.80]
-2026-06-03T04:29:52 [INFO]   Analyzing White Marlin ...
-2026-06-03T04:29:52 [INFO]     350 / 550 scored points above 0.60 threshold
-2026-06-03T04:29:52 [INFO]     23 raw cluster(s) found
-2026-06-03T04:29:52 [INFO]     Zone 1: habitat=0.787 × seasonal=0.45 → score=0.354  (off-season)
-2026-06-03T04:29:55 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:55 [INFO]     Narrative generated via Claude API (592 chars)
-2026-06-03T04:29:55 [INFO]     Zone 2: habitat=0.785 × seasonal=0.45 → score=0.353  (off-season)
-2026-06-03T04:29:58 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:29:58 [INFO]     Narrative generated via Claude API (580 chars)
-2026-06-03T04:29:58 [INFO]     Zone 3: habitat=0.780 × seasonal=0.45 → score=0.351  (off-season)
-2026-06-03T04:30:01 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:30:01 [INFO]     Narrative generated via Claude API (610 chars)
-2026-06-03T04:30:01 [INFO]     -> 3 zone(s) for White Marlin  [seasonality: off-season  mult=0.45]
-2026-06-03T04:30:01 [INFO]   Analyzing Blue Marlin ...
-2026-06-03T04:30:01 [INFO]     1122 / 1668 scored points above 0.58 threshold
-2026-06-03T04:30:01 [INFO]     30 raw cluster(s) found
-2026-06-03T04:30:01 [INFO]     Zone 1: habitat=0.801 × seasonal=0.80 → score=0.641  (prime)
-2026-06-03T04:30:04 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:30:04 [INFO]     Narrative generated via Claude API (563 chars)
-2026-06-03T04:30:04 [INFO]     Zone 2: habitat=0.800 × seasonal=0.80 → score=0.640  (prime)
-2026-06-03T04:30:06 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:30:06 [INFO]     Narrative generated via Claude API (516 chars)
-2026-06-03T04:30:06 [INFO]     Zone 3: habitat=0.796 × seasonal=0.80 → score=0.637  (prime)
-2026-06-03T04:30:09 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-06-03T04:30:09 [INFO]     Narrative generated via Claude API (501 chars)
-2026-06-03T04:30:09 [INFO]     -> 3 zone(s) for Blue Marlin  [seasonality: prime  mult=0.80]
-2026-06-03T04:30:09 [INFO] === Writing output ===
-2026-06-03T04:30:09 [INFO] Wrote fishing_hotspots_2026-06-03.json  (19.6 KB)
-2026-06-03T04:30:09 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-26.json
-2026-06-03T04:30:09 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-23.json
-2026-06-03T04:30:09 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-24.json
-2026-06-03T04:30:09 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-25.json
-2026-06-03T04:30:09 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-22.json
-2026-06-03T04:30:09 [INFO] === Done. ===
+2026-06-03T10:02:43 [INFO] === FishingHotspotAnalyzer  date=2026-06-03  month=June ===
+2026-06-03T10:02:43 [INFO] Species to analyze: ['yellowfin', 'bluefin', 'mahi', 'wahoo', 'kingfish', 'white_marlin', 'blue_marlin']
+2026-06-03T10:02:43 [INFO] === Loading local data ===
+2026-06-03T10:02:43 [INFO] Composite loaded: 266 lat × 335 lon, coverage 47.5%
+2026-06-03T10:02:43 [INFO] Bathymetry grid loaded: 1273 × 1604 cells
+2026-06-03T10:02:43 [INFO] Building composite lookup ...
+2026-06-03T10:02:43 [INFO]   42321 ocean SST points
+2026-06-03T10:02:43 [INFO]   Composite step: 0.0200°
+2026-06-03T10:02:43 [INFO] Computing SST gradient (break detection) ...
+2026-06-03T10:02:44 [INFO]   42321 gradient points
+2026-06-03T10:02:44 [INFO] Building bathymetry lookup ...
+2026-06-03T10:02:45 [INFO]   61368 depth points
+2026-06-03T10:02:45 [INFO] === Loading chlorophyll from local files ===
+2026-06-03T10:02:45 [INFO] Loaded CHL from CHL_20260601.json  (831 valid points, 2 days old)
+2026-06-03T10:02:45 [INFO] === Loading sea color (kd490) from local files ===
+2026-06-03T10:02:45 [INFO] Loaded kd490 from SEACOLOR_20260531.json  (755 valid points, 3 days old)
+2026-06-03T10:02:45 [INFO] ANTHROPIC_API_KEY set — will generate AI narratives via Claude API.
+2026-06-03T10:02:45 [INFO] === Scoring species ===
+2026-06-03T10:02:45 [INFO]   Analyzing Yellowfin Tuna ...
+2026-06-03T10:02:45 [INFO]     147 / 600 scored points above 0.65 threshold
+2026-06-03T10:02:45 [INFO]     23 raw cluster(s) found
+2026-06-03T10:02:46 [INFO]     Zone 1: habitat=0.758 × seasonal=1.00 → score=0.758  (peak)
+2026-06-03T10:02:50 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:02:50 [INFO]     Narrative generated via Claude API (539 chars)
+2026-06-03T10:02:50 [INFO]     Zone 2: habitat=0.751 × seasonal=1.00 → score=0.751  (peak)
+2026-06-03T10:02:52 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:02:52 [INFO]     Narrative generated via Claude API (471 chars)
+2026-06-03T10:02:52 [INFO]     Zone 3: habitat=0.708 × seasonal=1.00 → score=0.708  (peak)
+2026-06-03T10:03:00 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:00 [INFO]     Narrative generated via Claude API (547 chars)
+2026-06-03T10:03:00 [INFO]     -> 3 zone(s) for Yellowfin Tuna  [seasonality: peak  mult=1.00]
+2026-06-03T10:03:00 [INFO]   Analyzing Bluefin Tuna ...
+2026-06-03T10:03:00 [INFO]     724 / 743 scored points above 0.60 threshold
+2026-06-03T10:03:00 [INFO]     28 raw cluster(s) found
+2026-06-03T10:03:00 [INFO]     Zone 1: habitat=0.859 × seasonal=0.45 → score=0.387  (off-season)
+2026-06-03T10:03:03 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:03 [INFO]     Narrative generated via Claude API (517 chars)
+2026-06-03T10:03:03 [INFO]     Zone 2: habitat=0.856 × seasonal=0.45 → score=0.385  (off-season)
+2026-06-03T10:03:06 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:06 [INFO]     Narrative generated via Claude API (610 chars)
+2026-06-03T10:03:06 [INFO]     Zone 3: habitat=0.845 × seasonal=0.45 → score=0.380  (off-season)
+2026-06-03T10:03:10 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:10 [INFO]     Narrative generated via Claude API (585 chars)
+2026-06-03T10:03:10 [INFO]     -> 3 zone(s) for Bluefin Tuna  [seasonality: off-season  mult=0.45]
+2026-06-03T10:03:10 [INFO]   Analyzing Mahi-Mahi ...
+2026-06-03T10:03:10 [INFO]     5 / 9 scored points above 0.64 threshold
+2026-06-03T10:03:10 [INFO]     2 raw cluster(s) found
+2026-06-03T10:03:10 [INFO]     -> 0 zone(s) for Mahi-Mahi  [seasonality: peak  mult=1.00]
+2026-06-03T10:03:10 [INFO]   Analyzing Wahoo ...
+2026-06-03T10:03:10 [INFO]     817 / 1390 scored points above 0.58 threshold
+2026-06-03T10:03:10 [INFO]     24 raw cluster(s) found
+2026-06-03T10:03:10 [INFO]     Zone 1: habitat=0.762 × seasonal=0.45 → score=0.343  (off-season)
+2026-06-03T10:03:12 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:12 [INFO]     Narrative generated via Claude API (537 chars)
+2026-06-03T10:03:12 [INFO]     Zone 2: habitat=0.751 × seasonal=0.45 → score=0.338  (off-season)
+2026-06-03T10:03:15 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:15 [INFO]     Narrative generated via Claude API (582 chars)
+2026-06-03T10:03:15 [INFO]     Zone 3: habitat=0.745 × seasonal=0.45 → score=0.335  (off-season)
+2026-06-03T10:03:18 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:18 [INFO]     Narrative generated via Claude API (479 chars)
+2026-06-03T10:03:18 [INFO]     -> 3 zone(s) for Wahoo  [seasonality: off-season  mult=0.45]
+2026-06-03T10:03:18 [INFO]   Analyzing King Mackerel ...
+2026-06-03T10:03:18 [INFO]     734 / 1095 scored points above 0.60 threshold
+2026-06-03T10:03:18 [INFO]     57 raw cluster(s) found
+2026-06-03T10:03:18 [INFO]     Zone 1: habitat=0.823 × seasonal=0.80 → score=0.658  (prime)
+2026-06-03T10:03:20 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:20 [INFO]     Narrative generated via Claude API (550 chars)
+2026-06-03T10:03:20 [INFO]     Zone 2: habitat=0.782 × seasonal=0.80 → score=0.626  (prime)
+2026-06-03T10:03:24 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:24 [INFO]     Narrative generated via Claude API (518 chars)
+2026-06-03T10:03:24 [INFO]     Zone 3: habitat=0.774 × seasonal=0.80 → score=0.619  (prime)
+2026-06-03T10:03:27 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:27 [INFO]     Narrative generated via Claude API (565 chars)
+2026-06-03T10:03:27 [INFO]     -> 3 zone(s) for King Mackerel  [seasonality: prime  mult=0.80]
+2026-06-03T10:03:27 [INFO]   Analyzing White Marlin ...
+2026-06-03T10:03:27 [INFO]     350 / 550 scored points above 0.60 threshold
+2026-06-03T10:03:27 [INFO]     23 raw cluster(s) found
+2026-06-03T10:03:27 [INFO]     Zone 1: habitat=0.787 × seasonal=0.45 → score=0.354  (off-season)
+2026-06-03T10:03:30 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:30 [INFO]     Narrative generated via Claude API (534 chars)
+2026-06-03T10:03:30 [INFO]     Zone 2: habitat=0.785 × seasonal=0.45 → score=0.353  (off-season)
+2026-06-03T10:03:36 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:36 [INFO]     Narrative generated via Claude API (614 chars)
+2026-06-03T10:03:36 [INFO]     Zone 3: habitat=0.780 × seasonal=0.45 → score=0.351  (off-season)
+2026-06-03T10:03:39 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:39 [INFO]     Narrative generated via Claude API (551 chars)
+2026-06-03T10:03:39 [INFO]     -> 3 zone(s) for White Marlin  [seasonality: off-season  mult=0.45]
+2026-06-03T10:03:39 [INFO]   Analyzing Blue Marlin ...
+2026-06-03T10:03:39 [INFO]     1122 / 1668 scored points above 0.58 threshold
+2026-06-03T10:03:39 [INFO]     30 raw cluster(s) found
+2026-06-03T10:03:39 [INFO]     Zone 1: habitat=0.801 × seasonal=0.80 → score=0.641  (prime)
+2026-06-03T10:03:42 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:42 [INFO]     Narrative generated via Claude API (543 chars)
+2026-06-03T10:03:42 [INFO]     Zone 2: habitat=0.800 × seasonal=0.80 → score=0.640  (prime)
+2026-06-03T10:03:44 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:44 [INFO]     Narrative generated via Claude API (540 chars)
+2026-06-03T10:03:44 [INFO]     Zone 3: habitat=0.796 × seasonal=0.80 → score=0.637  (prime)
+2026-06-03T10:03:47 [INFO] HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-06-03T10:03:47 [INFO]     Narrative generated via Claude API (543 chars)
+2026-06-03T10:03:47 [INFO]     -> 3 zone(s) for Blue Marlin  [seasonality: prime  mult=0.80]
+2026-06-03T10:03:47 [INFO] === Writing output ===
+2026-06-03T10:03:47 [INFO] Wrote fishing_hotspots_2026-06-03.json  (19.3 KB)
+2026-06-03T10:03:47 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-26.json
+2026-06-03T10:03:47 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-23.json
+2026-06-03T10:03:47 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-24.json
+2026-06-03T10:03:47 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-25.json
+2026-06-03T10:03:47 [INFO] Purged old hotspot file: fishing_hotspots_2026-05-22.json
+2026-06-03T10:03:47 [INFO] === Done. ===
