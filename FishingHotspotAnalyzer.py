@@ -888,7 +888,51 @@ def main() -> None:
     enabled = {k: v for k, v in all_species.items() if v.get("enabled", True)}
     log.info("Species to analyze: %s", list(enabled))
 
-    # ── Load composite ─────────────────────────────
+    # ── Load composite ──────────────────────────────────────────────────────
+    composite = load_composite(date)
+    if composite is None:
+        log.error("No composite data available for %s — aborting.", date)
+        sys.exit(1)
+    composite_lookup = build_composite_lookup(composite)
+    gradient_lookup  = compute_sst_gradient(composite)
+    lat_set = composite["latSet"]
+    lon_set = composite["lonSet"]
+    composite_step = abs(lat_set[1] - lat_set[0]) if len(lat_set) > 1 else 0.04
+    log.info("Composite loaded: %d points  step=%.4f°", len(composite_lookup), composite_step)
+
+    # ── Load bathymetry ──────────────────────────────────────────────────────
+    bathy_raw = load_bathymetry_grid()
+    if bathy_raw is None:
+        log.warning("Bathymetry unavailable — depth scoring disabled.")
+        bathy_lookup = {}
+    else:
+        bathy_lookup = build_bathy_lookup(bathy_raw, composite_lookup)
+        log.info("Bathy lookup: %d entries", len(bathy_lookup))
+
+    # ── Load CHL / kd490 ────────────────────────────────────────────────────
+    chl_lookup   = load_local_chl(date)
+    kd490_lookup = load_local_kd490(date)
+
+    # ── Analyze each species ─────────────────────────────────────────────────
+    species_results: dict = {}
+    for sp_key, sp_cfg in enabled.items():
+        try:
+            result = analyze_species(
+                sp_key, sp_cfg,
+                composite_lookup, gradient_lookup,
+                bathy_lookup, chl_lookup, kd490_lookup,
+                composite_step=composite_step,
+                date=date,
+                skip_narrative=skip_narrative,
+            )
+            species_results[sp_key] = result
+        except Exception as exc:
+            log.exception("  Error analyzing %s: %s", sp_key, exc)
+            species_results[sp_key] = {"zones": [], "error": str(exc)}
+
+    # ── Write output ─────────────────────────────────────────────────────────
+    purge_old_hotspots(keep_days=7)
+    write_hotspots(date, species_results)
     log.info("=== Done ===")
 
 if __name__ == "__main__":
