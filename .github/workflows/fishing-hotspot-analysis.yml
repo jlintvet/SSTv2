@@ -56,7 +56,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install numpy scipy anthropic
+          pip install numpy scipy
 
       - name: Resolve analysis date
         id: date
@@ -70,7 +70,6 @@ jobs:
 
       - name: Run FishingHotspotAnalyzer
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATE:     ${{ steps.date.outputs.date }}
           SPECIES:  ${{ github.event.inputs.species || '' }}
           SKIP_CHL: ${{ github.event.inputs.skip_chl == 'true' && '1' || '0' }}
@@ -100,6 +99,20 @@ jobs:
                   print(f'  [rank {z[\"rank\"]} score={z[\"score\"]} area={z[\"area_sq_nm\"]} sqnm]', end='')
               print()
           "
+
+      - name: Prune hotspot files older than 7 days
+        run: |
+          find DailySST -maxdepth 1 -name "fishing_hotspots_*.json" | while read f; do
+            fname=$(basename "$f" .json)
+            fdate="${fname#fishing_hotspots_}"
+            if [ "$(date -d "$fdate" +%s 2>/dev/null)" != "" ]; then
+              age=$(( ( $(date -u +%s) - $(date -d "$fdate" +%s) ) / 86400 ))
+              if [ "$age" -gt 7 ]; then
+                echo "Removing old file: $f (age ${age}d)"
+                rm "$f"
+              fi
+            fi
+          done
 
       - name: Commit hotspot output to repo
         run: |
