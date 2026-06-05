@@ -494,7 +494,9 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
 # ─────────────────────────────────────────────────────────────────────────────
 def cluster_hot_cells(scored_points: list[tuple],
                       min_score: float,
-                      grid_res: float = 0.04) -> list[list[tuple]]:
+                      grid_res: float = 0.04,
+                      max_cells: int = 0) -> list[list[tuple]]:
+    """BFS clustering. max_cells > 0 caps each cluster size (per-species tunable)."""
     hot = {(r[0], r[1]): r for r in scored_points if r[2] >= min_score}
     if not hot:
         return []
@@ -507,6 +509,8 @@ def cluster_hot_cells(scored_points: list[tuple],
         queue   = deque([start_key])
         visited.add(start_key)
         while queue:
+            if max_cells and len(cluster) >= max_cells:
+                break
             lat, lon = queue.popleft()
             cluster.append(hot[(lat, lon)])
             for dlat in [-grid_res, 0, grid_res]:
@@ -760,7 +764,8 @@ def analyze_species(species_key: str, sp_config: dict,
     log.info("    %d / %d scored points above %.2f threshold",
              hot_count, len(scored), min_score)
 
-    clusters = cluster_hot_cells(scored, min_score, grid_res=composite_step)
+    max_cells = int(sp_config.get("max_cluster_cells", 0))  # 0 = unlimited
+    clusters = cluster_hot_cells(scored, min_score, grid_res=composite_step, max_cells=max_cells)
     log.info("    %d raw cluster(s) found", len(clusters))
 
     valid = [c for c in clusters if len(c) >= CLUSTER_MIN_CELLS]
