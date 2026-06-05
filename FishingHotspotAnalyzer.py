@@ -423,6 +423,8 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     chl_min, chl_max         = sp["chl_range_mg_m3"]
     kd490_max                = sp["kd490_max"]
     break_required           = sp.get("break_required", False)
+    chl_required             = sp.get("chl_required", False)   # hard gate: needs CHL data + min score
+    sst_score_min            = float(sp.get("sst_score_min", 0.0))  # min SST fit score to qualify
 
     # Globally unavailable data sources — exclude their weights entirely
     chl_available   = bool(chl_lookup)
@@ -431,6 +433,9 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
     for (lat, lon), sst_f in composite_lookup.items():
         s_sst = score_sst(sst_f, sp["sst_target_f"], sst_min, sst_max)
         if s_sst == 0.0:
+            continue
+        # Hard gate: SST score must meet species minimum (filters cloud-edge false breaks)
+        if sst_score_min > 0 and s_sst < sst_score_min:
             continue
 
         lat2      = round(lat, 2)
@@ -442,8 +447,11 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
         chl       = chl_lookup.get((lat2, lon2))   if chl_available   else None
         kd490_val = kd490_lookup.get((lat1, lon1)) if kd490_available else None
 
+        # Hard gate: no depth data = land or uncharted nearshore — skip
+        if depth_ft is None:
+            continue
         # Hard gate: depth <= 10 ft means land or beach — skip
-        if depth_ft is not None and depth_ft <= 10:
+        if depth_ft <= 10:
             continue
 
         s_depth = score_depth(depth_ft, d_min, d_max, d_ideal_min, d_ideal_max)
@@ -454,10 +462,15 @@ def build_score_grid(composite_lookup: dict, gradient_lookup: dict,
         s_chl   = score_chl(chl, chl_min, chl_max)     if chl_available   else None
         s_color = score_color(kd490_val, kd490_max)     if kd490_available else None
 
-        # Build per-point effective weights — exclude any factor with no data
-        factors: dict[str, float] = {"sst": s_sst, "break": s_break}
-        if depth_ft is not None:
-            factors["depth"] = s_depth
+        # Hard gate: chl_required — skip points with no CHL data or CHL below 60% of floor
+        if chl_required:
+            if not chl_available or chl is None:
+                continue
+            if chl < chl_min * 0.6:
+                continue
+
+        # Build per-point effective weights (depth always present past the gate above)
+        factors: dict[str, float] = {"sst": s_sst, "break": s_break, "depth": s_depth}
         if chl_available:
             factors["chl"] = s_chl
         if kd490_available:
@@ -600,8 +613,16 @@ def _template_narrative(date: datetime.date, sp: dict, zone: dict) -> str:
 
     # Note any excluded data sources
     missing = []
-    if not zone.get("conditions", {}).get("chl_available", True):
-        missing.append("chlorophyll")
+    chl_req = sp.get("chl_required", False)
+    chl_avail = zone.get("conditions", {}).get("chl_available", True)
+    if not chl_avail:
+        if chl_req:
+            caveat = (f" ⚠️ Chlorophyll data is unavailable today. "
+                      f"{name} zones require chlorophyll data to identify Sargassum/color fronts — "
+                      f"this zone is based on SST and depth only and should be treated as low confidence.")
+            return f"{s1} {s2} {s3}{caveat}"
+        else:
+            missing.append("chlorophyll")
     if not zone.get("conditions", {}).get("kd490_available", True):
         missing.append("water clarity (kd490)")
     caveat = f" Note: {' and '.join(missing)} data was unavailable; scores based on SST, temperature break, and depth only." if missing else ""
@@ -637,12 +658,22 @@ def generate_zone_narrative(date: datetime.date, sp: dict, zone: dict,
         else:
             season_status = "off-season"
 
-        chl_avail  = cond.get("chl_available",   True)
+        chl_avail   = cond.get("chl_available",   True)
         kd490_avail = cond.get("kd490_available", True)
+        chl_req     = sp.get("chl_required", False)
         missing_data = []
         if not chl_avail:   missing_data.append("chlorophyll")
         if not kd490_avail: missing_data.append("water clarity/kd490")
-        data_caveat = f"\n  - MISSING DATA: {', '.join(missing_data)} unavailable; weights renormalized to SST+break+depth only. Mention this briefly in your narrative." if missing_data else ""
+        if missing_data:
+            if chl_req and not chl_avail:
+                data_caveat = (f"\n  - ⚠️ CRITICAL: Chlorophyll data is unavailable today. "
+                               f"{sp['display_name']} zones require CHL to locate Sargassum/color fronts. "
+                               f"This zone is low-confidence. Your narrative MUST prominently warn the angler "
+                               f"that CHL data is missing and this zone should be verified on the water.")
+            else:
+                data_caveat = f"\n  - MISSING DATA: {', '.join(missing_data)} unavailable; weights renormalized to SST+break+depth only. Mention this briefly in your narrative."
+        else:
+            data_caveat = ""
 
         prompt = f"""You are a knowledgeable offshore fishing guide at Cape Hatteras and the Outer Banks, NC.
 Write a 3-sentence fishing narrative for this specific zone. Be practical, specific, and use fisherman's language.
