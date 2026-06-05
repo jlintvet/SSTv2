@@ -906,7 +906,7 @@ def main() -> None:
         log.warning("Bathymetry unavailable — depth scoring disabled.")
         bathy_lookup = {}
     else:
-        bathy_lookup = build_bathy_lookup(bathy_raw, composite_lookup)
+        bathy_lookup = build_bathy_lookup(bathy_raw)
         log.info("Bathy lookup: %d entries", len(bathy_lookup))
 
     # ── Load CHL / kd490 ────────────────────────────────────────────────────
