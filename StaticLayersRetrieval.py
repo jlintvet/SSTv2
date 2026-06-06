@@ -91,6 +91,7 @@ WRECK_SYMBOL_DESCRIPTIONS = {
 NE_BASE          = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
 NE_COASTLINE_URL = f"{NE_BASE}/ne_10m_coastline.geojson"
 NE_LAND_URL      = f"{NE_BASE}/ne_10m_land.geojson"
+NE_OCEAN_URL     = f"{NE_BASE}/ne_10m_ocean.geojson"
 # ---------------------------------------------------------------------------
 # Contour depth levels — fathom-aligned for offshore fishing
 # 1 fathom = 6 feet exactly
@@ -121,6 +122,7 @@ def _bathy_cache_valid() -> bool:
     required = [
         OUTPUT_DIR / "bathymetry_contours.json",
         OUTPUT_DIR / "bathymetry_grid.json",
+        OUTPUT_DIR / "ne_ocean.json",   # must exist so ocean mask is baked in
     ]
     cutoff = datetime.datetime.now() - datetime.timedelta(days=CACHE_DAYS)
     for path in required:
@@ -357,9 +359,71 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
             last_err = exc
     raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
 # ---------------------------------------------------------------------------
+# Ocean mask (Natural Earth 10m ocean polygons)
+# ---------------------------------------------------------------------------
+def _fetch_ocean_rings(session: requests.Session) -> list[list]:
+    """
+    Download ne_10m_ocean.geojson, cache exterior rings that intersect our bbox
+    to DailySST/ne_ocean.json, and return them.
+
+    Each ring is a list of [lon, lat] pairs. A point inside any ring is open ocean.
+    Enclosed water bodies (Chesapeake Bay, Pamlico Sound, etc.) are NOT in the
+    ne_10m_ocean polygons, so they will be masked out of the bathy grid.
+    """
+    cache_path = OUTPUT_DIR / "ne_ocean.json"
+    if cache_path.exists():
+        with open(cache_path, encoding="utf-8") as fh:
+            rings = json.load(fh)
+        log.info("Ocean mask loaded from cache: %d ring(s)", len(rings))
+        return rings
+
+    log.info("Fetching Natural Earth 10m ocean polygons ...")
+    r = session.get(NE_OCEAN_URL, timeout=TIMEOUT)
+    r.raise_for_status()
+    data  = r.json()
+    rings = []
+    for feat in data.get("features", []):
+        geom  = feat.get("geometry", {})
+        gtype = geom.get("type", "")
+        if gtype == "Polygon":
+            polys = [geom["coordinates"]]
+        elif gtype == "MultiPolygon":
+            polys = geom["coordinates"]
+        else:
+            continue
+        for poly in polys:
+            if not poly:
+                continue
+            exterior = poly[0]
+            if _ring_intersects_bbox(exterior):
+                rings.append(exterior)
+
+    with open(cache_path, "w", encoding="utf-8") as fh:
+        json.dump(rings, fh, separators=(",", ":"))
+    log.info("Ocean mask: %d ring(s) cached to ne_ocean.json", len(rings))
+    return rings
+
+
+def _point_in_ring(lon: float, lat: float, ring: list) -> bool:
+    """Standard ray-casting point-in-polygon test for a single ring."""
+    inside = False
+    n      = len(ring)
+    j      = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / (yj - yi) + xi
+        ):
+            inside = not inside
+        j = i
+    return inside
+
+
+# ---------------------------------------------------------------------------
 # Grid builder
 # ---------------------------------------------------------------------------
-def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
+def _build_grid(rows: list[dict], ocean_rings: list | None = None) -> tuple[list, list, list]:
     lats    = sorted(set(r["lat"] for r in rows))
     lons    = sorted(set(r["lon"] for r in rows))
     lat_idx = {v: i for i, v in enumerate(lats)}
@@ -392,6 +456,24 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
         flat = new_flat
         if not changed:
             break
+    # ── Ocean mask ──────────────────────────────────────────────────────────
+    # Null out any grid cell whose (lat, lon) is NOT inside an ocean polygon.
+    # This removes Chesapeake Bay, Pamlico Sound, and all enclosed water bodies
+    # regardless of region — GEBCO/ETOPO record them as valid ocean depths.
+    if ocean_rings:
+        log.info("Applying ocean mask to %d × %d grid ...", n_rows, n_cols)
+        masked = 0
+        for row in range(n_rows):
+            for col in range(n_cols):
+                i = row * n_cols + col
+                if math.isnan(flat[i]):
+                    continue
+                lon = lons[col]
+                lat = lats[row]
+                if not any(_point_in_ring(lon, lat, ring) for ring in ocean_rings):
+                    flat[i] = math.nan
+                    masked  += 1
+        log.info("Ocean mask applied: %d cell(s) nulled (enclosed water bodies removed)", masked)
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
 # ---------------------------------------------------------------------------
@@ -628,6 +710,9 @@ def write_land_mask(session: requests.Session) -> None:
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session = _make_session()
+    # ── Ocean mask polygons (needed for bathy masking) ──────────────────────
+    log.info("=== Ocean Mask ===")
+    ocean_rings = _fetch_ocean_rings(session)
     # ── Bathymetry (contours + raw grid) ────────────────────────────────────
     log.info("=== Bathymetry ===")
     if _bathy_cache_valid():
@@ -635,7 +720,7 @@ def main() -> None:
     else:
         rows = _fetch_bathymetry(session)
         log.info("Building depth grid ...")
-        lats, lons, grid = _build_grid(rows)
+        lats, lons, grid = _build_grid(rows, ocean_rings=ocean_rings)
         log.info("Grid: %d lats × %d lons", len(lats), len(lons))
         write_contours(lats, lons, grid)
         write_bathymetry_grid(lats, lons, grid)
