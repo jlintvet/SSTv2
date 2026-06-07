@@ -73,8 +73,8 @@ jobs:
         run: |
           DATE="${{ steps.date.outputs.date }}"
           DSTR="${DATE//-/}"
-          CURR="SSTv2/DailySST/Currents/currents_${DSTR}.json"
-          ALT="SSTv2/DailySST/Altimetry/altimetry_${DSTR}_grid.json"
+          CURR="DailySST/Currents/currents_${DSTR}.json"
+          ALT="DailySST/Altimetry/altimetry_${DSTR}_grid.json"
           MISSING=0
 
           if [ -f "$CURR" ]; then
@@ -113,7 +113,7 @@ jobs:
 
       - name: Prune files older than 7 days
         run: |
-          for dir in SSTv2/DailySST/Currents SSTv2/DailySST/Altimetry; do
+          for dir in DailySST/Currents DailySST/Altimetry; do
             [ -d "$dir" ] || continue
             find "$dir" -maxdepth 1 -name "*.json" -o -name "*.csv" | \
             grep -v "latest" | while read f; do
@@ -133,7 +133,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add SSTv2/DailySST/Currents/ SSTv2/DailySST/Altimetry/ || true
+          git add DailySST/Currents/ DailySST/Altimetry/ || true
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "ocean: currents + altimetry ${{ steps.date.outputs.date }}"
           git push origin HEAD
@@ -143,10 +143,10 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          mkdir -p SSTv2/DailySST/logs
+          mkdir -p DailySST/logs
           cp ocean_dynamics.log \
-             "SSTv2/DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
-          git add "SSTv2/DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
+             "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
+          git add "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
           git diff --cached --quiet && echo "No log changes" || \
             git commit -m "ocean: log ${{ steps.date.outputs.date }}"
           git push origin HEAD
