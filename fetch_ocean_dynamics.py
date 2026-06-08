@@ -499,10 +499,10 @@ def _build_velocity_json(df, grid_res=0.083):
         "dy":  round(grid_res, 5),
     }
     return [
-        {"header": {**header, "parameterNumber": 2, "name": "U-component_of_current",
-                    "parameterUnit": "m.s-1"}, "data": u_flat},
-        {"header": {**header, "parameterNumber": 3, "name": "V-component_of_current",
-                    "parameterUnit": "m.s-1"}, "data": v_flat},
+        {"header": {**header, "parameterCategory": 2, "parameterNumber": 2,
+                    "name": "U-component_of_current", "parameterUnit": "m.s-1"}, "data": u_flat},
+        {"header": {**header, "parameterCategory": 2, "parameterNumber": 3,
+                    "name": "V-component_of_current", "parameterUnit": "m.s-1"}, "data": v_flat},
     ]
 
 def _build_grid_points(df):
