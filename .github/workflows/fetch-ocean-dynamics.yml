@@ -129,16 +129,7 @@ jobs:
             done
           done
 
-      - name: Commit outputs to repo
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add DailySST/Currents/ DailySST/Altimetry/ || true
-          git diff --cached --quiet && echo "No changes to commit" || \
-            git commit -m "ocean: currents + altimetry ${{ steps.date.outputs.date }}"
-          git push origin HEAD
-
-      - name: Save fetch log
+      - name: Commit outputs and log
         if: always()
         run: |
           git config user.name  "github-actions[bot]"
@@ -146,7 +137,9 @@ jobs:
           mkdir -p DailySST/logs
           cp ocean_dynamics.log \
              "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
-          git add "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
-          git diff --cached --quiet && echo "No log changes" || \
-            git commit -m "ocean: log ${{ steps.date.outputs.date }}"
+          git add DailySST/Currents/ DailySST/Altimetry/ \
+                  "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log" || true
+          git diff --cached --quiet && echo "No changes to commit" || \
+            git commit -m "ocean: currents + altimetry + log ${{ steps.date.outputs.date }}"
+          git pull --rebase origin HEAD
           git push origin HEAD
