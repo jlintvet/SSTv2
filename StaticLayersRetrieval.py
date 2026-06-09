@@ -76,9 +76,10 @@ log = logging.getLogger(__name__)
 # wrecks.json is always rebuilt on every run (no cache check).
 # ---------------------------------------------------------------------------
 WRECK_GPX_FILES = {
-    "Fishing_Spots_HatterasNC.gpx":  "HatterasNC",
-    "Fishing_Spots_MoreheadNC.gpx":  "MoreheadNC",
+    "Fishing_Spots_HatterasNC.gpx":   "HatterasNC",
+    "Fishing_Spots_MoreheadNC.gpx":   "MoreheadNC",
     "Fishing_spots_ChesapeakeMD.gpx": "ChesapeakeMD",
+    "Fishing_Spots_OceanCityMD.gpx":  "OceanCityMD",
 }
 WRECK_SOURCE_LABEL = "Fishing Status (fishingstatus.com)"
 WRECK_SYMBOL_DESCRIPTIONS = {
@@ -146,6 +147,51 @@ def _static_cache_valid(path: pathlib.Path) -> bool:
 # ---------------------------------------------------------------------------
 _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
 
+# Matches plain-text DMS lines: "Name  DD°/o MM' SS[.S]" N  DD°/o MM' SS[.S]" W"
+import re as _re
+_DMS_RE = _re.compile(
+    r'^(.+?)\s+'
+    r'(\d+)[°oO]\s*(\d+)\'\s*(\d+(?:\.\d+)?)"?\s*N\s+'
+    r'(\d+)[°oO]\s*(\d+)\'\s*(\d+(?:\.\d+)?)"?\s*W\s*$'
+)
+
+def _dms_to_dd(deg: str, mins: str, secs: str) -> float:
+    return float(deg) + float(mins) / 60.0 + float(secs) / 3600.0
+
+def _parse_text_dms_file(path: pathlib.Path, region: str) -> list[dict]:
+    """
+    Parse a plain-text file where each line is:
+        Name  DD° MM' SS[.S]" N  DD° MM' SS[.S]" W
+    Degree symbol may be °, o, or O. Lines without valid coordinates are skipped.
+    All waypoints are assigned symbol "Wreck" (no symbol field in this format).
+    """
+    features = []
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line:
+                continue
+            m = _DMS_RE.match(line)
+            if not m:
+                log.debug("  Skipping unparseable line in %s: %r", path.name, line[:80])
+                continue
+            name, lat_d, lat_m, lat_s, lon_d, lon_m, lon_s = m.groups()
+            lat = round(_dms_to_dd(lat_d, lat_m, lat_s), 5)
+            lon = round(_dms_to_dd(lon_d, lon_m, lon_s), 5)
+            lon = -lon  # file is always W longitude
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "name":   name.strip(),
+                    "symbol": "Wreck",
+                    "region": region,
+                    "source": WRECK_SOURCE_LABEL,
+                },
+            })
+    return features
+
+
 def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
     """
     Parse a GPX 1.1 file and return a list of GeoJSON-style feature dicts.
@@ -163,9 +209,10 @@ def _parse_gpx_file(path: pathlib.Path, region: str) -> list[dict]:
     try:
         tree = ET.parse(path)
         root = tree.getroot()
-    except ET.ParseError as e:
-        log.warning("  Could not parse %s: %s", path.name, e)
-        return []
+    except ET.ParseError:
+        # Not valid XML — try plain-text DMS format
+        log.info("  %s is not XML; attempting plain-text DMS parse", path.name)
+        return _parse_text_dms_file(path, region)
 
     # Support both namespaced and bare GPX tags
     tag = root.tag
