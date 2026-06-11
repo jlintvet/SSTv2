@@ -1,5 +1,4 @@
 name: SST Data Fetch
-
 on:
   schedule:
     - cron: '0 8,10,12,14,16,18,20,22 * * *'
@@ -20,10 +19,8 @@ on:
           - goes_only
           - viirs_only
           - mur_only
-
 permissions:
   contents: write
-
 jobs:
   fetch-sst:
     name: Fetch SST Data
@@ -35,18 +32,15 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 1
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install requests numpy pandas netCDF4
-
       - name: Resolve target date
         id: date
         run: |
@@ -56,7 +50,6 @@ jobs:
           else
             echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
           fi
-
       - name: Remove stale GOES Hourly files
         run: |
           # The old pipeline replicated one daily snapshot into 24 identical
@@ -68,7 +61,6 @@ jobs:
           else
             echo "DailySSTData/GOES/Hourly/ not present — nothing to remove"
           fi
-
       - name: Fetch SST data
         env:
           TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
@@ -82,7 +74,6 @@ jobs:
           echo "      VIIRS via STAR NESDIS NRT file server (no auth)."
           echo ""
           python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
-
       - name: Debug output
         if: always()
         run: |
@@ -91,25 +82,20 @@ jobs:
           echo ""
           echo "====== Fetch log (last 100 lines) ======"
           tail -100 sst_fetch.log 2>/dev/null || echo "!! No log file"
-
       - name: Verify outputs exist
         run: |
           count=$(find DailySSTData/ -type f -name "*.csv" 2>/dev/null | wc -l)
           echo "Output CSV count: $count"
-
           mur_count=$(find DailySSTData/MUR/ -name "*.csv" 2>/dev/null | wc -l)
           goes_count=$(find DailySSTData/GOES/Composite/ -name "*.csv" 2>/dev/null | wc -l)
           viirs_count=$(find DailySSTData/VIIRS/Passes/ -name "*.csv" 2>/dev/null | wc -l)
-
           echo "  MUR files        : $mur_count"
           echo "  GOES composite   : $goes_count"
           echo "  VIIRS passes     : $viirs_count"
-
           if [ "$count" -eq 0 ]; then
             echo "::error::No SST data files produced. Check the log above."
             exit 1
           fi
-
           if [ "$mur_count" -eq 0 ]; then
             echo "::warning::No MUR files produced."
           fi
@@ -119,7 +105,6 @@ jobs:
           if [ "$viirs_count" -eq 0 ]; then
             echo "::warning::No VIIRS pass files produced — check netCDF4 install and file server URL."
           fi
-
       - name: Clean up stale non-CSV artifacts
         run: |
           # Remove old Parquet/GeoJSON/_grid.json files left over from previous
@@ -131,14 +116,12 @@ jobs:
             done < <(find DailySSTData/ -type f -name "$pattern" 2>/dev/null)
           done
           echo "Removed $deleted stale non-CSV files."
-
       - name: List outputs
         run: |
           echo "=== DailySSTData/ contents ==="
           find DailySSTData/ -type f | sort
           echo ""
           du -sh DailySSTData/ 2>/dev/null || true
-
       - name: Commit SST data to repo
         run: |
           git config user.name  "github-actions[bot]"
@@ -146,10 +129,13 @@ jobs:
           # Stage all data changes — includes new files, removals of stale
           # Hourly CSVs, and new VIIRS pass files
           git add DailySSTData/
-          git diff --cached --quiet && echo "No changes to commit" || \
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git pull --rebase origin HEAD
             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
-          git push origin HEAD
-
+            git push origin HEAD
+          fi
       - name: Commit fetch log to repo
         if: always()
         run: |
@@ -158,10 +144,13 @@ jobs:
           mkdir -p DailySSTData/logs
           cp sst_fetch.log DailySSTData/logs/sst_fetch_${{ steps.date.outputs.date }}.log 2>/dev/null || true
           git add DailySSTData/logs/ 2>/dev/null || true
-          git diff --cached --quiet && echo "No log changes" || \
+          if git diff --cached --quiet; then
+            echo "No log changes"
+          else
+            git pull --rebase origin HEAD
             git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
-          git push origin HEAD 2>/dev/null || true
-
+            git push origin HEAD
+          fi
       - name: Notify on failure
         if: failure()
         run: |
