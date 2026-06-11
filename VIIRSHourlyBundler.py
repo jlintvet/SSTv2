@@ -120,6 +120,9 @@ MIN_PASS_PIXELS = int(os.environ.get("MIN_PASS_PIXELS", "500"))
 COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "2")))
 COMPOSITE_MIN_COVERAGE = float(os.environ.get("COMPOSITE_MIN_COVERAGE", "35.0"))
 
+# How many daily composite snapshots to keep (viirs_composite_YYYY-MM-DD.json)
+COMPOSITE_KEEP_DAYS = int(os.environ.get("COMPOSITE_KEEP_DAYS", "7"))
+
 # Target date override for back-filling
 _date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
 TARGET_DATE = (
@@ -445,20 +448,21 @@ def _write_bundle(date: datetime.date, bundle: dict) -> Path:
     return dest
 
 
-def _write_index(available_dates: list[str]) -> None:
+def _write_index(available_dates: list[str], composite_dates: list[str] | None = None) -> None:
     dest = OUTPUT_DIR / "viirs_index.json"
     tmp  = dest.with_suffix(".tmp")
+    payload = {
+        "dates":           sorted(available_dates),
+        "composite_dates": sorted(composite_dates) if composite_dates else [],
+        "generated":       datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "dates":     sorted(available_dates),
-                "generated": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-            fh,
-            separators=(",", ":"),
-        )
+        json.dump(payload, fh, separators=(",", ":"))
     tmp.rename(dest)
-    log.info("Wrote viirs_index.json  (%d dates)", len(available_dates))
+    log.info(
+        "Wrote viirs_index.json  (%d bundle dates, %d composite dates)",
+        len(available_dates), len(composite_dates or []),
+    )
 
 
 def _purge_old_bundles(keep_days: int) -> None:
@@ -479,6 +483,26 @@ def _purge_old_bundles(keep_days: int) -> None:
             purged += 1
     if purged == 0:
         log.info("No old bundles to purge (keeping last %d days)", keep_days)
+
+
+def _purge_old_composites(keep_days: int) -> None:
+    """
+    Delete dated composite snapshots older than keep_days.
+    viirs_composite.json (the canonical latest) is never deleted here.
+    """
+    cutoff = datetime.date.today() - datetime.timedelta(days=keep_days)
+    purged = 0
+    for path in OUTPUT_DIR.glob("viirs_composite_????-??-??.json"):
+        try:
+            file_date = datetime.date.fromisoformat(path.stem.replace("viirs_composite_", ""))
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            path.unlink()
+            log.info("Purged old composite snapshot: %s", path.name)
+            purged += 1
+    if purged == 0:
+        log.info("No old composite snapshots to purge (keeping last %d days)", keep_days)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -635,6 +659,14 @@ def _write_composite_if_sufficient(composite: dict) -> bool:
         len(composite["latSet"]), len(composite["lonSet"]),
         size_kb,
     )
+    # Also write a dated snapshot so the UI can navigate between days
+    today_str  = datetime.date.today().isoformat()
+    dated_dest = OUTPUT_DIR / f"viirs_composite_{today_str}.json"
+    dated_tmp  = dated_dest.with_suffix(".tmp")
+    with open(dated_tmp, "w", encoding="utf-8") as fh:
+        json.dump(composite, fh, separators=(",", ":"))
+    dated_tmp.rename(dated_dest)
+    log.info("Wrote dated snapshot: %s", dated_dest.name)
     return True
 
 
@@ -678,10 +710,10 @@ def main() -> None:
         path.stem.replace("viirs_", "")
         for path in OUTPUT_DIR.glob("viirs_????-??-??.json")
     })
-    _write_index(all_dates)
 
-    # Purge daily bundles older than KEEP_DAYS
+    # Purge daily bundles and old composite snapshots
     _purge_old_bundles(KEEP_DAYS)
+    _purge_old_composites(COMPOSITE_KEEP_DAYS)
 
     # Build the temporal composite and write it only if quality gates pass.
     composite = build_composite(COMPOSITE_WINDOW_HOURS)
@@ -702,7 +734,15 @@ def main() -> None:
     else:
         log.warning("Composite could not be built — no data in window")
 
-    log.info("=== Done.  %d bundle(s) written ===", len(written_dates))
+    # Collect dated composite snapshots (written this run or from prior runs)
+    composite_dates = sorted({
+        path.stem.replace("viirs_composite_", "")
+        for path in OUTPUT_DIR.glob("viirs_composite_????-??-??.json")
+    })
+    _write_index(all_dates, composite_dates)
+
+    log.info("=== Done.  %d bundle(s) written, %d composite date(s) ===",
+             len(written_dates), len(composite_dates))
 
 
 if __name__ == "__main__":
