@@ -17,7 +17,9 @@ from pathlib import Path
 
 # Stations from the curated MD/VA/NC + Chesapeake list
 STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2",
-            "44080","44061","44042","44056","41025","44086","41063"]
+            "44080","44061","44042","44056","41025","44086","41063",
+            # added (kept only if inside the region bbox below):
+            "41159","CLKN7","BFTN7","41013","OCPN7","41110"]
 
 # Friendly display names (fall back to station_table name if missing)
 NAMES = {
@@ -26,7 +28,16 @@ NAMES = {
     "44080": "Baltimore Harbor","44061": "Upper Potomac",  "44042": "Lower Potomac",
     "44056": "Duck FRF",        "41025": "Diamond Shoals", "44086": "Nags Head",
     "41063": "Raleigh Bay",
+    "41159": "Onslow Bay Outer", "CLKN7": "Cape Lookout", "BFTN7": "Beaufort, NC",
+    "41013": "Frying Pan Shoals", "OCPN7": "Ocean Crest Pier", "41110": "Masonboro",
 }
+
+# App region (matches frontend BOUNDS); buoys outside this box are dropped.
+REGION = {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21}
+def in_region(lat, lon):
+    return (lat is not None and lon is not None
+            and REGION["lat_min"] <= lat <= REGION["lat_max"]
+            and REGION["lon_min"] <= lon <= REGION["lon_max"])
 
 OUT           = Path("DailySST/Buoys/buoys_latest.json")
 STATION_TABLE = "https://www.ndbc.noaa.gov/data/stations/station_table.txt"
@@ -112,10 +123,14 @@ def main():
             obs = parse_realtime(r.text)
         except Exception as e:
             print(f"  {sid}: realtime fetch failed: {e}")
+        lat, lon = m.get("lat"), m.get("lon")
+        if lat is not None and lon is not None and not in_region(lat, lon):
+            print(f"  {sid}: outside region bbox ({lat},{lon}) — skipped")
+            continue
         buoys.append({
             "id": sid,
             "name": NAMES.get(key) or m.get("name") or sid,
-            "lat": m.get("lat"), "lon": m.get("lon"),
+            "lat": lat, "lon": lon,
             "obs": obs,
         })
     out = {
