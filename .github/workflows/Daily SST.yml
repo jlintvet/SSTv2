@@ -132,9 +132,14 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git pull --rebase origin HEAD
+            # Commit BEFORE rebasing: `git pull --rebase` refuses to run while the index
+            # has staged changes. --autostash guards any stray worktree changes; retry
+            # handles a concurrent push from another scheduled run.
             git commit -m "data: SST update ${{ steps.date.outputs.date }}"
-            git push origin HEAD
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin HEAD && git push origin HEAD && break
+              echo "push attempt $i failed, retrying in 5s..."; sleep 5
+            done
           fi
       - name: Commit fetch log to repo
         if: always()
@@ -147,9 +152,11 @@ jobs:
           if git diff --cached --quiet; then
             echo "No log changes"
           else
-            git pull --rebase origin HEAD
             git commit -m "log: SST fetch log ${{ steps.date.outputs.date }}"
-            git push origin HEAD
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin HEAD && git push origin HEAD && break
+              echo "push attempt $i failed, retrying in 5s..."; sleep 5
+            done
           fi
       - name: Notify on failure
         if: failure()
