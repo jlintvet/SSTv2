@@ -35,6 +35,7 @@ import json
 import datetime
 import warnings
 import math
+import time
 import numpy as np
 import pandas as pd
 import requests
@@ -63,8 +64,9 @@ CURR_DIR    = OUTPUT_DIR / "Currents"
 ALT_DIR     = OUTPUT_DIR / "Altimetry"
 CURR_DIR.mkdir(parents=True, exist_ok=True)
 ALT_DIR.mkdir(parents=True, exist_ok=True)
-TIMEOUT    = 180
-MAX_RETRY  = 2
+TIMEOUT    = (8, 90)   # (connect, read) seconds — fail fast on dead hosts (tds.hycom.org outages)
+MAX_RETRY  = 1
+HYCOM_BUDGET_S = 180   # overall wall-clock cap for the HYCOM step so its outages can't blow the job
 # ─────────────────────────────────────────────────────────────────────────────
 # HTTP SESSION
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +153,7 @@ def _discover_hycom_dataset():
         f"{HYCOM_TDS_BASE}/catalog/FMRC_ESPC-D-V02_uv3z/catalog.xml",
     ]:
         try:
-            r = SESSION.get(catalog_url, timeout=20)
+            r = SESSION.get(catalog_url, timeout=TIMEOUT)
             r.raise_for_status()
             # Match dataset names like FMRC_ESPC-D-Vxx_uv3z
             found = re.findall(r'name="(FMRC_ESPC-D-V\d+_uv\dz)"', r.text)
@@ -192,9 +194,13 @@ def fetch_hycom(date):
     print(f"\n[1/3] HYCOM currents + SSH  (target: {date})  ~1/12 deg")
     dataset = _discover_hycom_dataset()
 
-    for try_date in _recent_dates(date, n=3):
+    t0 = time.monotonic()
+    for try_date in _recent_dates(date, n=1):
         for hour in ("12", "00"):
             for url in _hycom_ncss_urls(dataset, try_date, hour):
+                if time.monotonic() - t0 > HYCOM_BUDGET_S:
+                    print(f"  HYCOM unreachable within {HYCOM_BUDGET_S}s budget — skipping to CMEMS")
+                    return None, None
                 nc_path = OUTPUT_DIR / f"_hycom_{try_date}_{hour}.nc"
                 try:
                     print(f"  Trying {url[:80]}...")
