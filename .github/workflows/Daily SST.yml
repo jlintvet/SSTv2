@@ -1,7 +1,7 @@
 name: SST Data Fetch
 on:
   schedule:
-    - cron: '0 * * * *'   # every hour
+    - cron: '7 * * * *'   # every hour at :07 past (avoids top-of-hour GitHub Actions congestion)
   workflow_dispatch:
     inputs:
       target_date:
