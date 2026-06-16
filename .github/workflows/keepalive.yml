@@ -1,0 +1,20 @@
+name: Keepalive
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'   # every Monday at noon UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep scheduled workflows active
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          commit_message: "chore: keepalive to prevent GitHub from disabling scheduled workflows"
