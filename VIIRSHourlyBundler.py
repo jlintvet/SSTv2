@@ -321,7 +321,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                 for dim in list(ql.dims):
                     if dim not in (lat_name, lon_name) and ql.sizes[dim] == 1:
                         ql = ql.isel({dim: 0})
-                da = da.where(ql >= 4)
+                da = da.where(ql >= 2)
 
             lats = da[lat_name].values.tolist()
             lons = da[lon_name].values.tolist()
@@ -334,7 +334,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
 
             valid = np.sum(np.isfinite(vals_f))
             if valid == 0:
-                log.info("    %02d:00Z — 0 valid SST pixels (full cloud cover), skipping", hour)
+                log.info("    %02d:00Z — 0 valid SST pixels after quality filter (cloud cover or low-quality data), skipping", hour)
                 ds.close()
                 continue
 

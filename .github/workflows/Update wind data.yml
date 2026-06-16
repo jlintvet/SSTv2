@@ -16,7 +16,7 @@ name: Update Wind Data
 
 on:
   schedule:
-    - cron: '15 */3 * * *'   # every 3 hours at :15 past — 00:15, 03:15, 06:15 … UTC
+    - cron: '15 * * * *'    # every hour at :15 past
   workflow_dispatch:          # also adds a "Run workflow" button in the Actions tab for manual runs
 
 jobs:

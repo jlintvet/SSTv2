@@ -704,7 +704,7 @@ def main():
 
     fetch_mur()
     fetch_goes()
-    fetch_viirs_passes()
+    # fetch_viirs_passes()  # Disabled — VIIRS now handled by VIIRSHourlyBundler.py
 
     print("\n" + "=" * 57)
     print("✓ Pipeline complete")
