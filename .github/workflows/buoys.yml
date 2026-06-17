@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 jobs:
   fetch-buoys:
     name: Fetch NDBC Buoys
@@ -39,4 +40,19 @@ jobs:
               git pull --rebase --autostash origin HEAD && git push origin HEAD && break
               echo "push attempt $i failed, retrying in 5s..."; sleep 5
             done
+          fi
+      - name: Trigger hourly workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Buoys run every 15 min. Trigger hourly workflows when we land in the :05-:12 window.
+          MINUTE=$(date -u +%M | sed 's/^0*//' )
+          MINUTE=${MINUTE:-0}
+          if [ "$MINUTE" -ge 5 ] && [ "$MINUTE" -le 12 ]; then
+            echo "Minute=$MINUTE — triggering hourly workflows..."
+            gh workflow run "Daily SST.yml"          --repo jlintvet/SSTv2 --ref main || true
+            gh workflow run "Update wind data.yml"   --repo jlintvet/SSTv2 --ref main || true
+            gh workflow run "VIIRSHourlyBundler.yml" --repo jlintvet/SSTv2 --ref main || true
+          else
+            echo "Minute=$MINUTE — not in trigger window, skipping."
           fi
