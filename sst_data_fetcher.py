@@ -620,7 +620,7 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     # Filter by quality_level — ql=0/1 pixels are cloud-contaminated but NOT fill values
     # in ACSPO NRT L3U. They have real SST retrievals that are unreliable (often too cold).
     if "_ql" in df.columns:
-        df = df[df["_ql"] >= 2].drop(columns=["_ql"])
+        df = df[df["_ql"] >= 3].drop(columns=["_ql"])
     df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
             (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
