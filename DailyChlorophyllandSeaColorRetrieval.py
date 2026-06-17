@@ -564,6 +564,23 @@ def fetch_chl_daily(session: requests.Session, date: datetime.date,
     date_str      = date.strftime("%Y%m%d")
     json_filename = f"CHL_{date_str}.json"
     dest          = output_dir / json_filename
+    # ── Quality gate: reject cloud-edge contamination ──────────────────────
+    # NRT L3 daily products fetched at the boundary timestamp sometimes contain
+    # only cloud-edge pixels that pass the CMEMS QC but have anomalously high
+    # CHL (0.3–0.6 mg/m³ uniformly across offshore open-ocean cells, virtually
+    # no blue-water cells). Heuristic: if coverage < 5% AND blue_water fraction
+    # is < 1% of ocean cells, the dataset is contaminated — skip it.
+    ocean_cells = [r for r in rows if r.get("chlorophyll") is not None]
+    if ocean_cells:
+        blue_frac = sum(1 for r in ocean_cells if r.get("color_class") == "blue_water") / len(ocean_cells)
+        if payload["coverage_pct"] < 5.0 and blue_frac < 0.01:
+            log.warning(
+                "  SKIP %s — suspected cloud-edge contamination "
+                "(coverage=%.1f%%, blue_water=%.1f%% of ocean cells)",
+                json_filename, payload["coverage_pct"], blue_frac * 100,
+            )
+            return None
+
     _save_json(payload, dest)
     log.info("  Saved %s  (%.0f%% coverage, %.1f KB)",
              json_filename, payload["coverage_pct"], dest.stat().st_size / 1024)
