@@ -704,7 +704,7 @@ def main():
 
     fetch_mur()
     fetch_goes()
-    # fetch_viirs_passes()  # Disabled — VIIRS now handled by VIIRSHourlyBundler.py
+    fetch_viirs_passes()   # Feeds hourly SST display in the frontend
 
     print("\n" + "=" * 57)
     print("✓ Pipeline complete")
