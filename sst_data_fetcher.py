@@ -594,6 +594,10 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
         sst_sub = sst_var[0, lat_sl, lon_sl]
         lat_sub = lat_full[lat_sl]
         lon_sub = lon_full[lon_sl]
+        # Read quality_level to filter cloud-contaminated pixels (ql=0-1 are bad)
+        ql_sub = None
+        if "quality_level" in ds.variables:
+            ql_sub = ds.variables["quality_level"][0, lat_sl, lon_sl]
         ds.close()
     except Exception as e:
         return None, f"NetCDF parse error: {e}"
@@ -601,12 +605,22 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     lon_grid, lat_grid = np.meshgrid(lon_sub, lat_sub)
     sst_c = np.ma.filled(sst_sub, np.nan).astype(np.float64) - 273.15
 
+    # Build dataframe with quality level alongside SST (before dropna so indices align)
+    ql_flat = (np.ma.filled(ql_sub, 0).astype(np.uint8).flatten()
+               if ql_sub is not None else None)
     df = pd.DataFrame({
         "lat": lat_grid.flatten(),
         "lon": lon_grid.flatten(),
         "sst": sst_c.flatten(),
     })
-    df = df.dropna(subset=["sst"])   # removes cloud + land fill values
+    if ql_flat is not None:
+        df["_ql"] = ql_flat  # same length as flattened grids, indices aligned
+    df = df.dropna(subset=["sst"])   # removes fill/cloud-masked pixels
+
+    # Filter by quality_level — ql=0/1 pixels are cloud-contaminated but NOT fill values
+    # in ACSPO NRT L3U. They have real SST retrievals that are unreliable (often too cold).
+    if "_ql" in df.columns:
+        df = df[df["_ql"] >= 2].drop(columns=["_ql"])
     df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
             (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
