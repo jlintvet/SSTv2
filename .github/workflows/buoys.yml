@@ -45,10 +45,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Buoys run every 15 min. Trigger hourly workflows when we land in the :05-:12 window.
-          MINUTE=$(date -u +%M | sed 's/^0*//' )
+          # Buoys run every 15 min (:00, :15, :30, :45). Fire hourly workflows on
+          # whichever run lands first in each hour (minute 0-14). The 25-min SST
+          # fetch finishes well before the next hour's trigger.
+          MINUTE=$(date -u +%M | sed 's/^0*//')
           MINUTE=${MINUTE:-0}
-          if [ "$MINUTE" -ge 5 ] && [ "$MINUTE" -le 12 ]; then
+          if [ "$MINUTE" -le 14 ]; then
             echo "Minute=$MINUTE — triggering hourly workflows..."
             gh workflow run "Daily SST.yml"          --repo jlintvet/SSTv2 --ref main || true
             gh workflow run "Update wind data.yml"   --repo jlintvet/SSTv2 --ref main || true
