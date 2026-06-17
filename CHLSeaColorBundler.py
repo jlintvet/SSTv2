@@ -230,9 +230,8 @@ def build_chl_composite(bundle_dates):
 # SeaColor bundler
 # ─────────────────────────────────────────────────────────────────────────────
 def _bin_sc_rows(rows):
-    # SeaColor native grid is ~0.1667 deg — flood-fill +-4 cells (+-0.08 deg)
-    # to cover half a native cell and prevent rendering gaps.
-    SPREAD = 4
+    # SeaColor native grid is ~0.1667 deg — bin each row to nearest 0.02 deg cell.
+    # expandCoarseGrid in the frontend handles visual gap-filling for the coarse native grid.
     buckets = {}
     for r in rows:
         raw_lat = r.get("lat")
@@ -250,15 +249,7 @@ def _bin_sc_rows(rows):
         gj = FIXED_LON_IDX.get(s_lon)
         if gi is None or gj is None:
             continue
-        for di in range(-SPREAD, SPREAD + 1):
-            ni = gi + di
-            if ni < 0 or ni >= N_LATS:
-                continue
-            for dj in range(-SPREAD, SPREAD + 1):
-                nj = gj + dj
-                if nj < 0 or nj >= N_LONS:
-                    continue
-                buckets.setdefault(ni * N_LONS + nj, []).append(float(kd490))
+        buckets.setdefault(gi * N_LONS + gj, []).append(float(kd490))
 
     flat = [None] * (N_LATS * N_LONS)
     vals = []
@@ -382,6 +373,22 @@ def _purge_old_bundles(output_dir, prefix, keep_days):
             pass
 
 
+COMPOSITE_KEEP_DAYS = int(os.environ.get("COMPOSITE_KEEP_DAYS", "7"))
+
+
+def _purge_old_composites(output_dir, prefix, keep_days):
+    """Delete dated composite snapshots older than keep_days; canonical latest is never deleted."""
+    cutoff = datetime.date.today() - datetime.timedelta(days=keep_days)
+    for path in output_dir.glob(f"{prefix}_????-??-??.json"):
+        stem = path.stem.replace(prefix + "_", "")
+        try:
+            if datetime.date.fromisoformat(stem) < cutoff:
+                path.unlink()
+                log.info("Purged old composite snapshot: %s", path.name)
+        except ValueError:
+            pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -415,12 +422,22 @@ def main():
     _purge_old_bundles(CHL_OUT, "chl_bundle", KEEP_DAYS)
 
     chl_composite = build_chl_composite(chl_bundle_dates)
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
     if chl_composite:
         _write_json(CHL_OUT / "chl_composite.json", chl_composite)
+        _write_json(CHL_OUT / f"chl_composite_{today_str}.json", chl_composite)
+
+    _purge_old_composites(CHL_OUT, "chl_composite", COMPOSITE_KEEP_DAYS)
+
+    chl_composite_dates = sorted(
+        path.stem.replace("chl_composite_", "")
+        for path in CHL_OUT.glob("chl_composite_????-??-??.json")
+    )
 
     _write_json(CHL_OUT / "chl_bundle_index.json", {
         "generated":              datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "dates":                  sorted(chl_bundle_dates),
+        "composite_dates":        chl_composite_dates,
         "has_composite":          chl_composite is not None,
         "composite_coverage_pct": chl_composite["coverage_pct"] if chl_composite else None,
     })
@@ -453,10 +470,19 @@ def main():
     sc_composite = build_sc_composite(sc_bundle_dates)
     if sc_composite:
         _write_json(SC_OUT / "seacolor_composite.json", sc_composite)
+        _write_json(SC_OUT / f"seacolor_composite_{today_str}.json", sc_composite)
+
+    _purge_old_composites(SC_OUT, "seacolor_composite", COMPOSITE_KEEP_DAYS)
+
+    sc_composite_dates = sorted(
+        path.stem.replace("seacolor_composite_", "")
+        for path in SC_OUT.glob("seacolor_composite_????-??-??.json")
+    )
 
     _write_json(SC_OUT / "seacolor_bundle_index.json", {
         "generated":              datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "dates":                  sorted(sc_bundle_dates),
+        "composite_dates":        sc_composite_dates,
         "has_composite":          sc_composite is not None,
         "composite_coverage_pct": sc_composite["coverage_pct"] if sc_composite else None,
     })
