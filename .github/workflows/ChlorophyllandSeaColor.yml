@@ -80,6 +80,12 @@ jobs:
           SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
         run: python DailyChlorophyllandSeaColorRetrieval.py
 
+      # ── 5. Run bundler ────────────────────────────────────────────────────
+      # Reads the daily CHL/SeaColor JSON files and produces compact
+      # flat-array bundle files and multi-day composites.
+      - name: Run CHLSeaColorBundler.py
+        run: python CHLSeaColorBundler.py
+
       # ── 5. Commit & push output files ────────────────────────────────────
       # Only commits if files actually changed (git diff --staged --quiet guard).
       # Uses github-actions bot identity to keep commit history clean.
