@@ -117,8 +117,8 @@ MIN_PASS_PIXELS = int(os.environ.get("MIN_PASS_PIXELS", "500"))
 
 # Composite quality gates — if either threshold is not met the new composite is
 # discarded and the existing viirs_composite.json is left untouched.
-COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "2")))
-COMPOSITE_MIN_COVERAGE = float(os.environ.get("COMPOSITE_MIN_COVERAGE", "35.0"))
+COMPOSITE_MIN_PASSES   = int(float(os.environ.get("COMPOSITE_MIN_PASSES",   "1")))
+COMPOSITE_MIN_COVERAGE = float(os.environ.get("COMPOSITE_MIN_COVERAGE", "10.0"))
 
 # How many daily composite snapshots to keep (viirs_composite_YYYY-MM-DD.json)
 COMPOSITE_KEEP_DAYS = int(os.environ.get("COMPOSITE_KEEP_DAYS", "7"))
@@ -226,6 +226,25 @@ def _pass_to_fixed_grid(vals_f: np.ndarray,
     return _fill_row_gaps(flat, N_LATS, N_LONS)
 
 
+def _flat_points_to_fixed_grid(sst_f_list: list, lats: list, lons: list) -> list:
+    """
+    Map a flat list of (lat, lon, sst_fahrenheit) points onto the fixed canonical grid.
+    Used when reading from pre-fetched CSV pass files instead of THREDDS OPeNDAP.
+    """
+    flat = [None] * (N_LATS * N_LONS)
+    for lat, lon, sst_f in zip(lats, lons, sst_f_list):
+        snapped_lat = _snap_to_fixed(lat, GRID_STEP, FIXED_LATS[0])
+        gi = FIXED_LAT_IDX.get(snapped_lat)
+        if gi is None:
+            continue
+        snapped_lon = _snap_to_fixed(lon, GRID_STEP, FIXED_LONS[0])
+        gj = FIXED_LON_IDX.get(snapped_lon)
+        if gj is None:
+            continue
+        flat[gi * N_LONS + gj] = round(float(sst_f), 2)
+    return _fill_row_gaps(flat, N_LATS, N_LONS)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # THREDDS catalog fetch — one day at a time
 # ─────────────────────────────────────────────────────────────────────────────
@@ -239,148 +258,89 @@ THREDDS_OPENDAP = (
 )
 
 
-def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, list, list]]:
-    """
-    Fetch all available VIIRS hourly passes for *date* from THREDDS.
-    Fragmented / edge-of-swath passes are rejected by the spatial coherence
-    filter before being returned.
+import csv as _csv_module  # noqa: E402 — late import to avoid top-level if not needed
 
-    Returns a list of (hour_utc, sst_fahrenheit_2d, lats, lons) tuples.
-    sst_fahrenheit_2d is a 2-D numpy array (lats x lons) with NaN for gaps.
+def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, list, list, list]]:
     """
-    doy  = date.timetuple().tm_yday
-    year = date.year
+    Read VIIRS pass CSVs written by sst_data_fetcher.py from
+    DailySSTData/VIIRS/Passes/ for *date*.
 
-    catalog_url = THREDDS_CATALOG.format(year=year, doy=doy)
-    try:
-        resp = SESSION.get(catalog_url, timeout=30)
-        resp.raise_for_status()
-        matches = re.findall(
-            r"gridN20VIIRSNRTL3UWW00/[^\"]+\.nc", resp.text
-        )
-        if not matches:
-            log.info("  No .nc files in THREDDS catalog for %s (DOY %03d)", date, doy)
-            return []
-        log.info("  %s: found %d pass(es) in THREDDS catalog", date, len(matches))
-    except Exception as exc:
-        log.warning("  THREDDS catalog unavailable for %s: %s", date, exc)
+    Replaces the previous THREDDS/OPeNDAP fetch which depended on
+    coastwatch.noaa.gov — that server experiences frequent 502/503 outages.
+    The CSV files are fetched from STAR NESDIS (a separate, more reliable
+    source) by sst_data_fetcher.py which runs as a sibling workflow.
+
+    Returns list of (hour_utc, sst_f_list, lats_list, lons_list).
+    All SST values are in degrees Fahrenheit.
+    """
+    csv_dir = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Passes"
+    date_str = date.strftime("%Y%m%d")
+    csv_files = sorted(csv_dir.glob(f"viirs_*_{date_str}_*.csv"))
+
+    if not csv_files:
+        log.info("  %s: no pass CSVs found in %s", date, csv_dir)
         return []
 
-    results = []
-    for nc_path_match in sorted(matches):
-        nc_name    = nc_path_match.split("/")[-1]
-        opendap    = THREDDS_OPENDAP.format(year=year, doy=doy, nc_name=nc_name)
-        hour_match = re.search(r"(\d{8})(\d{2})\d{4}", nc_name)
-        hour       = int(hour_match.group(2)) if hour_match else 0
+    log.info("  %s: found %d pass CSV(s)", date, len(csv_files))
+
+    # Group passes by UTC hour — multiple platforms may share an hour slot
+    hour_data: dict[int, tuple[list, list, list]] = {}
+
+    for csv_path in csv_files:
+        # Filename: viirs_{platform}_{YYYYMMDD}_{HHMM}.csv
+        parts = csv_path.stem.split("_")
+        if len(parts) < 4:
+            continue
+        time_str = parts[-1]   # e.g. "0800"
+        if len(time_str) != 4 or not time_str.isdigit():
+            continue
+        hour = int(time_str[:2])
 
         try:
-            ds = xr.open_dataset(opendap, engine="netcdf4")
+            lats_c: list[float] = []
+            lons_c: list[float] = []
+            ssts_c: list[float] = []
+            with open(csv_path, newline="") as fh:
+                for row in _csv_module.DictReader(fh):
+                    lats_c.append(float(row["lat"]))
+                    lons_c.append(float(row["lon"]))
+                    ssts_c.append(float(row["sst"]))
 
-            lat_name = next((c for c in ds.coords if "lat" in c.lower()), None)
-            lon_name = next((c for c in ds.coords if "lon" in c.lower()), None)
-            if not lat_name or not lon_name:
-                log.warning("    %02d:00Z — no lat/lon coords, skipping", hour)
-                ds.close()
+            if not lats_c:
+                log.info("    %02d:00Z — %s is empty, skipping", hour, csv_path.name)
                 continue
 
-            lat_vals = ds[lat_name].values
-            lat_asc  = float(lat_vals[0]) < float(lat_vals[-1])
-            lat_sl   = (slice(BBOX["lat_min"], BBOX["lat_max"]) if lat_asc
-                        else slice(BBOX["lat_max"], BBOX["lat_min"]))
-            lon_vals = ds[lon_name].values
-            lon_asc  = float(lon_vals[0]) < float(lon_vals[-1])
-            lon_sl   = (slice(BBOX["lon_min"], BBOX["lon_max"]) if lon_asc
-                        else slice(BBOX["lon_max"], BBOX["lon_min"]))
-            ds = ds.sel({lat_name: lat_sl, lon_name: lon_sl})
-
-            SST_NAMES = (
-                "sea_surface_temperature", "analysed_sst",
-                "sst_subskin", "sst_skin", "sst",
-            )
-            sst_var = next((v for v in SST_NAMES if v in ds.data_vars), None)
-            if sst_var is None:
-                sst_var = next(
-                    (v for v in ds.data_vars
-                     if "sst" in v.lower()
-                     and "dtime" not in v.lower()
-                     and "flag"  not in v.lower()),
-                    None,
-                )
-            if sst_var is None:
-                log.warning("    %02d:00Z — no SST variable, skipping", hour)
-                ds.close()
-                continue
-
-            da = ds[sst_var].squeeze()
-            for dim in list(da.dims):
-                if dim not in (lat_name, lon_name) and da.sizes[dim] == 1:
-                    da = da.isel({dim: 0})
-
-            if "quality_level" in ds.data_vars:
-                ql = ds["quality_level"].squeeze()
-                for dim in list(ql.dims):
-                    if dim not in (lat_name, lon_name) and ql.sizes[dim] == 1:
-                        ql = ql.isel({dim: 0})
-                da = da.where(ql >= 2)
-
-            lats = da[lat_name].values.tolist()
-            lons = da[lon_name].values.tolist()
-            vals = da.values.astype(float)
-
-            finite = vals[np.isfinite(vals)]
-            if len(finite) and finite.mean() > 200:
-                vals = vals - 273.15
-            vals_f = vals * 9.0 / 5.0 + 32.0
-
-            valid = np.sum(np.isfinite(vals_f))
-            if valid == 0:
-                log.info("    %02d:00Z — 0 valid SST pixels after quality filter (cloud cover or low-quality data), skipping", hour)
-                ds.close()
-                continue
-
-            # Spatial coherence filter
-            valid_mask = np.isfinite(vals_f)
-            rows_with_data = np.any(valid_mask, axis=1)
-            cols_with_data = np.any(valid_mask, axis=0)
-            if rows_with_data.any() and cols_with_data.any():
-                r0 = int(np.where(rows_with_data)[0][0])
-                r1 = int(np.where(rows_with_data)[0][-1])
-                c0 = int(np.where(cols_with_data)[0][0])
-                c1 = int(np.where(cols_with_data)[0][-1])
-                bbox_pixels = (r1 - r0 + 1) * (c1 - c0 + 1)
-                local_density = valid / bbox_pixels if bbox_pixels > 0 else 0.0
-            else:
-                local_density = 0.0
-
-            if valid < MIN_PASS_PIXELS:
-                log.info(
-                    "    %02d:00Z — too few pixels (%d < %d minimum), skipping",
-                    hour, valid, MIN_PASS_PIXELS,
-                )
-                ds.close()
-                continue
-
-            if local_density < MIN_PASS_DENSITY:
-                log.info(
-                    "    %02d:00Z — fragmented pass (%.1f%% local density < %.0f%% threshold), skipping",
-                    hour, local_density * 100, MIN_PASS_DENSITY * 100,
-                )
-                ds.close()
-                continue
-
-            log.info(
-                "    %02d:00Z — %d valid pixels  %.1f-%.1f F  (density %.0f%%)",
-                hour, valid,
-                float(np.nanmin(vals_f)), float(np.nanmax(vals_f)),
-                local_density * 100,
-            )
-            results.append((hour, vals_f, lats, lons))
-            ds.close()
+            if hour not in hour_data:
+                hour_data[hour] = ([], [], [])
+            hour_data[hour][0].extend(lats_c)
+            hour_data[hour][1].extend(lons_c)
+            hour_data[hour][2].extend(ssts_c)
+            log.info("    %02d:00Z — loaded %d points from %s", hour, len(lats_c), csv_path.name)
 
         except Exception as exc:
-            log.warning("    %02d:00Z — error opening %s: %s", hour, nc_name, exc)
+            log.warning("    error reading %s: %s", csv_path.name, exc)
+
+    results: list[tuple[int, list, list, list]] = []
+    for hour, (lats, lons, ssts_c) in sorted(hour_data.items()):
+        # Convert Celsius → Fahrenheit
+        sst_f = [s * 9.0 / 5.0 + 32.0 for s in ssts_c]
+        valid = len(sst_f)
+
+        if valid < MIN_PASS_PIXELS:
+            log.info(
+                "    %02d:00Z — too few pixels (%d < %d minimum), skipping",
+                hour, valid, MIN_PASS_PIXELS,
+            )
+            continue
+
+        log.info(
+            "    %02d:00Z — %d valid pixels  %.1f-%.1f F",
+            hour, valid, min(sst_f), max(sst_f),
+        )
+        results.append((hour, sst_f, lats, lons))
 
     return results
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -397,7 +357,7 @@ def _build_bundle(date: datetime.date,
     available_hours: list[int] = []
 
     for hour, vals_f, lats, lons in passes:
-        flat = _pass_to_fixed_grid(vals_f, lats, lons)
+        flat = _flat_points_to_fixed_grid(vals_f, lats, lons)
         valid_vals = [v for v in flat if v is not None]
         if not valid_vals:
             log.info("    %02d:00Z — no pixels landed on fixed grid, skipping", hour)
