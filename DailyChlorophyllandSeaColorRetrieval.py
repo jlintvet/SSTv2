@@ -415,10 +415,9 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
                 start_datetime       = f"{date.isoformat()}T00:00:00",
                 end_datetime         = f"{date.isoformat()}T23:59:59",
                 output_filename      = str(out_path),
-                username             = CMEMS_USERNAME,
-                password             = CMEMS_PASSWORD,
-                overwrite            = True,
-                disable_progress_bar = True,
+                # v2: auth via COPERNICUSMARINE_SERVICE_USERNAME/PASSWORD env vars
+                overwrite_output_data = True,
+                disable_progress_bar  = True,
             )
 
             if not out_path.exists() or out_path.stat().st_size == 0:

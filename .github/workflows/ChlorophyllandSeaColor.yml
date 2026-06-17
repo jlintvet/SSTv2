@@ -73,6 +73,9 @@ jobs:
         env:
           CMEMS_USER:            ${{ secrets.CMEMS_USER }}
           CMEMS_PASSWORD:        ${{ secrets.CMEMS_PASSWORD }}
+          # copernicusmarine v2 reads these env vars for authentication
+          COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.CMEMS_USER }}
+          COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
           TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
           SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
         run: python DailyChlorophyllandSeaColorRetrieval.py
