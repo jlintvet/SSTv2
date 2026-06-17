@@ -1,15 +1,11 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-06-17 16:00:13
+  UTC  : 2026-06-17 18:31:13
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20260616 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260616 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260616
-  → DailySSTData/MUR/mur_20260616.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260616 (cached)
   ✓ MUR 20260615 (cached)
   ✓ MUR 20260614 (cached)
   ✓ MUR 20260613 (cached)
@@ -17,51 +13,33 @@ SST PIPELINE
 
 ── GOES-19 geo-polar blended daily composite ──
   Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20260617 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+  GOES 20260617 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260617 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title
-  GOES 20260617 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260617 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260617 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260616 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260616 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260616 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260616 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260615 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260615 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260615 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260615 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260614 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260614 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 502: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20260614 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260614 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260617 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Acces
+  GOES 20260617 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260616 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260616 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260616 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260616 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260615 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260615 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260615 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260615 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260614 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260614 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260614 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260614 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✗ GOES: all candidates exhausted — no recent data available.
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-06-15 16:50Z → 2026-06-17 16:10Z
+  Window range   : 2026-06-15 18:50Z → 2026-06-17 18:10Z
   Half-width     : ±10 min per bucket
-  npp 20260615_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260615_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260615_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260615_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260615_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260615_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260615_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260615_1900 ✓ (cached)
   npp 20260615_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -197,12 +175,9 @@ SST PIPELINE
   npp 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260615_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260615_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260615_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260615_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -337,12 +312,14 @@ SST PIPELINE
   n20 20260617_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260615_1650 ✓ (cached)
-  n21 20260615_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260615_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260615_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260615_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260615_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1700 …   → DailySSTData/VIIRS/Passes/viirs_n20_20260617_1700.csv  (21518 pts, 195 lats × 256 lons)
+  n20 20260617_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260617_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260615_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260615_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260615_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -479,8 +456,15 @@ SST PIPELINE
   n21 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260617_1750 …   → DailySSTData/VIIRS/Passes/viirs_n21_20260617_1750.csv  (29460 pts, 265 lats × 314 lons)
 
-  VIIRS summary: 0 written, 8 cached, 414 miss/cloud, 720 outside windows.
+  VIIRS summary: 2 written, 7 cached, 413 miss/cloud, 756 outside windows.
 
 =========================================================
 ✓ Pipeline complete
