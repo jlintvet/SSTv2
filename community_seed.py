@@ -38,8 +38,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("community_seed")
 
 # ── Config ──────────────────────────────────────────────────────────────────
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SERVICE_KEY  = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+def _clean_base(u):
+    """Accept the bare project URL (https://<ref>.supabase.co) even if the
+    /rest/v1 or /auth/v1 suffix or trailing slash/whitespace was pasted in."""
+    u = (u or "").strip().rstrip("/")
+    for suffix in ("/rest/v1", "/auth/v1"):
+        if u.endswith(suffix):
+            u = u[: -len(suffix)]
+    return u.rstrip("/")
+
+SUPABASE_URL = _clean_base(os.environ.get("SUPABASE_URL", ""))
+SERVICE_KEY  = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
 SEED_DOMAIN   = "seed.riploc.invalid"          # non-deliverable, reserved
 NUM_USERS     = int(os.environ.get("SEED_NUM_USERS", "100"))
@@ -318,6 +327,7 @@ def cmd_teardown():
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    log.info("Supabase REST base: %s/rest/v1", SUPABASE_URL or "(unset)")
     {"status": cmd_status, "create": cmd_create, "tick": cmd_tick,
      "teardown": cmd_teardown}.get(cmd, lambda: (log.error("unknown cmd %s", cmd), sys.exit(2)))()
 
