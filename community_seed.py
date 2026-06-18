@@ -169,6 +169,27 @@ def gen_names(n):
 def active_seed_users():
     return rest_get("seed_users", "active=eq.true&select=user_id,display_name")
 
+def list_seed_auth():
+    """Map email -> id for existing auth users on the seed domain. Lets create
+    recover from a partial run and lets teardown catch orphans not in the registry."""
+    out, page = {}, 1
+    while True:
+        try:
+            data = _req("GET", f"admin/users?page={page}&per_page=1000", base="auth")
+        except RuntimeError as e:
+            log.warning("admin list users failed: %s", e); break
+        users = data.get("users", []) if isinstance(data, dict) else (data or [])
+        if not users:
+            break
+        for u in users:
+            em = u.get("email") or ""
+            if em.endswith("@" + SEED_DOMAIN):
+                out[em] = u["id"]
+        if len(users) < 1000:
+            break
+        page += 1
+    return out
+
 def make_pin(user, kind, created_at=None):
     name, blat, blon = random.choice(SPOTS)
     lat = round(blat + random.uniform(-0.04, 0.04), 5)
@@ -245,32 +266,39 @@ def cmd_status():
 def cmd_create():
     if os.environ.get("SEED_CONFIRM_CREATE") != "true":
         log.error("refusing to create — set SEED_CONFIRM_CREATE=true"); sys.exit(2)
-    existing = rest_get("seed_users", "select=user_id,email")
-    have = {r["email"] for r in existing}
-    log.info("create: %d seed users already exist", len(existing))
+    registered    = {r["email"] for r in rest_get("seed_users", "select=email")}
+    existing_auth = list_seed_auth()   # reuse auth users from any prior partial run
+    log.info("create: %d registered, %d seed auth users already exist",
+             len(registered), len(existing_auth))
     names = gen_names(NUM_USERS)
     created = []
     for i in range(1, NUM_USERS + 1):
         email = f"seed-{i:03d}@{SEED_DOMAIN}"
-        if email in have:
+        if email in registered:
             continue
+        dn  = names[i - 1]
+        uid = existing_auth.get(email)
         try:
-            u = admin_create_user(email, secrets.token_urlsafe(18),
-                                  {"is_seed": True, "seed_batch": BATCH})
-            uid = u["id"]
-            dn = names[i - 1]
-            rest_insert("user_profiles",
-                        {"id": uid, "email": email, "display_name": dn,
-                         "venmo_handle": None, "cashapp_handle": None},
-                        prefer="resolution=merge-duplicates,return=minimal")
+            if not uid:
+                u = admin_create_user(email, secrets.token_urlsafe(18),
+                                      {"is_seed": True, "seed_batch": BATCH})
+                uid = u["id"]
+            # Profile is best-effort: a signup trigger usually creates it, and ALL
+            # community content uses the denormalized display_name on the pins, so a
+            # seed user does not require a profile row. Ignore NOT-NULL/other failures.
+            try:
+                rest_insert("user_profiles", {"id": uid, "display_name": dn},
+                            prefer="resolution=merge-duplicates,return=minimal")
+            except RuntimeError:
+                pass
             rest_insert("seed_users",
                         {"user_id": uid, "email": email, "display_name": dn,
                          "batch": BATCH, "active": True}, prefer="return=minimal")
             created.append({"user_id": uid, "display_name": dn})
         except RuntimeError as e:
-            log.warning("create %s failed: %s", email, e)
-        time.sleep(0.05)
-    log.info("created %d new seed users", len(created))
+            log.warning("register %s failed: %s", email, e)
+        time.sleep(0.03)
+    log.info("registered %d seed users", len(created))
 
     # Light back-fill so the map/leaderboard aren't empty at launch.
     users = active_seed_users()
@@ -312,15 +340,16 @@ def cmd_tick():
 def cmd_teardown():
     if os.environ.get("SEED_CONFIRM_TEARDOWN") != "true":
         log.error("refusing to teardown — set SEED_CONFIRM_TEARDOWN=true"); sys.exit(2)
-    users = rest_get("seed_users", "select=user_id,email")
-    log.info("teardown: deleting %d seed users (cascades all their content)", len(users))
+    ids = {u["user_id"] for u in rest_get("seed_users", "select=user_id")}
+    ids |= set(list_seed_auth().values())   # safety net: orphans not in the registry
+    log.info("teardown: deleting %d seed users (cascades all their content)", len(ids))
     deleted = 0
-    for u in users:
+    for uid in ids:
         try:
-            admin_delete_user(u["user_id"]); deleted += 1
+            admin_delete_user(uid); deleted += 1
         except RuntimeError as e:
-            log.warning("delete %s failed: %s", u["email"], e)
-        time.sleep(0.05)
+            log.warning("delete %s failed: %s", uid, e)
+        time.sleep(0.03)
     log.info("deleted %d seed users. (Registry rows cascade-removed.)", deleted)
     log.info("Reminder: set seed_config.enabled=false and disable the workflow.")
 
