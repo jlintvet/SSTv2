@@ -101,9 +101,11 @@ STRIDE  = 1
 
 RETENTION_DAYS = 3
 SEARCH_WINDOW  = 7      # days back to search if latest dates unavailable
-TIMEOUT        = 60     # seconds — short; ERDDAP 500/404 errors are persistent, not transient
-MAX_RETRIES    = 2      # retries only on network-level errors (429, 502, 503, 504)
-BACKOFF_FACTOR = 1      # 1 s, 2 s between retries
+TIMEOUT        = 20     # seconds — fail fast; during a broad ERDDAP outage a 60s
+                       # timeout x retries per dead source burns the whole job budget
+                       # before sea color (CMEMS-primary) ever runs.
+MAX_RETRIES    = 1      # one retry only on transient gateway/rate-limit errors
+BACKOFF_FACTOR = 1      # 1 s between retries
 
 # ---------------------------------------------------------------------------
 # CMEMS (Copernicus Marine Service) — Sentinel-3 OLCI, 300m, primary source
