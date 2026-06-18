@@ -443,7 +443,11 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
                 vals = vals[0]
 
             rows = []
-            s = CMEMS_STRIDE
+            # 300m OLCI (CHL) is dense -> stride down to keep file size sane (~1.2km).
+            # Kd490 is already a 4km product; striding it by 4 gives ~16km blocks.
+            # Keep 4km products at full native resolution.
+            native_m = 4000 if "4km" in dataset_id else 300
+            s = 1 if "4km" in dataset_id else CMEMS_STRIDE
             for i in range(0, len(lats), s):
                 for j in range(0, len(lons), s):
                     v   = vals[i, j]
@@ -462,7 +466,7 @@ def _fetch_cmems_subset(dataset_id: str, variable: str,
                 return None
 
             log.info("    ✓ CMEMS %d rows, %d ocean cells (stride=%d, ~%.0fm res)",
-                     len(rows), ocean, s, 300 * s)
+                     len(rows), ocean, s, native_m * s)
             log.info("    CMEMS coord range: lat %.4f–%.4f  lon %.4f–%.4f",
                      float(lats[0]), float(lats[-1]), float(lons[0]), float(lons[-1]))
             return rows
