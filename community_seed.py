@@ -238,7 +238,9 @@ def maybe_tip(pin, users):
     if not others:
         return
     tipper = random.choice(others)
-    cents = random.choice([100, 200, 300, 300, 500, 500, 1000])
+    # $10 increments, $10-$100, weighted to the low end (no tip over $100).
+    cents = random.choice([1000, 1000, 1000, 1000, 2000, 2000, 2000, 3000, 3000,
+                           4000, 5000, 5000, 6000, 7000, 8000, 10000])
     platform = random.choice(["venmo", "cashapp"])
     try:
         rest_insert("community_tips", {
