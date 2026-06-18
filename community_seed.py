@@ -27,6 +27,7 @@ import sys
 import json
 import time
 import random
+import math
 import secrets
 import logging
 import datetime as dt
@@ -190,11 +191,39 @@ def list_seed_auth():
         page += 1
     return out
 
-def make_pin(user, kind, created_at=None):
-    name, blat, blon = random.choice(SPOTS)
-    lat = round(blat + random.uniform(-0.04, 0.04), 5)
-    lon = round(blon + random.uniform(-0.04, 0.04), 5)
-    spp = random.sample(SPECIES, k=random.randint(1, 2))
+def load_zones():
+    """Active admin-drawn zones (seed_zones). Empty -> fall back to built-in SPOTS."""
+    try:
+        return rest_get("seed_zones",
+                        "active=eq.true&select=name,center_lat,center_lon,radius_nm,species,weight")
+    except RuntimeError as e:
+        log.warning("seed_zones unreadable (%s) -- using built-in spots", e)
+        return []
+
+def _pick_zone(zones):
+    w = [max(1, int(z.get("weight") or 1)) for z in zones]
+    return random.choices(zones, weights=w, k=1)[0]
+
+def _rand_point_in_circle(lat, lon, radius_nm):
+    # uniform point within the circle the admin drew (so it stays in their water)
+    r  = float(radius_nm or 8) * 1852.0 * math.sqrt(random.random())   # metres
+    th = random.random() * 2 * math.pi
+    dlat = (r * math.cos(th)) / 111320.0
+    dlon = (r * math.sin(th)) / (111320.0 * math.cos(math.radians(lat)))
+    return lat + dlat, lon + dlon
+
+def make_pin(user, kind, created_at=None, zones=None):
+    if zones:
+        z = _pick_zone(zones)
+        lat, lon = _rand_point_in_circle(z["center_lat"], z["center_lon"], z.get("radius_nm"))
+        pool = z.get("species") or SPECIES
+    else:
+        _, blat, blon = random.choice(SPOTS)
+        lat = blat + random.uniform(-0.04, 0.04)
+        lon = blon + random.uniform(-0.04, 0.04)
+        pool = SPECIES
+    lat = round(lat, 5); lon = round(lon, 5)
+    spp = random.sample(pool, k=min(len(pool), random.randint(1, 2)))
     qty = {s: random.choice([0, 1, 1, 2, 2, 3, 4, 5, 6]) for s in spp}
     now = dt.datetime.now(dt.timezone.utc)
     base = created_at or now
@@ -304,6 +333,7 @@ def cmd_create():
 
     # Light back-fill so the map/leaderboard aren't empty at launch.
     users = active_seed_users()
+    zones = load_zones()
     if users and BACKFILL_DAYS > 0:
         n = 0
         for d in range(1, BACKFILL_DAYS + 1):
@@ -311,7 +341,7 @@ def cmd_create():
                 when = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
                     days=d, hours=random.randint(0, 12), minutes=random.randint(0, 59))
                 u = random.choice(users)
-                pin = rest_insert("community_locations", make_pin(u, "report", created_at=when))[0]
+                pin = rest_insert("community_locations", make_pin(u, "report", created_at=when, zones=zones))[0]
                 bump_points(u["user_id"], "report")
                 if random.random() < TIP_FRACTION:
                     maybe_tip(pin, users)
@@ -324,13 +354,14 @@ def cmd_tick():
     users = active_seed_users()
     if not users:
         log.warning("no active seed users — run create first"); return
+    zones = load_zones()
     n = random.randint(*PINS_PER_RUN)
     posted = 0
     for _ in range(n):
         u = random.choice(users)
         kind = "live" if random.random() < LIVE_FRACTION else "report"
         try:
-            pin = rest_insert("community_locations", make_pin(u, kind))[0]
+            pin = rest_insert("community_locations", make_pin(u, kind, zones=zones))[0]
             bump_points(u["user_id"], kind)
             if kind == "report" and random.random() < TIP_FRACTION:
                 maybe_tip(pin, users)
