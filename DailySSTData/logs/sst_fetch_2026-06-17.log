@@ -1,15 +1,11 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-06-19 12:17:28
+  UTC  : 2026-06-19 16:13:28
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20260618 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260618 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260618
-  → DailySSTData/MUR/mur_20260618.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260618 (cached)
   ✓ MUR 20260617 (cached)
   ✓ MUR 20260616 (cached)
   ✓ MUR 20260615 (cached)
@@ -30,20 +26,8 @@ SST PIPELINE
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-06-17 12:50Z → 2026-06-19 12:10Z
+  Window range   : 2026-06-17 16:50Z → 2026-06-19 16:10Z
   Half-width     : ±10 min per bucket
-  npp 20260617_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260617_1650 ✓ (cached)
   npp 20260617_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260617_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -173,18 +157,16 @@ SST PIPELINE
   npp 20260619_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260619_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260619_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260619_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260617_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260617_1700 ✓ (cached)
   n20 20260617_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -301,7 +283,7 @@ SST PIPELINE
   n20 20260619_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260619_0650 …   → DailySSTData/VIIRS/Passes/viirs_n20_20260619_0650.csv  (6380 pts, 187 lats × 209 lons)
+  n20 20260619_0650 ✓ (cached)
   n20 20260619_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -316,18 +298,17 @@ SST PIPELINE
   n20 20260619_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260619_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260617_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260619_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260617_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260617_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260617_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -457,8 +438,20 @@ SST PIPELINE
   n21 20260619_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260619_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260619_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260619_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
 
-  VIIRS summary: 1 written, 11 cached, 410 miss/cloud, 648 outside windows.
+  VIIRS summary: 0 written, 12 cached, 407 miss/cloud, 718 outside windows.
 
 =========================================================
 ✓ Pipeline complete
