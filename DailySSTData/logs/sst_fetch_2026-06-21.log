@@ -1,6 +1,6 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-06-23 21:11:38
+  UTC  : 2026-06-23 22:22:39
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
@@ -15,23 +15,15 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260623 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260623 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260623 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 403 Forbidden — blacklisted: Error {
-    code=403;
-    message="Forbidden: Acces
-  GOES 20260623 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
-  GOES 20260622 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 70 inland, kept 2237 ocean)
-✓
-  → DailySSTData/GOES/Composite/goes_composite_20260622.csv  (2237 pts, 54 lats × 66 lons)
+  GOES 20260623 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260623 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  ✓ GOES composite 20260622 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-06-21 21:50Z → 2026-06-23 21:10Z
+  Window range   : 2026-06-21 22:50Z → 2026-06-23 22:10Z
   Half-width     : ±10 min per bucket
-  npp 20260621_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260621_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260621_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260621_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260621_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260621_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -163,14 +155,14 @@ SST PIPELINE
   npp 20260623_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260623_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260623_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260623_1810 …   → DailySSTData/VIIRS/Passes/viirs_npp_20260623_1810.csv  (31748 pts, 264 lats × 322 lons)
+  npp 20260623_1810 ✓ (cached)
   npp 20260623_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260623_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260623_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260623_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260621_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260621_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n20 20260621_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260623_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260623_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260623_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260621_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260621_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260621_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -310,9 +302,9 @@ SST PIPELINE
   n20 20260623_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260623_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260623_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260621_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260621_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  n21 20260621_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260623_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260623_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260623_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260621_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260621_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260621_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -451,8 +443,11 @@ SST PIPELINE
   n21 20260623_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260623_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260623_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260623_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260623_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n21 20260623_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
 
-  VIIRS summary: 1 written, 9 cached, 411 miss/cloud, 809 outside windows.
+  VIIRS summary: 0 written, 10 cached, 411 miss/cloud, 824 outside windows.
 
 =========================================================
 ✓ Pipeline complete
