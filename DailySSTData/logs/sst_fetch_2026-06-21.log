@@ -1,6 +1,6 @@
 =========================================================
 SST PIPELINE
-  UTC  : 2026-06-23 21:06:14
+  UTC  : 2026-06-23 21:11:38
   Bbox : 33.7–39.0°N  -78.89–-72.21°E
 =========================================================
 
@@ -15,8 +15,10 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260623 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260623 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260623 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260623 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260623 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Acces
+  GOES 20260623 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   GOES 20260622 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 24 coastline polygons)
   (land filter: dropped 70 inland, kept 2237 ocean)
 ✓
@@ -306,6 +308,7 @@ SST PIPELINE
   n20 20260623_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260623_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260623_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  n20 20260623_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n20 20260623_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260621_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260621_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -449,7 +452,7 @@ SST PIPELINE
   n21 20260623_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
   n21 20260623_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
 
-  VIIRS summary: 1 written, 9 cached, 410 miss/cloud, 809 outside windows.
+  VIIRS summary: 1 written, 9 cached, 411 miss/cloud, 809 outside windows.
 
 =========================================================
 ✓ Pipeline complete
