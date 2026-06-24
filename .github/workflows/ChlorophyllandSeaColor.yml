@@ -102,6 +102,7 @@ jobs:
             echo "No file changes — nothing to commit."
           else
             git commit -m "data: chlorophyll + sea color $(date -u +%Y-%m-%d)"
+            git pull --rebase origin main
             git push
           fi
 
