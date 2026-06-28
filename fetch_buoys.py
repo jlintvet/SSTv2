@@ -16,7 +16,7 @@ import requests
 from pathlib import Path
 
 # Stations from the curated MD/VA/NC + Chesapeake list
-STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2",
+STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2","44072",
             "44080","44061","44042","44056","41025","44086","41063",
             # added (kept only if inside the region bbox below):
             "41159","CLKN7","BFTN7","41013","OCPN7","41110"]
@@ -28,6 +28,7 @@ NAMES = {
     "44080": "Baltimore Harbor","44061": "Upper Potomac",  "44042": "Lower Potomac",
     "44056": "Duck FRF",        "41025": "Diamond Shoals", "44086": "Nags Head",
     "41063": "Raleigh Bay",
+    "44072": "York Spit",
     "41159": "Onslow Bay Outer", "CLKN7": "Cape Lookout", "BFTN7": "Beaufort, NC",
     "41013": "Frying Pan Shoals", "OCPN7": "Ocean Crest Pier", "41110": "Masonboro",
 }
