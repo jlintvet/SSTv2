@@ -111,6 +111,21 @@ def parse_realtime(text):
     # treat an all-empty row as no obs
     return obs if any(v is not None for k, v in obs.items() if k != "time") else (obs if obs_time else None)
 
+OBS_MAX_AGE_H = 6  # discard obs older than this; buoy shows as inactive
+
+def _fresh(obs):
+    """Return obs if its timestamp is within OBS_MAX_AGE_H, else None."""
+    if obs is None: return None
+    t = obs.get("time")
+    if not t: return None
+    try:
+        age = datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(t)
+        if age.total_seconds() > OBS_MAX_AGE_H * 3600:
+            return None
+    except Exception:
+        pass
+    return obs
+
 def main():
     s = requests.Session()
     meta = load_station_meta(s)
@@ -121,7 +136,7 @@ def main():
         obs = None
         try:
             r = s.get(REALTIME.format(key), timeout=TIMEOUT); r.raise_for_status()
-            obs = parse_realtime(r.text)
+            obs = _fresh(parse_realtime(r.text))
         except Exception as e:
             print(f"  {sid}: realtime fetch failed: {e}")
         lat, lon = m.get("lat"), m.get("lon")
