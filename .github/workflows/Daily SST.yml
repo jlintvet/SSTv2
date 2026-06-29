@@ -18,6 +18,15 @@ on:
           - goes_only
           - viirs_only
           - mur_only
+      region:
+        description: 'Which region to fetch (leave blank for all active regions)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - mid_atlantic
+          - ga_sc
 permissions:
   contents: write
 jobs:
@@ -66,13 +75,29 @@ jobs:
           SOURCES_OVERRIDE:     ${{ github.event.inputs.sources || 'all' }}
           PYTHONUNBUFFERED:     "1"
         run: |
+          # Determine which regions to run
+          REGION_INPUT="${{ github.event.inputs.region }}"
+          if [ -n "$REGION_INPUT" ]; then
+            REGIONS="$REGION_INPUT"
+          else
+            REGIONS="mid_atlantic ga_sc"
+          fi
+
           echo "Target date : ${{ steps.date.outputs.date }}"
           echo "Sources     : ${{ github.event.inputs.sources || 'all' }}"
+          echo "Regions     : $REGIONS"
           echo ""
           echo "Note: MUR and GOES via NOAA CoastWatch ERDDAP (no auth)."
           echo "      VIIRS via STAR NESDIS NRT file server (no auth)."
           echo ""
-          python -u sst_data_fetcher.py 2>&1 | tee sst_fetch.log
+
+          > sst_fetch.log
+          for REGION in $REGIONS; do
+            echo "========================================" | tee -a sst_fetch.log
+            echo "RUNNING REGION: $REGION" | tee -a sst_fetch.log
+            echo "========================================" | tee -a sst_fetch.log
+            REGION="$REGION" python -u sst_data_fetcher.py 2>&1 | tee -a sst_fetch.log
+          done
       - name: Debug output
         if: always()
         run: |
