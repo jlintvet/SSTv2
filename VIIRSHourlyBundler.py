@@ -131,8 +131,20 @@ TARGET_DATE = (
     else datetime.date.today()
 )
 
-# Output directory — matches GitHub repo path DailySSTData/VIIRS/Bundled/
-OUTPUT_DIR = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Bundled"
+# Region support — matches sst_data_fetcher.py REGION env var
+_REGION_CONFIGS = {
+    "mid_atlantic": {"subdir": ""},
+    "ga_sc":        {"subdir": "ga_sc"},
+}
+_REGION = os.environ.get("REGION", "mid_atlantic").strip()
+if _REGION not in _REGION_CONFIGS:
+    print(f"WARNING: Unknown REGION={_REGION!r} — falling back to mid_atlantic")
+    _REGION = "mid_atlantic"
+_SUBDIR = _REGION_CONFIGS[_REGION]["subdir"]
+
+# Output directory — matches GitHub repo path DailySSTData/VIIRS/Bundled/<subdir>/
+_bundled_base = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Bundled"
+OUTPUT_DIR = (_bundled_base / _SUBDIR) if _SUBDIR else _bundled_base
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TIMEOUT = 60   # seconds per THREDDS/OPeNDAP request
@@ -273,7 +285,8 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, list, list, l
     Returns list of (hour_utc, sst_f_list, lats_list, lons_list).
     All SST values are in degrees Fahrenheit.
     """
-    csv_dir = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Passes"
+    _passes_base = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Passes"
+    csv_dir = (_passes_base / _SUBDIR) if _SUBDIR else _passes_base
     date_str = date.strftime("%Y%m%d")
     csv_files = sorted(csv_dir.glob(f"viirs_*_{date_str}_*.csv"))
 

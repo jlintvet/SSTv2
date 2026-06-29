@@ -22,9 +22,14 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install requests numpy xarray netcdf4
-      - run: python VIIRSHourlyBundler.py
+      - name: Bundle all regions
         env:
           DAYS_BACK: 3
+        run: |
+          for REGION in mid_atlantic ga_sc; do
+            echo "=== Bundling REGION=$REGION ==="
+            REGION="$REGION" python VIIRSHourlyBundler.py
+          done
       - name: Commit updated bundles
         run: |
           git config user.name  "github-actions[bot]"
