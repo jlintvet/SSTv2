@@ -3,33 +3,38 @@
 =========================================================
 SST DATA FETCHER — NOAA CoastWatch ERDDAP + VIIRS L3U
 =========================================================
-
 Three independent data sources serving three distinct UI views:
-
   MUR       — JPL MUR v4.1 daily L4 composite    (jplMURSST41)
   GOES-19   — Geo-polar Blended daily composite  (noaacwBLENDEDsstDLDaily)
   VIIRS     — ACSPO L3U per-swath multi-pass     (STAR NESDIS file server)
-
 REQUIREMENTS:  pip install requests numpy pandas netCDF4
+=========================================================
+REGION SELECTION
+=========================================================
+Set the REGION environment variable before running:
 
+  REGION=mid_atlantic python sst_data_fetcher.py   # default
+  REGION=ga_sc        python sst_data_fetcher.py   # Georgia & South Carolina
+
+mid_atlantic  — writes to DailySSTData/MUR/, DailySSTData/GOES/Composite/,
+                DailySSTData/VIIRS/Passes/  (no subdir — backward-compatible)
+ga_sc         — writes to DailySSTData/MUR/ga_sc/, DailySSTData/GOES/Composite/ga_sc/,
+                DailySSTData/VIIRS/Passes/ga_sc/
 =========================================================
 LAND FILTER POLICY
 =========================================================
 MUR and GOES are pulled from ERDDAP which does not pre-mask land,
 so we apply a coastline polygon filter to those outputs.
-
 VIIRS L3U files are pre-processed by NOAA's ACSPO algorithm which
 masks land pixels via the l2p_flags land bit before writing the file.
 Those pixels become fill values, which become NaN, which are dropped
 by dropna(). Running an additional land filter on VIIRS is redundant
 and was causing 5-10 minute hangs on 36k-point granules. We skip it.
-
 =========================================================
 GOES FALLBACK STRATEGY
 =========================================================
 Primary host  : coastwatch.noaa.gov/erddap
 Fallback host : coastwatch.pfeg.noaa.gov/erddap
-
 Dataset IDs tried in order per host:
   1. noaacwBLENDEDsstDLDaily  — Day+Night diurnal-corrected analysis.
                                  Fuses GOES-18/19, Himawari-9, METOP-B/C
@@ -41,22 +46,18 @@ Dataset IDs tried in order per host:
                                  Kept as secondary because it has the longer
                                  reanalysis record (2002-present) and may be
                                  available when the DL variant is not.
-
 All four combinations (2 hosts × 2 dataset IDs) are tried before giving up.
-
 =========================================================
 VIIRS PASS TARGETING — 48-HOUR HOURLY WINDOWS
 =========================================================
 Previous strategy: ±20 min around 2 known overpass centers per day.
 Current strategy : one ±10-min window centered on every UTC hour for
                    the past 48 hours (48 windows total).
-
 Rationale: orbital drift means pass centers shift over time, and the
 ±20-min windows were missing real swaths at the window edges. Hourly
 buckets guarantee full 48h coverage with minimal overlap. Most hourly
 slots will legitimately have no swath over the bbox — those show up as
 "outside windows" in the miss counter and are cheap to skip.
-
 NRT file server retention is ~72h, so 48h is safely within range.
 If you extend beyond ~60h, files may have rolled off the NRT server.
 =========================================================
@@ -68,11 +69,9 @@ import signal
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-
 import numpy as np
 import pandas as pd
 import requests
-
 try:
     import netCDF4 as nc
     _NETCDF4_AVAILABLE = True
@@ -80,15 +79,11 @@ except ImportError:
     _NETCDF4_AVAILABLE = False
     print("WARNING: netCDF4 not installed — VIIRS multi-pass fetch disabled.")
     print("         pip install netCDF4")
-
-
 # =========================================================
 # HARD TIMEOUT CONTEXT MANAGER
 # =========================================================
 class _TimeoutError(Exception):
     pass
-
-
 @contextmanager
 def hard_timeout(seconds: int, label: str = ""):
     def _handler(signum, frame):
@@ -103,7 +98,39 @@ def hard_timeout(seconds: int, label: str = ""):
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)
+# =========================================================
+# REGION CONFIGURATION
+# =========================================================
+# Set REGION env var to select which ocean region to generate data for.
+#   REGION=mid_atlantic  (default — no subdir, backward-compatible)
+#   REGION=ga_sc         (Georgia & South Carolina)
+_REGION_CONFIGS = {
+    "mid_atlantic": {
+        "north":  39.00,
+        "south":  33.70,
+        "west":  -78.89,
+        "east":  -72.21,
+        "subdir": "",        # files go directly in DIRS paths
+    },
+    "ga_sc": {
+        "north":  35.20,
+        "south":  29.80,
+        "west":  -82.00,
+        "east":  -75.20,
+        "subdir": "ga_sc",   # files go into DIRS paths + /ga_sc/
+    },
+}
+REGION = os.environ.get("REGION", "mid_atlantic").strip()
+if REGION not in _REGION_CONFIGS:
+    print(f"WARNING: Unknown REGION={REGION!r} — falling back to mid_atlantic")
+    REGION = "mid_atlantic"
+_rcfg = _REGION_CONFIGS[REGION]
 
+NORTH  = _rcfg["north"]
+SOUTH  = _rcfg["south"]
+WEST   = _rcfg["west"]
+EAST   = _rcfg["east"]
+_SUBDIR = _rcfg["subdir"]   # "" for mid_atlantic, "ga_sc" for ga_sc
 
 # =========================================================
 # LAND FILTER  (MUR and GOES only — NOT used for VIIRS)
@@ -113,8 +140,6 @@ NE_LAND_URL = (
     "master/geojson/ne_10m_land.geojson"
 )
 _LAND_RINGS_CACHE = None   # list of np.ndarray shape (n_verts, 2) = [lon, lat]
-
-
 def _load_land_rings(north, south, east, west):
     """Load NE 1:10m land polygon outer rings clipped to the region bbox."""
     global _LAND_RINGS_CACHE
@@ -144,8 +169,6 @@ def _load_land_rings(north, south, east, west):
         print(f"  ⚠ land filter: failed to load coastline ({e}); skipping.")
         _LAND_RINGS_CACHE = []
         return []
-
-
 def _points_in_ring_vec(lons: np.ndarray, lats: np.ndarray,
                          ring: np.ndarray) -> np.ndarray:
     """Vectorized ray-casting point-in-polygon for N points vs one ring."""
@@ -158,8 +181,6 @@ def _points_in_ring_vec(lons: np.ndarray, lats: np.ndarray,
         x_int = (xj - xi) * (lats_b - yi) / (yj - yi + 1e-15) + xi
     crossings = np.sum(cond1 & (lons_b < x_int), axis=1)
     return (crossings % 2) == 1
-
-
 def filter_to_ocean(df: pd.DataFrame) -> pd.DataFrame:
     """
     Drop land points from a MUR or GOES DataFrame using vectorized
@@ -168,11 +189,9 @@ def filter_to_ocean(df: pd.DataFrame) -> pd.DataFrame:
     rings = _load_land_rings(NORTH, SOUTH, EAST, WEST)
     if not rings:
         return df
-
     lons    = df["lon"].to_numpy(dtype=np.float64)
     lats    = df["lat"].to_numpy(dtype=np.float64)
     on_land = np.zeros(len(df), dtype=bool)
-
     for ring in rings:
         rlon_min, rlon_max = ring[:, 0].min(), ring[:, 0].max()
         rlat_min, rlat_max = ring[:, 1].min(), ring[:, 1].max()
@@ -183,35 +202,35 @@ def filter_to_ocean(df: pd.DataFrame) -> pd.DataFrame:
         in_ring = np.zeros(len(df), dtype=bool)
         in_ring[cand] = _points_in_ring_vec(lons[cand], lats[cand], ring)
         on_land |= in_ring
-
     before = len(df)
     df     = df[~on_land].reset_index(drop=True)
     if before - len(df) > 0:
         print(f"  (land filter: dropped {before - len(df)} inland, kept {len(df)} ocean)")
     return df
-
-
 # =========================================================
 # CONFIG
 # =========================================================
 BASE_DIR = "DailySSTData"
+
+def _dpath(*parts):
+    """Build an output path, inserting _SUBDIR before the final component."""
+    # mid_atlantic: DailySSTData/MUR
+    # ga_sc:        DailySSTData/MUR/ga_sc
+    if _SUBDIR:
+        return os.path.join(BASE_DIR, *parts, _SUBDIR)
+    return os.path.join(BASE_DIR, *parts)
+
 DIRS = {
-    "goes_composite": os.path.join(BASE_DIR, "GOES", "Composite"),
-    "viirs_passes":   os.path.join(BASE_DIR, "VIIRS", "Passes"),
-    "mur":            os.path.join(BASE_DIR, "MUR"),
+    "goes_composite": _dpath("GOES", "Composite"),
+    "viirs_passes":   _dpath("VIIRS", "Passes"),
+    "mur":            _dpath("MUR"),
 }
-
-NORTH, SOUTH =  39.00, 33.70
-WEST,  EAST  = -78.89, -72.21
 VIIRS_BBOX_PAD = 1.0   # degrees padding for granule bbox slice
-
-
 # =========================================================
 # ERDDAP CONFIG
 # =========================================================
 ERDDAP_HOST_PFEG = "https://coastwatch.pfeg.noaa.gov/erddap"
 ERDDAP_HOST_CW   = "https://coastwatch.noaa.gov/erddap"
-
 # coastwatch.noaa.gov first — more tolerant of GitHub Actions runner IPs
 # than pfeg/upwell which frequently 403 CI traffic.
 MUR_MIRRORS = [
@@ -220,7 +239,6 @@ MUR_MIRRORS = [
     {"host": "https://upwell.pfeg.noaa.gov/erddap", "dataset_id": "jplMURSST41", "var": "analysed_sst", "stride": 5, "units": "C"},
 ]
 MUR_DAYS_BACK = 5
-
 # ---------------------------------------------------------------------------
 # GOES — host + dataset ID matrix, tried in order
 #
@@ -246,8 +264,6 @@ GOES_CANDIDATES = [
     {"host": ERDDAP_HOST_PFEG, "dataset_id": "noaacwBLENDEDsstDaily",   "var": "analysed_sst", "stride": 2, "units": "C"},
 ]
 GOES_LOOKBACK_DAYS = 4   # try today and 3 prior days per candidate
-
-
 # =========================================================
 # VIIRS CONFIG
 # =========================================================
@@ -256,7 +272,6 @@ VIIRS_BASE_CANDIDATES = [
     "https://coastwatch.noaa.gov/pub/socd/mecb/coastwatch/viirs/nrt",
 ]
 VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
-
 # ---------------------------------------------------------------------------
 # 48-hour hourly window strategy
 #
@@ -271,44 +286,32 @@ VIIRS_PLATFORMS  = ["npp", "n20", "n21"]
 # ---------------------------------------------------------------------------
 VIIRS_HOURS_BACK     = 48   # lookback depth — do not exceed ~60 (NRT retention limit)
 VIIRS_WINDOW_HALF_MIN = 10  # ±minutes per hourly bucket
-
-
 # =========================================================
 # HTTP TUNING
 # =========================================================
 HTTP_CONNECT_TIMEOUT  = 15
 HTTP_READ_TIMEOUT     = 90
 HTTP_TIMEOUT          = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
-
 ERDDAP_HARD_TIMEOUT_S = 180
 VIIRS_HARD_TIMEOUT_S  = 90
-
 HTTP_RETRIES      = 1
 HTTP_BACKOFF_S    = 3
 REQUEST_SPACING_S = 1.5
 USER_AGENT        = "SSTv2-fetcher/1.0 (+https://github.com/jlintvet/SSTv2)"
-
 COORD_DECIMALS = 4
 SST_DECIMALS   = 3
-
 _last_request_at  = {}
 _host_blacklisted = set()
 _host_conn_resets = {}
 CONN_RESET_THRESHOLD = 2
-
-
 # =========================================================
 # SHARED HTTP / ERDDAP HELPERS
 # =========================================================
 def ensure_dirs():
     for d in DIRS.values():
         os.makedirs(d, exist_ok=True)
-
-
 def _host_of(url):
     return url.split("/", 3)[2]
-
-
 def _throttle(host):
     now  = time.monotonic()
     last = _last_request_at.get(host)
@@ -317,8 +320,6 @@ def _throttle(host):
         if wait > 0:
             time.sleep(wait)
     _last_request_at[host] = time.monotonic()
-
-
 def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
     stride = cfg["stride"]
     query  = (f"{cfg['var']}"
@@ -326,8 +327,6 @@ def build_erddap_csv_url(cfg, time_iso, south, north, west, east):
               f"[({south}):{stride}:({north})]"
               f"[({west}):{stride}:({east})]")
     return f"{cfg['host']}/griddap/{cfg['dataset_id']}.csv0?{query}"
-
-
 def fetch_erddap_csv(url, label):
     host = _host_of(url)
     if host in _host_blacklisted:
@@ -365,8 +364,6 @@ def fetch_erddap_csv(url, label):
         if attempt <= HTTP_RETRIES:
             time.sleep(HTTP_BACKOFF_S * attempt)
     raise RuntimeError(last_err or "unknown fetch error")
-
-
 def parse_erddap_csv0(csv_text, cfg):
     if not csv_text or not csv_text.strip():
         raise RuntimeError("empty response body")
@@ -386,8 +383,6 @@ def parse_erddap_csv0(csv_text, cfg):
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
     return filter_to_ocean(df)   # land filter applied to MUR/GOES
-
-
 def write_csv(df, base_path, label):
     n_pts = len(df)
     if n_pts < 100:
@@ -402,15 +397,11 @@ def write_csv(df, base_path, label):
     df.to_csv(path, index=False)
     print(f"  → {path}  ({n_pts} pts, {n_lat} lats × {n_lon} lons)")
     return True
-
-
 def fetch_one_day_erddap(cfg, time_iso, label):
     return parse_erddap_csv0(
         fetch_erddap_csv(build_erddap_csv_url(cfg, time_iso, SOUTH, NORTH, WEST, EAST), label),
         cfg
     )
-
-
 # =========================================================
 # MUR — DAILY COMPOSITE
 # =========================================================
@@ -445,8 +436,6 @@ def fetch_mur():
             success += 1
     if success == 0:
         print("  ⚠ MUR: zero successful days.")
-
-
 # =========================================================
 # GOES — BLENDED DAILY COMPOSITE  (4-candidate fallback matrix)
 # =========================================================
@@ -458,17 +447,14 @@ def fetch_goes():
     """
     print("\n── GOES-19 geo-polar blended daily composite ──")
     print(f"  Candidates: {len(GOES_CANDIDATES)} (2 hosts × 2 dataset IDs)")
-
     for i in range(GOES_LOOKBACK_DAYS):
         ts       = datetime.now(timezone.utc) - timedelta(days=i)
         stamp    = ts.strftime("%Y%m%d")
         time_iso = ts.strftime("%Y-%m-%d") + "T12:00:00Z"
         out_path = os.path.join(DIRS["goes_composite"], f"goes_composite_{stamp}")
-
         if os.path.exists(out_path + ".csv"):
             print(f"  ✓ GOES composite {stamp} (cached)")
             return
-
         for cfg in GOES_CANDIDATES:
             host_short = _host_of(cfg["host"]).split(".")[1]  # "noaa" or "pfeg"
             label      = f"GOES {stamp} [{host_short}/{cfg['dataset_id']}]"
@@ -483,14 +469,10 @@ def fetch_goes():
                 return   # success — stop trying candidates for this date
             except Exception as e:
                 print(f"✗ {type(e).__name__}: {str(e)[:80]}")
-
     print("  ✗ GOES: all candidates exhausted — no recent data available.")
-
-
 # =========================================================
 # VIIRS — MULTI-PASS (L3U GRANULE FILE SERVER)
 # =========================================================
-
 def _probe_viirs_base():
     for base in VIIRS_BASE_CANDIDATES:
         try:
@@ -502,8 +484,6 @@ def _probe_viirs_base():
         except requests.RequestException:
             pass
     raise RuntimeError("Neither VIIRS NRT file server URL is reachable.")
-
-
 def _list_viirs_granules(base, platform, year, doy):
     url  = f"{base}/{platform}/l3u/{year}/{doy:03d}/"
     host = _host_of(url)
@@ -519,20 +499,14 @@ def _list_viirs_granules(base, platform, year, doy):
     return sorted(set(re.findall(
         r"(\d{14}-STAR-L3U_GHRSST-SSTsubskin-VIIRS[^\s\"<>]+\.nc)", resp.text
     )))
-
-
 def _granule_time(filename):
     return datetime.strptime(filename[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
-
-
 def _build_target_windows(now_utc: datetime) -> list[tuple[datetime, datetime]]:
     """
     Build one ±VIIRS_WINDOW_HALF_MIN window centered on each UTC hour
     for the past VIIRS_HOURS_BACK hours (48 windows by default).
-
     Windows are ordered newest-first so log output reads chronologically
     when the pipeline iterates forward through the list.
-
     Each window is a (start, end) tuple of timezone-aware datetimes.
     """
     half    = timedelta(minutes=VIIRS_WINDOW_HALF_MIN)
@@ -543,13 +517,10 @@ def _build_target_windows(now_utc: datetime) -> list[tuple[datetime, datetime]]:
          anchor - timedelta(hours=h) + half)
         for h in range(VIIRS_HOURS_BACK)
     ]
-
-
 def _fetch_viirs_granule(base, platform, year, doy, filename):
     """
     Download one ACSPO L3U NetCDF4 granule and subset to bbox.
     Returns (DataFrame, reason). DataFrame is None on failure.
-
     Land masking is intentionally SKIPPED — NOAA ACSPO pre-masks land
     pixels as fill values in L3U files. dropna() removes them.
     Running an additional polygon filter on 36k+ points caused 5-10 min
@@ -557,12 +528,10 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     """
     if not _NETCDF4_AVAILABLE:
         return None, "netCDF4 not installed"
-
     url  = f"{base}/{platform}/l3u/{year}/{doy:03d}/{filename}"
     host = _host_of(url)
     if host in _host_blacklisted:
         return None, "host blacklisted"
-
     try:
         _throttle(host)
         with hard_timeout(VIIRS_HARD_TIMEOUT_S, filename):
@@ -577,7 +546,6 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
             if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
                 _host_blacklisted.add(host)
         return None, f"download error: {type(e).__name__}"
-
     try:
         ds       = nc.Dataset("inmemory.nc", memory=resp.content)
         lat_full = ds.variables["lat"][:]
@@ -601,10 +569,8 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
         ds.close()
     except Exception as e:
         return None, f"NetCDF parse error: {e}"
-
     lon_grid, lat_grid = np.meshgrid(lon_sub, lat_sub)
     sst_c = np.ma.filled(sst_sub, np.nan).astype(np.float64) - 273.15
-
     # Build dataframe with quality level alongside SST (before dropna so indices align)
     ql_flat = (np.ma.filled(ql_sub, 0).astype(np.uint8).flatten()
                if ql_sub is not None else None)
@@ -616,7 +582,6 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     if ql_flat is not None:
         df["_ql"] = ql_flat  # same length as flattened grids, indices aligned
     df = df.dropna(subset=["sst"])   # removes fill/cloud-masked pixels
-
     # Filter by quality_level — ql=0/1 pixels are cloud-contaminated but NOT fill values
     # in ACSPO NRT L3U. They have real SST retrievals that are unreliable (often too cold).
     if "_ql" in df.columns:
@@ -624,45 +589,34 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
             (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
     df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
-
     if df.empty:
         return None, "swath overlaps bbox but all pixels cloud/land masked"
-
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
     # NO filter_to_ocean() call here — ACSPO handles land masking upstream
     return df, "ok"
-
-
 def fetch_viirs_passes():
     if not _NETCDF4_AVAILABLE:
         print("\n── VIIRS multi-pass ──\n  skipped (netCDF4 not installed)")
         return
-
     print(f"\n── VIIRS multi-pass (last {VIIRS_HOURS_BACK}h — NPP/N20/N21) ──")
-
     try:
         live_base = _probe_viirs_base()
     except RuntimeError as e:
         print(f"  ✗ {e}")
         return
-
     now_utc = datetime.now(timezone.utc)
     windows = _build_target_windows(now_utc)
-
     print(f"  Hourly windows : {len(windows)}")
     print(f"  Window range   : {windows[-1][0]:%Y-%m-%d %H:%MZ} → {windows[0][1]:%Y-%m-%d %H:%MZ}")
     print(f"  Half-width     : ±{VIIRS_WINDOW_HALF_MIN} min per bucket")
-
     # Collect every (year, doy) pair spanned by the windows
     day_pairs: set[tuple[int, int]] = set()
     for w_start, w_end in windows:
         for dt in (w_start, w_end):
             day_pairs.add((dt.year, dt.timetuple().tm_yday))
-
     total_new = total_skipped = total_filtered = total_miss = 0
-
     for platform in VIIRS_PLATFORMS:
         for (year, doy) in sorted(day_pairs):
             filenames = _list_viirs_granules(live_base, platform, year, doy)
@@ -673,57 +627,46 @@ def fetch_viirs_passes():
                     gran_time = _granule_time(fname)
                 except ValueError:
                     continue
-
                 in_window = any(w_start <= gran_time <= w_end
                                 for w_start, w_end in windows)
                 if not in_window:
                     total_filtered += 1
                     continue
-
                 stamp    = gran_time.strftime("%Y%m%d_%H%M")
                 out_path = os.path.join(DIRS["viirs_passes"], f"viirs_{platform}_{stamp}")
-
                 if os.path.exists(out_path + ".csv"):
                     print(f"  {platform} {stamp} ✓ (cached)")
                     total_skipped += 1
                     continue
-
                 print(f"  {platform} {stamp} … ", end="", flush=True)
                 df, reason = _fetch_viirs_granule(live_base, platform, year, doy, fname)
-
                 if df is not None and write_csv(df, out_path, f"VIIRS {platform} {stamp}"):
                     total_new += 1
                 else:
                     print(f"✗ {reason}")
                     total_miss += 1
-
     print(f"\n  VIIRS summary: {total_new} written, {total_skipped} cached,"
           f" {total_miss} miss/cloud, {total_filtered} outside windows.")
     if total_new == 0 and total_skipped == 0:
         print("  ⚠ No VIIRS data produced. Check NRT server availability"
               " or increase VIIRS_HOURS_BACK.")
-
-
 # =========================================================
 # MAIN
 # =========================================================
 def main():
     print("=" * 57)
     print("SST PIPELINE")
-    print(f"  UTC  : {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}")
-    print(f"  Bbox : {SOUTH}–{NORTH}°N  {WEST}–{EAST}°E")
+    print(f"  UTC    : {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}")
+    print(f"  Region : {REGION}")
+    print(f"  Bbox   : {SOUTH}–{NORTH}°N  {WEST}–{EAST}°E")
+    print(f"  Output : {DIRS['mur']}  (and siblings)")
     print("=" * 57)
-
     ensure_dirs()
-
     fetch_mur()
     fetch_goes()
     fetch_viirs_passes()   # Feeds hourly SST display in the frontend
-
     print("\n" + "=" * 57)
     print("✓ Pipeline complete")
     print("=" * 57)
-
-
 if __name__ == "__main__":
     main()
