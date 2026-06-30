@@ -5,9 +5,10 @@ on:
   push:
     paths:
       - "bake_ocean_mask.py"
+      - "bake_ocean_mask_ga_sc.py"
 
 permissions:
-  contents: write   # 👈 THIS FIXES YOUR ERROR
+  contents: write
 
 jobs:
   bake:
@@ -20,16 +21,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: |
-          pip install --upgrade pip
-          pip install requests
+      - run: pip install --upgrade pip requests
 
-      - run: python bake_ocean_mask.py
+      - name: Bake mid-Atlantic mask
+        run: python bake_ocean_mask.py
 
-      - name: Commit generated file
+      - name: Bake GA/SC mask
+        run: python bake_ocean_mask_ga_sc.py
+
+      - name: Commit generated files
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add DailySSTData/ocean_mask.json
-          git commit -m "Update ocean mask" || echo "No changes"
+          git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json
+          git commit -m "Update ocean masks (mid-Atlantic + GA/SC)" || echo "No changes"
           git push
