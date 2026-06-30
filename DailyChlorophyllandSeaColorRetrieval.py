@@ -93,10 +93,17 @@ from urllib3.util.retry import Retry
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-LAT_MIN = 33.70
-LAT_MAX = 39.00
-LON_MIN = -78.89
-LON_MAX = -72.21
+_REGION_CONFIGS = {
+    "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "subdir": ""},
+    "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "subdir": "ga_sc"},
+}
+_REGION     = os.environ.get("REGION", "mid_atlantic")
+_region_cfg = _REGION_CONFIGS[_REGION]
+LAT_MIN = _region_cfg["lat_min"]
+LAT_MAX = _region_cfg["lat_max"]
+LON_MIN = _region_cfg["lon_min"]
+LON_MAX = _region_cfg["lon_max"]
+_SUBDIR = _region_cfg["subdir"]
 STRIDE  = 1
 
 RETENTION_DAYS = 3
@@ -143,8 +150,8 @@ CMEMS_STRIDE = 4
 
 # Output directories (relative to script location)
 _SCRIPT_DIR         = pathlib.Path(__file__).resolve().parent
-CHL_OUTPUT_DIR      = _SCRIPT_DIR / "SSTv2" / "Chlorophyll"
-SEACOLOR_OUTPUT_DIR = _SCRIPT_DIR / "SSTv2" / "SeaColor"
+CHL_OUTPUT_DIR      = _SCRIPT_DIR / "SSTv2" / "Chlorophyll" / _SUBDIR
+SEACOLOR_OUTPUT_DIR = _SCRIPT_DIR / "SSTv2" / "SeaColor" / _SUBDIR
 
 logging.basicConfig(
     level=logging.INFO,

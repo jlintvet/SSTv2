@@ -58,16 +58,23 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-LAT_MIN, LAT_MAX = 33.70, 39.00
-LON_MIN, LON_MAX = -78.89, -72.21
+_REGION_CONFIGS = {
+    "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "subdir": ""},
+    "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "subdir": "ga_sc"},
+}
+_REGION     = os.environ.get("REGION", "mid_atlantic")
+_region_cfg = _REGION_CONFIGS[_REGION]
+LAT_MIN, LAT_MAX = _region_cfg["lat_min"], _region_cfg["lat_max"]
+LON_MIN, LON_MAX = _region_cfg["lon_min"], _region_cfg["lon_max"]
+_SUBDIR = _region_cfg["subdir"]
 GRID_STEP = 0.02  # degrees — matches SST VIIRS canonical grid
 
 WINDOW_DAYS = int(os.environ.get("WINDOW_DAYS", "5"))   # composite lookback
 KEEP_DAYS   = int(os.environ.get("KEEP_DAYS",   "5"))   # bundle file retention
 
 BASE_DIR = Path(__file__).resolve().parent
-CHL_SRC  = BASE_DIR / "SSTv2" / "Chlorophyll"
-SC_SRC   = BASE_DIR / "SSTv2" / "SeaColor"
+CHL_SRC  = BASE_DIR / "SSTv2" / "Chlorophyll" / _SUBDIR
+SC_SRC   = BASE_DIR / "SSTv2" / "SeaColor" / _SUBDIR
 CHL_OUT  = CHL_SRC / "Bundled"
 SC_OUT   = SC_SRC  / "Bundled"
 CHL_OUT.mkdir(parents=True, exist_ok=True)

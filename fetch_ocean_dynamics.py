@@ -47,12 +47,19 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
-BBOX = {
-    "lat_min": 33.70,
-    "lat_max": 39.00,
-    "lon_min": -78.89,
-    "lon_max": -72.21,
+_REGION_CONFIGS = {
+    "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "subdir": ""},
+    "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "subdir": "ga_sc"},
 }
+_REGION     = os.environ.get("REGION", "mid_atlantic")
+_region_cfg = _REGION_CONFIGS[_REGION]
+BBOX = {
+    "lat_min": _region_cfg["lat_min"],
+    "lat_max": _region_cfg["lat_max"],
+    "lon_min": _region_cfg["lon_min"],
+    "lon_max": _region_cfg["lon_max"],
+}
+_SUBDIR = _region_cfg["subdir"]
 _date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
 TARGET_DATE = (
     datetime.date.fromisoformat(_date_override)
@@ -60,8 +67,8 @@ TARGET_DATE = (
     else datetime.date.today() - datetime.timedelta(days=1)
 )
 OUTPUT_DIR  = Path("DailySST")
-CURR_DIR    = OUTPUT_DIR / "Currents"
-ALT_DIR     = OUTPUT_DIR / "Altimetry"
+CURR_DIR    = OUTPUT_DIR / "Currents" / _SUBDIR
+ALT_DIR     = OUTPUT_DIR / "Altimetry" / _SUBDIR
 CURR_DIR.mkdir(parents=True, exist_ok=True)
 ALT_DIR.mkdir(parents=True, exist_ok=True)
 TIMEOUT    = (8, 90)   # (connect, read) seconds — fail fast on dead hosts (tds.hycom.org outages)

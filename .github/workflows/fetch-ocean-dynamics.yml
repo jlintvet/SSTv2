@@ -69,6 +69,16 @@ jobs:
         run: |
           python -u fetch_ocean_dynamics.py 2>&1 | tee ocean_dynamics.log
 
+      - name: Fetch ocean dynamics data (ga_sc)
+        env:
+          TARGET_DATE_OVERRIDE: ${{ steps.date.outputs.date }}
+          REGION: ga_sc
+          CMEMS_USER:     ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -u fetch_ocean_dynamics.py 2>&1 | tee ocean_dynamics_ga_sc.log
+
       - name: Verify outputs exist
         run: |
           DATE="${{ steps.date.outputs.date }}"
@@ -113,7 +123,7 @@ jobs:
 
       - name: Prune files older than 7 days
         run: |
-          for dir in DailySST/Currents DailySST/Altimetry; do
+          for dir in DailySST/Currents DailySST/Altimetry DailySST/Currents/ga_sc DailySST/Altimetry/ga_sc; do
             [ -d "$dir" ] || continue
             find "$dir" -maxdepth 1 -name "*.json" -o -name "*.csv" | \
             grep -v "latest" | while read f; do
@@ -137,8 +147,11 @@ jobs:
           mkdir -p DailySST/logs
           cp ocean_dynamics.log \
              "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log"
+          cp ocean_dynamics_ga_sc.log \
+             "DailySST/logs/ocean_dynamics_ga_sc_${{ steps.date.outputs.date }}.log" 2>/dev/null || true
           git add DailySST/Currents/ DailySST/Altimetry/ \
-                  "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log" || true
+                  "DailySST/logs/ocean_dynamics_${{ steps.date.outputs.date }}.log" \
+                  "DailySST/logs/ocean_dynamics_ga_sc_${{ steps.date.outputs.date }}.log" || true
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "ocean: currents + altimetry + log ${{ steps.date.outputs.date }}"
           git pull --rebase origin HEAD
