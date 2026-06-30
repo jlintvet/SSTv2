@@ -218,6 +218,49 @@ def _fill_row_gaps(flat: list, n_lats: int, n_lons: int, max_gap: int = 2) -> li
     return result
 
 
+def _fill_col_gaps(flat: list, n_lats: int, n_lons: int, max_gap: int = 1) -> list:
+    """
+    Horizontally interpolate over small null gaps in each latitude row.
+
+    The ga_sc canonical lon grid starts at an integer origin (-82.00),
+    but VIIRS satellite pixels are consistently at a 0.01 degree offset
+    from integer values.  After nearest-neighbour snapping, consecutive
+    satellite pixels collide onto the same canonical cell, leaving the
+    interleaved canonical columns empty -- typically a 1-column null gap
+    between every pair of filled columns.  This creates systematic
+    vertical banding visible when the ga_sc hourly overlay is rendered.
+
+    mid_atlantic is unaffected because its lon_min=-78.89 already carries
+    the same 0.01 degree offset, so its canonical grid aligns perfectly
+    with the satellite pixel positions.
+
+    This pass fills null runs of length <= max_gap that are sandwiched
+    between two valid values within the same row, leaving real cloud
+    columns (wider gaps) untouched.
+    """
+    result = flat[:]
+    for lat_i in range(n_lats):
+        j = 0
+        while j < n_lons:
+            if result[lat_i * n_lons + j] is None:
+                # find end of null run
+                k = j
+                while k < n_lons and result[lat_i * n_lons + k] is None:
+                    k += 1
+                gap = k - j
+                if gap <= max_gap and j > 0 and k < n_lons:
+                    v0 = result[lat_i * n_lons + (j - 1)]
+                    v1 = result[lat_i * n_lons + k]
+                    if v0 is not None and v1 is not None:
+                        for m in range(gap):
+                            t = (m + 1) / (gap + 1)
+                            result[lat_i * n_lons + j + m] = round(v0 + t * (v1 - v0), 2)
+                j = k
+            else:
+                j += 1
+    return result
+
+
 def _pass_to_fixed_grid(vals_f: np.ndarray,
                         raw_lats: list, raw_lons: list) -> list:
     """
@@ -245,7 +288,8 @@ def _pass_to_fixed_grid(vals_f: np.ndarray,
             if math.isfinite(v):
                 flat[gi * N_LONS + gj] = round(float(v), 2)
 
-    return _fill_row_gaps(flat, N_LATS, N_LONS)
+    flat = _fill_row_gaps(flat, N_LATS, N_LONS)
+    return _fill_col_gaps(flat, N_LATS, N_LONS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -307,6 +351,7 @@ def _fetch_passes_from_csv(date: datetime.date) -> list[tuple[int, list]]:
                 continue
             flat[gi * N_LONS + gj] = round(float(sst_f), 2)
         flat = _fill_row_gaps(flat, N_LATS, N_LONS)
+        flat = _fill_col_gaps(flat, N_LATS, N_LONS)
         valid_vals = [v for v in flat if v is not None]
         if len(valid_vals) < MIN_PASS_PIXELS:
             log.info("  %02d:00Z [CSV] — too few grid cells filled (%d), skipping",
