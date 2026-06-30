@@ -150,6 +150,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TIMEOUT = 60   # seconds per THREDDS/OPeNDAP request
 
+# Local-pass fallback — when True, read pre-downloaded CSV files from
+# DailySSTData/VIIRS/Passes/<subdir>/ instead of fetching from THREDDS.
+# Set USE_LOCAL_PASSES=true in the workflow env to enable; revert by removing
+# the env var.  Both paths produce identical bundle JSON.
+USE_LOCAL_PASSES = os.environ.get("USE_LOCAL_PASSES", "false").lower() == "true"
+_passes_base = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Passes"
+PASSES_DIR = (_passes_base / _SUBDIR) if _SUBDIR else _passes_base
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -237,6 +245,107 @@ def _pass_to_fixed_grid(vals_f: np.ndarray,
                 flat[gi * N_LONS + gj] = round(float(v), 2)
 
     return _fill_row_gaps(flat, N_LATS, N_LONS)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local CSV pass reader (alternative to THREDDS when USE_LOCAL_PASSES=true)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_passes_from_csv(date: datetime.date) -> list[tuple[int, list]]:
+    """
+    Read pre-downloaded VIIRS pass CSV files for *date* from PASSES_DIR.
+    Files are named viirs_{satellite}_{YYYYMMDD}_{HHMM}.csv and contain
+    lat,lon,sst columns (sst in Celsius).
+
+    Returns list of (hour_utc, flat_grid) where flat_grid is a
+    N_LATS*N_LONS list (float or None), ready for _build_bundle_csv.
+    """
+    date_str = date.strftime("%Y%m%d")
+    files = sorted(PASSES_DIR.glob(f"viirs_*_{date_str}_*.csv"))
+    if not files:
+        log.info("  No local CSV passes found for %s in %s", date, PASSES_DIR)
+        return []
+    log.info("  %s: found %d local CSV pass file(s)", date, len(files))
+
+    hour_points: dict[int, dict] = defaultdict(lambda: {"lats": [], "lons": [], "ssts": []})
+    for f in files:
+        m = re.search(r"_(\d{4})\.csv$", f.name)
+        if not m:
+            continue
+        hour = int(m.group(1)[:2])
+        try:
+            with open(f) as fp:
+                next(fp)  # skip header
+                for line in fp:
+                    parts = line.strip().split(",")
+                    if len(parts) < 3:
+                        continue
+                    lat, lon, sst_c = float(parts[0]), float(parts[1]), float(parts[2])
+                    hour_points[hour]["lats"].append(lat)
+                    hour_points[hour]["lons"].append(lon)
+                    hour_points[hour]["ssts"].append(sst_c * 9.0 / 5.0 + 32.0)
+        except Exception as exc:
+            log.warning("  Error reading %s: %s", f.name, exc)
+
+    results = []
+    for hour in sorted(hour_points):
+        pts = hour_points[hour]
+        if len(pts["lats"]) < MIN_PASS_PIXELS:
+            log.info("  %02d:00Z [CSV] — too few raw points (%d), skipping",
+                     hour, len(pts["lats"]))
+            continue
+        flat = [None] * (N_LATS * N_LONS)
+        for lat, lon, sst_f in zip(pts["lats"], pts["lons"], pts["ssts"]):
+            snapped_lat = _snap_to_fixed(lat, GRID_STEP, FIXED_LATS[0])
+            gi = FIXED_LAT_IDX.get(snapped_lat)
+            if gi is None:
+                continue
+            snapped_lon = _snap_to_fixed(lon, GRID_STEP, FIXED_LONS[0])
+            gj = FIXED_LON_IDX.get(snapped_lon)
+            if gj is None:
+                continue
+            flat[gi * N_LONS + gj] = round(float(sst_f), 2)
+        flat = _fill_row_gaps(flat, N_LATS, N_LONS)
+        valid_vals = [v for v in flat if v is not None]
+        if len(valid_vals) < MIN_PASS_PIXELS:
+            log.info("  %02d:00Z [CSV] — too few grid cells filled (%d), skipping",
+                     hour, len(valid_vals))
+            continue
+        log.info("  %02d:00Z [CSV] — %d/%d grid cells filled  %.1f-%.1f F",
+                 hour, len(valid_vals), N_LATS * N_LONS,
+                 min(valid_vals), max(valid_vals))
+        results.append((hour, flat))
+    return results
+
+
+def _build_bundle_csv(date: datetime.date,
+                      passes: list[tuple[int, list]]) -> dict | None:
+    """Build a daily bundle from pre-gridded CSV pass data."""
+    hours_dict: dict[str, dict] = {}
+    available_hours: list[int] = []
+    for hour, flat in passes:
+        valid_vals = [v for v in flat if v is not None]
+        if not valid_vals:
+            continue
+        hours_dict[str(hour)] = {
+            "sst": flat,
+            "min": round(min(valid_vals), 1),
+            "max": round(max(valid_vals), 1),
+        }
+        available_hours.append(hour)
+        log.info("    %02d:00Z — %d/%d fixed grid cells  %.1f-%.1f F",
+                 hour, len(valid_vals), N_LATS * N_LONS,
+                 min(valid_vals), max(valid_vals))
+    if not available_hours:
+        return None
+    return {
+        "date":            date.isoformat(),
+        "latSet":          FIXED_LATS,
+        "lonSet":          FIXED_LONS,
+        "hours":           hours_dict,
+        "available_hours": sorted(available_hours),
+        "source":          "csv_passes",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -701,17 +810,24 @@ def main() -> None:
 
     for date in dates_to_process:
         log.info("--- Processing %s ---", date)
-        passes = _fetch_passes_for_date(date)
+        if USE_LOCAL_PASSES:
+            csv_passes = _fetch_passes_from_csv(date)
+            if not csv_passes:
+                log.warning("  No local CSV passes for %s — skipping bundle", date)
+                if (OUTPUT_DIR / f"viirs_{date}.json").exists():
+                    written_dates.append(str(date))
+                continue
+            bundle = _build_bundle_csv(date, csv_passes)
+        else:
+            passes = _fetch_passes_for_date(date)
+            if not passes:
+                log.warning("  No passes retrieved for %s — skipping bundle", date)
+                if (OUTPUT_DIR / f"viirs_{date}.json").exists():
+                    written_dates.append(str(date))
+                continue
+            bundle = _build_bundle(date, passes)
 
-        if not passes:
-            log.warning("  No passes retrieved for %s — skipping bundle", date)
-            if (OUTPUT_DIR / f"viirs_{date}.json").exists():
-                written_dates.append(str(date))
-            continue
-
-        bundle = _build_bundle(date, passes)
-
-        if not bundle["available_hours"]:
+        if not bundle or not bundle["available_hours"]:
             log.warning("  Bundle for %s has no valid hours — skipping", date)
             continue
 

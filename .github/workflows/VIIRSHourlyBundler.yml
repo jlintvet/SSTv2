@@ -25,6 +25,7 @@ jobs:
       - name: Bundle all regions
         env:
           DAYS_BACK: 3
+          USE_LOCAL_PASSES: "true"
         run: |
           for REGION in mid_atlantic ga_sc; do
             echo "=== Bundling REGION=$REGION ==="
