@@ -48,10 +48,21 @@ from urllib3.util.retry import Retry
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-LAT_MIN = 33.70
-LAT_MAX = 39.00
-LON_MIN = -78.89
-LON_MAX = -72.21
+_REGION_CONFIGS = {
+    "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "suffix": ""},
+    "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "suffix": "_ga_sc"},
+}
+_REGION = os.environ.get("REGION", "mid_atlantic").strip()
+if _REGION not in _REGION_CONFIGS:
+    print(f"WARNING: Unknown REGION={_REGION!r}, falling back to mid_atlantic")
+    _REGION = "mid_atlantic"
+_RCFG = _REGION_CONFIGS[_REGION]
+_BATHY_SUFFIX = _RCFG["suffix"]
+
+LAT_MIN = _RCFG["lat_min"]
+LAT_MAX = _RCFG["lat_max"]
+LON_MIN = _RCFG["lon_min"]
+LON_MAX = _RCFG["lon_max"]
 # stride=1 → native GEBCO resolution (~450 m grid spacing)
 # stride=2 → ~900 m — faster download, lower shelf-edge accuracy
 BATHY_STRIDE = 1
@@ -121,8 +132,8 @@ def _make_session() -> requests.Session:
 # ---------------------------------------------------------------------------
 def _bathy_cache_valid() -> bool:
     required = [
-        OUTPUT_DIR / "bathymetry_contours.json",
-        OUTPUT_DIR / "bathymetry_grid.json",
+        OUTPUT_DIR / f"bathymetry_contours{_BATHY_SUFFIX}.json",
+        OUTPUT_DIR / f"bathymetry_grid{_BATHY_SUFFIX}.json",
         OUTPUT_DIR / "ne_ocean.json",   # must exist so ocean mask is baked in
     ]
     cutoff = datetime.datetime.now() - datetime.timedelta(days=CACHE_DAYS)
@@ -555,6 +566,39 @@ def _extract_contour_lines(lats: list, lons: list,
         coords = _chaikin_smooth(coords, iterations=2)
         output.append(coords)
     return output
+
+def write_bathymetry_points(rows: list) -> None:
+    """Write bathymetry_{suffix}.json — flat points list used for depth lookup in frontend."""
+    log.info("Writing bathymetry points JSON (%d rows) ...", len(rows))
+    ocean_pts = [r for r in rows if r.get("depth_ft") is not None]
+    actual = {
+        "lat_min": min(r["lat"] for r in ocean_pts) if ocean_pts else LAT_MIN,
+        "lat_max": max(r["lat"] for r in ocean_pts) if ocean_pts else LAT_MAX,
+        "lon_min": min(r["lon"] for r in ocean_pts) if ocean_pts else LON_MIN,
+        "lon_max": max(r["lon"] for r in ocean_pts) if ocean_pts else LON_MAX,
+    }
+    payload = {
+        "dataset":       "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
+        "source":        "ERDDAP griddap",
+        "resolution":    f"stride={BATHY_STRIDE} (~{BATHY_STRIDE * 450:.0f} m)",
+        "stride":        BATHY_STRIDE,
+        "units":         {"depth_ft": "feet below surface; null = land/no data"},
+        "region":        {"lat_min": LAT_MIN, "lat_max": LAT_MAX,
+                          "lon_min": LON_MIN, "lon_max": LON_MAX},
+        "actual_extent": actual,
+        "point_count":   len(ocean_pts),
+        "points":        [{"lat": round(r["lat"], 6),
+                           "lon": round(r["lon"], 6),
+                           "depth_ft": round(r["depth_ft"], 1)} for r in ocean_pts],
+    }
+    dest = OUTPUT_DIR / f"bathymetry{_BATHY_SUFFIX}.json"
+    tmp  = dest.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, separators=(",", ":"))
+    tmp.rename(dest)
+    log.info("Bathymetry points written: %d ocean points  (%.1f KB)",
+             len(ocean_pts), dest.stat().st_size / 1024)
+
 def write_contours(lats: list, lons: list, grid: list) -> None:
     log.info("Generating depth contours for %d levels ...", len(CONTOUR_DEPTHS_FT))
     features = []
@@ -580,7 +624,7 @@ def write_contours(lats: list, lons: list, grid: list) -> None:
                 },
             })
         log.info("  %4d ft (%3d fm) — %d contour segments", depth_ft, int(depth_fathoms), len(lines))
-    dest = OUTPUT_DIR / "bathymetry_contours.json"
+    dest = OUTPUT_DIR / f"bathymetry_contours{_BATHY_SUFFIX}.json"
     tmp  = dest.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump({"type": "FeatureCollection", "features": features}, fh,
@@ -637,7 +681,7 @@ def write_bathymetry_grid(lats: list, lons: list, grid: list) -> None:
         "depth_ft":      grid_ft,
         "depth_fathoms": grid_fathoms,
     }
-    dest = OUTPUT_DIR / "bathymetry_grid.json"
+    dest = OUTPUT_DIR / f"bathymetry_grid{_BATHY_SUFFIX}.json"
     tmp  = dest.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"))
@@ -771,6 +815,7 @@ def main() -> None:
         log.info("Grid: %d lats × %d lons", len(lats), len(lons))
         write_contours(lats, lons, grid)
         write_bathymetry_grid(lats, lons, grid)
+        write_bathymetry_points(rows)
     # ── Coastline lines ─────────────────────────────────────────────────────
     log.info("=== Coastline ===")
     if not _static_cache_valid(OUTPUT_DIR / "noaa_coastline.json"):
