@@ -11,10 +11,10 @@ GITHUB_REPO   = "jlintvet/SSTv2"
 GITHUB_PATH   = "WindData/wind_latest.json"
 GITHUB_BRANCH = "main"
 
-# OBX region grid — matches the map display bounds (slightly wider than SST data
-# extent to ensure wind particles cover the full visible map area)
-LAT_MIN, LAT_MAX, LAT_STEP = 32.0, 40.0, 0.25
-LON_MIN, LON_MAX, LON_STEP = -79.0, -72.5, 0.25
+# Grid covers both mid_atlantic (33.7–39.0N, -78.89–-72.21W) and
+# ga_sc (29.80–35.20N, -82.0–-75.20W) with margin on all sides.
+LAT_MIN, LAT_MAX, LAT_STEP = 29.0, 40.0, 0.25
+LON_MIN, LON_MAX, LON_STEP = -82.5, -72.5, 0.25
 
 # ── Build grid ────────────────────────────────────────────────────────────────
 lats, lons = [], []
