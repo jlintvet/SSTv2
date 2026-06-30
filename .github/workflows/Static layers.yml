@@ -13,7 +13,7 @@ jobs:
   retrieve-static-layers:
     name: Fetch bathymetry and wrecks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -32,8 +32,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run StaticLayersRetrieval.py
+      - name: Run StaticLayersRetrieval.py (mid_atlantic)
         run: python StaticLayersRetrieval.py
+
+      - name: Run StaticLayersRetrieval.py (ga_sc)
+        run: REGION=ga_sc python StaticLayersRetrieval.py
 
       - name: Commit static layers to repository
         run: |
