@@ -27,10 +27,12 @@ jobs:
           DAYS_BACK: 3
           USE_LOCAL_PASSES: "true"
         run: |
-          for REGION in mid_atlantic ga_sc; do
-            echo "=== Bundling REGION=$REGION ==="
-            REGION="$REGION" python VIIRSHourlyBundler.py
-          done
+          echo "=== Bundling REGION=mid_atlantic ==="
+          REGION="mid_atlantic" python VIIRSHourlyBundler.py
+          # ga_sc needs a 72h composite window — VIIRS coverage is sparser at lower
+          # latitudes (29.8–35.2°N) so a 36h window leaves large swath gaps.
+          echo "=== Bundling REGION=ga_sc (72h composite) ==="
+          REGION="ga_sc" COMPOSITE_WINDOW_HOURS="72" python VIIRSHourlyBundler.py
       - name: Commit updated bundles
         run: |
           git config user.name  "github-actions[bot]"
