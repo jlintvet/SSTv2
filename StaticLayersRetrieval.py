@@ -36,6 +36,7 @@ Outputs into DailySST/
 """
 import csv
 import datetime
+import os
 import io
 import json
 import logging
