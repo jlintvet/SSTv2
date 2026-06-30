@@ -66,12 +66,25 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-BBOX = {
-    "lat_min": 33.70,
-    "lat_max": 39.00,
-    "lon_min": -78.89,
-    "lon_max": -72.21,
+
+# Region support — read REGION env var early so BBOX/grid can be region-specific.
+_REGION_CONFIGS = {
+    "mid_atlantic": {
+        "subdir": "",
+        "bbox": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21},
+    },
+    "ga_sc": {
+        "subdir": "ga_sc",
+        "bbox": {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20},
+    },
 }
+_REGION = os.environ.get("REGION", "mid_atlantic").strip()
+if _REGION not in _REGION_CONFIGS:
+    print(f"WARNING: Unknown REGION={_REGION!r} — falling back to mid_atlantic")
+    _REGION = "mid_atlantic"
+_SUBDIR = _REGION_CONFIGS[_REGION]["subdir"]
+
+BBOX = _REGION_CONFIGS[_REGION]["bbox"]
 
 # Fixed regular output grid — all bundles and the composite use exactly this
 # grid so React's bilinear interpolation always gets a uniform lat/lon set.
@@ -130,17 +143,6 @@ TARGET_DATE = (
     if _date_override
     else datetime.date.today()
 )
-
-# Region support — matches sst_data_fetcher.py REGION env var
-_REGION_CONFIGS = {
-    "mid_atlantic": {"subdir": ""},
-    "ga_sc":        {"subdir": "ga_sc"},
-}
-_REGION = os.environ.get("REGION", "mid_atlantic").strip()
-if _REGION not in _REGION_CONFIGS:
-    print(f"WARNING: Unknown REGION={_REGION!r} — falling back to mid_atlantic")
-    _REGION = "mid_atlantic"
-_SUBDIR = _REGION_CONFIGS[_REGION]["subdir"]
 
 # Output directory — matches GitHub repo path DailySSTData/VIIRS/Bundled/<subdir>/
 _bundled_base = Path(__file__).resolve().parent / "DailySSTData" / "VIIRS" / "Bundled"
