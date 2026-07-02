@@ -147,6 +147,17 @@ def _bathy_cache_valid() -> bool:
             log.info("Cache stale: %s is %d days old (limit: %d) — will re-fetch.",
                      path.name, (datetime.datetime.now() - mtime).days, CACHE_DAYS)
             return False
+    # Also invalidate if ne_ocean.json is empty — ocean mask won't run without rings,
+    # meaning the bathy contours were generated without land masking.
+    ne_path = OUTPUT_DIR / "ne_ocean.json"
+    try:
+        with open(ne_path, encoding="utf-8") as fh:
+            rings = json.load(fh)
+        if not rings:
+            log.info("Cache invalid: ne_ocean.json has 0 rings — bathy must be regenerated with a valid mask.")
+            return False
+    except Exception:
+        return False
     log.info("Bathymetry cache is valid (files < %d days old) — skipping fetch.", CACHE_DAYS)
     return True
 def _static_cache_valid(path: pathlib.Path) -> bool:
@@ -433,8 +444,10 @@ def _fetch_ocean_rings(session: requests.Session) -> list[list]:
     if cache_path.exists():
         with open(cache_path, encoding="utf-8") as fh:
             rings = json.load(fh)
-        log.info("Ocean mask loaded from cache: %d ring(s)", len(rings))
-        return rings
+        if rings:
+            log.info("Ocean mask loaded from cache: %d ring(s)", len(rings))
+            return rings
+        log.warning("ne_ocean.json cache has 0 rings (corrupt/empty) — re-downloading ...")
 
     log.info("Fetching Natural Earth 10m ocean polygons ...")
     r = session.get(NE_OCEAN_URL, timeout=TIMEOUT)
