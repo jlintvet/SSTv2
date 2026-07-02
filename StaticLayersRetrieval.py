@@ -115,9 +115,16 @@ SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ERDDAP bathymetry sources — tried in order until one succeeds
 # ---------------------------------------------------------------------------
 BATHY_SOURCES = [
+    # GEBCO 2023 — try multiple mirrors in order
+    ("https://www.ncei.noaa.gov/erddap/griddap/GEBCO_2023.csvp",                 "elevation"),
+    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2023.csvp",          "elevation"),
+    # GEBCO 2020 legacy fallbacks
     ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),
+    # ETOPO fallbacks — dataset IDs vary by server
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",          "z"),
     ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",           "z"),
+    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",          "z"),
+    ("https://erddap.ifremer.fr/erddap/griddap/ETOPO1_bedrock.csvp",             "z"),
 ]
 # ---------------------------------------------------------------------------
 # HTTP session with retry
