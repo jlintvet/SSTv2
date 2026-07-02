@@ -494,6 +494,26 @@ def _build_grid(rows: list[dict], ocean_rings: list | None = None) -> tuple[list
         if r["depth_ft"] is not None:
             idx      = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
             flat[idx] = r["depth_ft"]
+    # ── Ocean mask BEFORE gap-fill ───────────────────────────────────────────
+    # CRITICAL: apply the land mask before gap-fill, not after. GEBCO correctly
+    # marks land cells as NaN (positive elevation → depth_ft=None). The gap-fill
+    # below averages NaN cells from their neighbors — without this pre-mask, land
+    # cells adjacent to the coast pick up ocean depth values and contourpy draws
+    # real-looking depth contours over dry land (e.g. Cedar Point peninsula NC).
+    # Applying the mask first pins land cells to NaN permanently so gap-fill
+    # only ever fills genuine data voids within the ocean.
+    if ocean_rings:
+        log.info("Applying ocean mask to %d × %d grid (pre-fill) ...", n_rows, n_cols)
+        masked = 0
+        for row in range(n_rows):
+            for col in range(n_cols):
+                i = row * n_cols + col
+                lon = lons[col]
+                lat = lats[row]
+                if not any(_point_in_ring(lon, lat, ring) for ring in ocean_rings):
+                    flat[i] = math.nan   # pin to NaN — gap-fill will never touch this cell
+                    masked  += 1
+        log.info("Ocean mask pre-applied: %d cell(s) pinned (land + enclosed water bodies)", masked)
     for _ in range(6):
         new_flat = flat[:]
         changed  = False
@@ -515,24 +535,6 @@ def _build_grid(rows: list[dict], ocean_rings: list | None = None) -> tuple[list
         flat = new_flat
         if not changed:
             break
-    # ── Ocean mask ──────────────────────────────────────────────────────────
-    # Null out any grid cell whose (lat, lon) is NOT inside an ocean polygon.
-    # This removes Chesapeake Bay, Pamlico Sound, and all enclosed water bodies
-    # regardless of region — GEBCO/ETOPO record them as valid ocean depths.
-    if ocean_rings:
-        log.info("Applying ocean mask to %d × %d grid ...", n_rows, n_cols)
-        masked = 0
-        for row in range(n_rows):
-            for col in range(n_cols):
-                i = row * n_cols + col
-                if math.isnan(flat[i]):
-                    continue
-                lon = lons[col]
-                lat = lats[row]
-                if not any(_point_in_ring(lon, lat, ring) for ring in ocean_rings):
-                    flat[i] = math.nan
-                    masked  += 1
-        log.info("Ocean mask applied: %d cell(s) nulled (enclosed water bodies removed)", masked)
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
 # ---------------------------------------------------------------------------
