@@ -135,7 +135,6 @@ def _bathy_cache_valid() -> bool:
     required = [
         OUTPUT_DIR / f"bathymetry_contours{_BATHY_SUFFIX}.json",
         OUTPUT_DIR / f"bathymetry_grid{_BATHY_SUFFIX}.json",
-        OUTPUT_DIR / "ne_ocean.json",   # must exist so ocean mask is baked in
     ]
     cutoff = datetime.datetime.now() - datetime.timedelta(days=CACHE_DAYS)
     for path in required:
@@ -147,17 +146,6 @@ def _bathy_cache_valid() -> bool:
             log.info("Cache stale: %s is %d days old (limit: %d) — will re-fetch.",
                      path.name, (datetime.datetime.now() - mtime).days, CACHE_DAYS)
             return False
-    # Also invalidate if ne_ocean.json is empty — ocean mask won't run without rings,
-    # meaning the bathy contours were generated without land masking.
-    ne_path = OUTPUT_DIR / "ne_ocean.json"
-    try:
-        with open(ne_path, encoding="utf-8") as fh:
-            rings = json.load(fh)
-        if not rings:
-            log.info("Cache invalid: ne_ocean.json has 0 rings — bathy must be regenerated with a valid mask.")
-            return False
-    except Exception:
-        return False
     log.info("Bathymetry cache is valid (files < %d days old) — skipping fetch.", CACHE_DAYS)
     return True
 def _static_cache_valid(path: pathlib.Path) -> bool:
@@ -428,54 +416,13 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
             log.warning("  Source failed (%s): %s", base_url, exc)
             last_err = exc
     raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
+
 # ---------------------------------------------------------------------------
-# Ocean mask (Natural Earth 10m ocean polygons)
+# Ocean mask — retired (Natural Earth 10m polygon approach)
 # ---------------------------------------------------------------------------
-def _fetch_ocean_rings(session: requests.Session) -> list[list]:
-    """
-    Download ne_10m_ocean.geojson, cache exterior rings that intersect our bbox
-    to DailySST/ne_ocean.json, and return them.
-
-    Each ring is a list of [lon, lat] pairs. A point inside any ring is open ocean.
-    Enclosed water bodies (Chesapeake Bay, Pamlico Sound, etc.) are NOT in the
-    ne_10m_ocean polygons, so they will be masked out of the bathy grid.
-    """
-    cache_path = OUTPUT_DIR / "ne_ocean.json"
-    if cache_path.exists():
-        with open(cache_path, encoding="utf-8") as fh:
-            rings = json.load(fh)
-        if rings:
-            log.info("Ocean mask loaded from cache: %d ring(s)", len(rings))
-            return rings
-        log.warning("ne_ocean.json cache has 0 rings (corrupt/empty) — re-downloading ...")
-
-    log.info("Fetching Natural Earth 10m ocean polygons ...")
-    r = session.get(NE_OCEAN_URL, timeout=TIMEOUT)
-    r.raise_for_status()
-    data  = r.json()
-    rings = []
-    for feat in data.get("features", []):
-        geom  = feat.get("geometry", {})
-        gtype = geom.get("type", "")
-        if gtype == "Polygon":
-            polys = [geom["coordinates"]]
-        elif gtype == "MultiPolygon":
-            polys = geom["coordinates"]
-        else:
-            continue
-        for poly in polys:
-            if not poly:
-                continue
-            exterior = poly[0]
-            if _ring_intersects_bbox(exterior):
-                rings.append(exterior)
-
-    with open(cache_path, "w", encoding="utf-8") as fh:
-        json.dump(rings, fh, separators=(",", ":"))
-    log.info("Ocean mask: %d ring(s) cached to ne_ocean.json", len(rings))
-    return rings
-
-
+# Replaced by GEBCO-sign land mask in _build_grid (see step 1 above).
+# GEBCO rows with elev >= 0 are land (depth_ft=None); those cells are tracked
+# in a land[] boolean array and skipped by gap-fill.
 def _point_in_ring(lon: float, lat: float, ring: list) -> bool:
     """Standard ray-casting point-in-polygon test for a single ring."""
     inside = False
@@ -495,7 +442,7 @@ def _point_in_ring(lon: float, lat: float, ring: list) -> bool:
 # ---------------------------------------------------------------------------
 # Grid builder
 # ---------------------------------------------------------------------------
-def _build_grid(rows: list[dict], ocean_rings: list | None = None) -> tuple[list, list, list]:
+def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
     lats    = sorted(set(r["lat"] for r in rows))
     lons    = sorted(set(r["lon"] for r in rows))
     lat_idx = {v: i for i, v in enumerate(lats)}
@@ -503,38 +450,30 @@ def _build_grid(rows: list[dict], ocean_rings: list | None = None) -> tuple[list
     n_rows  = len(lats)
     n_cols  = len(lons)
     flat = [math.nan] * (n_rows * n_cols)
+    # ── GEBCO-sign land mask ─────────────────────────────────────────────────
+    # GEBCO encodes land via elevation sign: elev >= 0 -> depth_ft=None (land).
+    # Build a boolean land[] array so gap-fill never assigns an ocean depth to a
+    # land cell (which would cause contourpy to draw contours over dry land).
+    # Replaces the previous NE-polygon _point_in_ring approach, which timed out
+    # (45+ min) on a 2 M-cell grid vs a 50 K-vertex Atlantic Ocean polygon.
+    land = [True] * (n_rows * n_cols)   # default True; flipped False for ocean cells
     for r in rows:
+        idx = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
         if r["depth_ft"] is not None:
-            idx      = lat_idx[r["lat"]] * n_cols + lon_idx[r["lon"]]
             flat[idx] = r["depth_ft"]
-    # ── Ocean mask BEFORE gap-fill ───────────────────────────────────────────
-    # CRITICAL: apply the land mask before gap-fill, not after. GEBCO correctly
-    # marks land cells as NaN (positive elevation → depth_ft=None). The gap-fill
-    # below averages NaN cells from their neighbors — without this pre-mask, land
-    # cells adjacent to the coast pick up ocean depth values and contourpy draws
-    # real-looking depth contours over dry land (e.g. Cedar Point peninsula NC).
-    # Applying the mask first pins land cells to NaN permanently so gap-fill
-    # only ever fills genuine data voids within the ocean.
-    if ocean_rings:
-        log.info("Applying ocean mask to %d × %d grid (pre-fill) ...", n_rows, n_cols)
-        masked = 0
-        for row in range(n_rows):
-            for col in range(n_cols):
-                i = row * n_cols + col
-                lon = lons[col]
-                lat = lats[row]
-                if not any(_point_in_ring(lon, lat, ring) for ring in ocean_rings):
-                    flat[i] = math.nan   # pin to NaN — gap-fill will never touch this cell
-                    masked  += 1
-        log.info("Ocean mask pre-applied: %d cell(s) pinned (land + enclosed water bodies)", masked)
+            land[idx] = False           # confirmed ocean cell
+    land_count = sum(land)
+    log.info("GEBCO land mask: %d land cell(s), %d ocean cell(s)",
+             land_count, n_rows * n_cols - land_count)
+    # ── Gap-fill (ocean data voids only) ────────────────────────────────────
     for _ in range(6):
         new_flat = flat[:]
         changed  = False
         for row in range(n_rows):
             for col in range(n_cols):
                 i = row * n_cols + col
-                if not math.isnan(flat[i]):
-                    continue
+                if land[i] or not math.isnan(flat[i]):
+                    continue            # skip land cells and already-filled cells
                 neighbours = []
                 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     nr, nc = row + dr, col + dc
@@ -825,9 +764,6 @@ def write_land_mask(session: requests.Session) -> None:
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     session = _make_session()
-    # ── Ocean mask polygons (needed for bathy masking) ──────────────────────
-    log.info("=== Ocean Mask ===")
-    ocean_rings = _fetch_ocean_rings(session)
     # ── Bathymetry (contours + raw grid) ────────────────────────────────────
     log.info("=== Bathymetry ===")
     if _bathy_cache_valid():
@@ -835,7 +771,7 @@ def main() -> None:
     else:
         rows = _fetch_bathymetry(session)
         log.info("Building depth grid ...")
-        lats, lons, grid = _build_grid(rows, ocean_rings=ocean_rings)
+        lats, lons, grid = _build_grid(rows)
         log.info("Grid: %d lats × %d lons", len(lats), len(lons))
         write_contours(lats, lons, grid)
         write_bathymetry_grid(lats, lons, grid)
