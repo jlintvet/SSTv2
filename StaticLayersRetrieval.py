@@ -449,6 +449,73 @@ def _point_in_ring(lon: float, lat: float, ring: list) -> bool:
 # ---------------------------------------------------------------------------
 # Grid builder
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Morphological open-ocean mask
+# ---------------------------------------------------------------------------
+def _morphological_open_ocean(land: list[bool], n_rows: int, n_cols: int,
+                               radius: int = 6) -> list[bool]:
+    """
+    Compute open-ocean cells via morphological opening (erode then dilate).
+
+    Narrow water bodies (sounds, bays, rivers) that are < 2*radius cells wide
+    are removed.  The open ocean is preserved with its original shape.
+
+    radius=6 at 450 m GEBCO resolution ≈ 2.7 km — closes off Bogue Sound,
+    White Oak River, etc. while keeping the offshore 10-fathom contour zone.
+
+    Uses BFS for O(n_cells) performance (not point-in-polygon).
+    """
+    from collections import deque
+    N = n_rows * n_cols
+
+    # ── Step 1: BFS distance-from-land for every cell ───────────────────────
+    dist_land = [-1] * N          # -1 = unvisited ocean; land cells get 0
+    q: deque = deque()
+    for i, is_land in enumerate(land):
+        if is_land:
+            dist_land[i] = 0
+            q.append(i)
+    while q:
+        i = q.popleft()
+        row, col = divmod(i, n_cols)
+        d = dist_land[i] + 1
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < n_rows and 0 <= nc < n_cols:
+                j = nr * n_cols + nc
+                if dist_land[j] == -1:      # unvisited ocean
+                    dist_land[j] = d
+                    q.append(j)
+
+    # ── Step 2: Eroded ocean = cells with dist_land > radius ────────────────
+    # (cells in narrow water bodies are too close to land and disappear)
+
+    # ── Step 3: BFS from eroded-ocean cells up to radius steps ──────────────
+    # Dilate back so open ocean near shore is restored.
+    dist_open = [-1] * N
+    q2: deque = deque()
+    for i in range(N):
+        if dist_land[i] > radius:           # survived erosion
+            dist_open[i] = 0
+            q2.append(i)
+    while q2:
+        i = q2.popleft()
+        if dist_open[i] >= radius:
+            continue
+        row, col = divmod(i, n_cols)
+        d = dist_open[i] + 1
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < n_rows and 0 <= nc < n_cols:
+                j = nr * n_cols + nc
+                if dist_open[j] == -1 and not land[j]:
+                    dist_open[j] = d
+                    q2.append(j)
+
+    # open ocean = reachable from an eroded-ocean seed within radius steps
+    return [dist_open[i] >= 0 for i in range(N)]
+
 def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
     lats    = sorted(set(r["lat"] for r in rows))
     lons    = sorted(set(r["lon"] for r in rows))
@@ -472,15 +539,28 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
     land_count = sum(land)
     log.info("GEBCO land mask: %d land cell(s), %d ocean cell(s)",
              land_count, n_rows * n_cols - land_count)
-    # ── Gap-fill (ocean data voids only) ────────────────────────────────────
+    # ── Morphological open-ocean mask ────────────────────────────────────────
+    # Erode then dilate the ocean mask to remove narrow water bodies (sounds,
+    # bays, rivers) that GEBCO correctly assigns depth to but where we do not
+    # want bathymetric contours (e.g. Bogue Sound, White Oak River).
+    MORPH_RADIUS = 6   # ~2.7 km at 450 m GEBCO resolution
+    open_ocean = _morphological_open_ocean(land, n_rows, n_cols, MORPH_RADIUS)
+    open_count = sum(open_ocean)
+    log.info("Open-ocean mask (r=%d): %d open-ocean cell(s), %d enclosed/land cell(s)",
+             MORPH_RADIUS, open_count, n_rows * n_cols - open_count)
+    # Pin land + enclosed water bodies to NaN so contourpy never draws there
+    for i in range(n_rows * n_cols):
+        if not open_ocean[i]:
+            flat[i] = math.nan
+    # ── Gap-fill (open-ocean data voids only) ───────────────────────────────
     for _ in range(6):
         new_flat = flat[:]
         changed  = False
         for row in range(n_rows):
             for col in range(n_cols):
                 i = row * n_cols + col
-                if land[i] or not math.isnan(flat[i]):
-                    continue            # skip land cells and already-filled cells
+                if not open_ocean[i] or not math.isnan(flat[i]):
+                    continue            # skip non-open-ocean and already-filled cells
                 neighbours = []
                 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     nr, nc = row + dr, col + dc
