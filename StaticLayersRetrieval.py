@@ -712,7 +712,15 @@ def _pt_in_bbox(lon: float, lat: float) -> bool:
     return (LON_MIN - PAD <= lon <= LON_MAX + PAD and
             LAT_MIN - PAD <= lat <= LAT_MAX + PAD)
 def _ring_intersects_bbox(ring: list) -> bool:
-    return any(_pt_in_bbox(pt[0], pt[1]) for pt in ring)
+    # Small / medium rings: any vertex inside the padded bbox
+    if any(_pt_in_bbox(pt[0], pt[1]) for pt in ring):
+        return True
+    # Large containing rings (e.g. Atlantic Ocean polygon): the entire
+    # bbox sits inside the ring but no vertices are near it.
+    # Check whether the bbox centre is enclosed by this ring.
+    centre_lon = (LON_MIN + LON_MAX) / 2
+    centre_lat = (LAT_MIN + LAT_MAX) / 2
+    return _point_in_ring(centre_lon, centre_lat, ring)
 def _clip_linestring(coords: list) -> list[list]:
     segments: list[list] = []
     current:  list       = []
