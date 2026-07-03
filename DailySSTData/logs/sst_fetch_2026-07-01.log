@@ -3,18 +3,14 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-03 13:05:22
+  UTC    : 2026-07-03 15:23:37
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20260702 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260702 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
-  (land filter: dropped 94 inland, kept 8892 ocean)
-  ✓ MUR 20260702
-  → DailySSTData/MUR/mur_20260702.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20260702 (cached)
   ✓ MUR 20260701 (cached)
   ✓ MUR 20260630 (cached)
   ✓ MUR 20260629 (cached)
@@ -35,13 +31,8 @@ SST PIPELINE
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-07-01 13:50Z → 2026-07-03 13:10Z
+  Window range   : 2026-07-01 15:50Z → 2026-07-03 15:10Z
   Half-width     : ±10 min per bucket
-  npp 20260701_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
@@ -51,108 +42,37 @@ SST PIPELINE
   npp 20260701_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1850 … ✗ download error: ReadTimeout
+  npp 20260701_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260701_1900 ✓ (cached)
-  npp 20260701_1910 … ✗ download error: ReadTimeout
-  npp 20260701_1950 … ✗ host blacklisted
-  npp 20260701_2000 … ✗ host blacklisted
-  npp 20260701_2010 … ✗ host blacklisted
-  npp 20260701_2050 … ✗ host blacklisted
-  npp 20260701_2100 … ✗ host blacklisted
-  npp 20260701_2110 … ✗ host blacklisted
-  npp 20260701_2150 … ✗ host blacklisted
-  npp 20260701_2200 … ✗ host blacklisted
-  npp 20260701_2210 … ✗ host blacklisted
-  npp 20260701_2250 … ✗ host blacklisted
-  npp 20260701_2300 … ✗ host blacklisted
-  npp 20260701_2310 … ✗ host blacklisted
-  npp 20260701_2350 … ✗ host blacklisted
-  npp 20260702_0000 … ✗ host blacklisted
-  npp 20260702_0010 … ✗ host blacklisted
-  npp 20260702_0050 … ✗ host blacklisted
-  npp 20260702_0100 … ✗ host blacklisted
-  npp 20260702_0110 … ✗ host blacklisted
-  npp 20260702_0150 … ✗ host blacklisted
-  npp 20260702_0200 … ✗ host blacklisted
-  npp 20260702_0210 … ✗ host blacklisted
-  npp 20260702_0250 … ✗ host blacklisted
-  npp 20260702_0300 … ✗ host blacklisted
-  npp 20260702_0310 … ✗ host blacklisted
-  npp 20260702_0350 … ✗ host blacklisted
-  npp 20260702_0400 … ✗ host blacklisted
-  npp 20260702_0410 … ✗ host blacklisted
-  npp 20260702_0450 … ✗ host blacklisted
-  npp 20260702_0500 … ✗ host blacklisted
-  npp 20260702_0510 … ✗ host blacklisted
-  npp 20260702_0550 … ✗ host blacklisted
-  npp 20260702_0600 … ✗ host blacklisted
-  npp 20260702_0610 … ✗ host blacklisted
-  npp 20260702_0650 … ✗ host blacklisted
-  npp 20260702_0700 … ✗ host blacklisted
-  npp 20260702_0710 … ✗ host blacklisted
-  npp 20260702_0750 … ✗ host blacklisted
-  npp 20260702_0800 … ✗ host blacklisted
-  npp 20260702_0810 … ✗ host blacklisted
-  npp 20260702_0850 … ✗ host blacklisted
-  npp 20260702_0900 … ✗ host blacklisted
-  npp 20260702_0910 … ✗ host blacklisted
-  npp 20260702_0950 … ✗ host blacklisted
-  npp 20260702_1000 … ✗ host blacklisted
-  npp 20260702_1010 … ✗ host blacklisted
-  npp 20260702_1050 … ✗ host blacklisted
-  npp 20260702_1100 … ✗ host blacklisted
-  npp 20260702_1110 … ✗ host blacklisted
-  npp 20260702_1150 … ✗ host blacklisted
-  npp 20260702_1200 … ✗ host blacklisted
-  npp 20260702_1210 … ✗ host blacklisted
-  npp 20260702_1250 … ✗ host blacklisted
-  npp 20260702_1300 … ✗ host blacklisted
-  npp 20260702_1310 … ✗ host blacklisted
-  npp 20260702_1350 … ✗ host blacklisted
-  npp 20260702_1400 … ✗ host blacklisted
-  npp 20260702_1410 … ✗ host blacklisted
-  npp 20260702_1450 … ✗ host blacklisted
-  npp 20260702_1500 … ✗ host blacklisted
-  npp 20260702_1510 … ✗ host blacklisted
-  npp 20260702_1550 … ✗ host blacklisted
-  npp 20260702_1600 … ✗ host blacklisted
-  npp 20260702_1610 … ✗ host blacklisted
-  npp 20260702_1650 … ✗ host blacklisted
-  npp 20260702_1700 ✓ (cached)
-  npp 20260702_1710 … ✗ host blacklisted
-  npp 20260702_1750 … ✗ host blacklisted
-  npp 20260702_1800 … ✗ host blacklisted
-  npp 20260702_1810 … ✗ host blacklisted
-  npp 20260702_1850 … ✗ host blacklisted
-  npp 20260702_1900 … ✗ host blacklisted
-  npp 20260702_1910 … ✗ host blacklisted
-  npp 20260702_1950 … ✗ host blacklisted
-  npp 20260702_2000 … ✗ host blacklisted
-  npp 20260702_2010 … ✗ host blacklisted
-  npp 20260702_2050 … ✗ host blacklisted
-  npp 20260702_2100 … ✗ host blacklisted
-  npp 20260702_2110 … ✗ host blacklisted
-  npp 20260702_2150 … ✗ host blacklisted
-  npp 20260702_2200 … ✗ host blacklisted
-  npp 20260702_2210 … ✗ host blacklisted
-  npp 20260702_2250 … ✗ host blacklisted
-  npp 20260702_2300 … ✗ host blacklisted
-  npp 20260702_2310 … ✗ host blacklisted
-  npp 20260702_2350 … ✗ host blacklisted
-  npp 20260703_0000 … ✗ host blacklisted
-  npp 20260703_0010 … ✗ host blacklisted
-  npp 20260703_0050 … ✗ host blacklisted
-  npp 20260703_0100 … ✗ host blacklisted
-  npp 20260703_0110 … ✗ host blacklisted
-  npp 20260703_0150 … ✗ host blacklisted
-  npp 20260703_0200 … ✗ host blacklisted
-  npp 20260703_0210 … ✗ host blacklisted
-  npp 20260703_0250 … ✗ host blacklisted
-  npp 20260703_0300 … ✗ host blacklisted
-  npp 20260703_0310 … ✗ host blacklisted
-  npp 20260703_0350 … ✗ host blacklisted
-  npp 20260703_0400 … ✗ host blacklisted
-  npp 20260703_0410 … ✗ host blacklisted
+  npp 20260701_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2110 … ✗ download error: ReadTimeout
+  npp 20260701_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260701_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  ⚠ dir listing failed npp 2026/183: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  npp 20260703_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260703_0410 … ✗ download error: ReadTimeout
   npp 20260703_0450 … ✗ host blacklisted
   npp 20260703_0500 … ✗ host blacklisted
   npp 20260703_0510 … ✗ host blacklisted
@@ -174,12 +94,12 @@ SST PIPELINE
   npp 20260703_1050 … ✗ host blacklisted
   npp 20260703_1100 … ✗ host blacklisted
   npp 20260703_1110 … ✗ host blacklisted
-  n20 20260701_1350 … ✗ host blacklisted
-  n20 20260701_1400 … ✗ host blacklisted
-  n20 20260701_1410 … ✗ host blacklisted
-  n20 20260701_1450 … ✗ host blacklisted
-  n20 20260701_1500 … ✗ host blacklisted
-  n20 20260701_1510 … ✗ host blacklisted
+  npp 20260703_1150 … ✗ host blacklisted
+  npp 20260703_1200 … ✗ host blacklisted
+  npp 20260703_1210 … ✗ host blacklisted
+  npp 20260703_1250 … ✗ host blacklisted
+  npp 20260703_1300 … ✗ host blacklisted
+  npp 20260703_1310 … ✗ host blacklisted
   n20 20260701_1550 … ✗ host blacklisted
   n20 20260701_1600 … ✗ host blacklisted
   n20 20260701_1610 … ✗ host blacklisted
@@ -314,12 +234,13 @@ SST PIPELINE
   n20 20260703_1110 … ✗ host blacklisted
   n20 20260703_1150 … ✗ host blacklisted
   n20 20260703_1200 … ✗ host blacklisted
-  n21 20260701_1350 … ✗ host blacklisted
-  n21 20260701_1400 … ✗ host blacklisted
-  n21 20260701_1410 … ✗ host blacklisted
-  n21 20260701_1450 … ✗ host blacklisted
-  n21 20260701_1500 … ✗ host blacklisted
-  n21 20260701_1510 … ✗ host blacklisted
+  n20 20260703_1210 … ✗ host blacklisted
+  n20 20260703_1250 … ✗ host blacklisted
+  n20 20260703_1300 … ✗ host blacklisted
+  n20 20260703_1310 … ✗ host blacklisted
+  n20 20260703_1350 … ✗ host blacklisted
+  n20 20260703_1400 … ✗ host blacklisted
+  n20 20260703_1410 … ✗ host blacklisted
   n21 20260701_1550 … ✗ host blacklisted
   n21 20260701_1600 … ✗ host blacklisted
   n21 20260701_1610 … ✗ host blacklisted
@@ -454,8 +375,15 @@ SST PIPELINE
   n21 20260703_1110 … ✗ host blacklisted
   n21 20260703_1150 … ✗ host blacklisted
   n21 20260703_1200 … ✗ host blacklisted
+  n21 20260703_1210 … ✗ host blacklisted
+  n21 20260703_1250 … ✗ host blacklisted
+  n21 20260703_1300 … ✗ host blacklisted
+  n21 20260703_1310 … ✗ host blacklisted
+  n21 20260703_1350 … ✗ host blacklisted
+  n21 20260703_1400 … ✗ host blacklisted
+  n21 20260703_1410 … ✗ host blacklisted
 
-  VIIRS summary: 0 written, 5 cached, 412 miss/cloud, 663 outside windows.
+  VIIRS summary: 0 written, 4 cached, 344 miss/cloud, 630 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -465,7 +393,7 @@ RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-03 13:10:49
+  UTC    : 2026-07-03 15:35:52
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -491,429 +419,7 @@ SST PIPELINE
   ✓ GOES composite 20260701 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
-  ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
-  Hourly windows : 48
-  Window range   : 2026-07-01 13:50Z → 2026-07-03 13:10Z
-  Half-width     : ±10 min per bucket
-  npp 20260701_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1800 … ✗ download error: ReadTimeout
-  npp 20260701_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1900 ✓ (cached)
-  npp 20260701_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260701_1950 … ✗ download error: ReadTimeout
-  npp 20260701_2000 … ✗ host blacklisted
-  npp 20260701_2010 … ✗ host blacklisted
-  npp 20260701_2050 … ✗ host blacklisted
-  npp 20260701_2100 … ✗ host blacklisted
-  npp 20260701_2110 … ✗ host blacklisted
-  npp 20260701_2150 … ✗ host blacklisted
-  npp 20260701_2200 … ✗ host blacklisted
-  npp 20260701_2210 … ✗ host blacklisted
-  npp 20260701_2250 … ✗ host blacklisted
-  npp 20260701_2300 … ✗ host blacklisted
-  npp 20260701_2310 … ✗ host blacklisted
-  npp 20260701_2350 … ✗ host blacklisted
-  npp 20260702_0000 … ✗ host blacklisted
-  npp 20260702_0010 … ✗ host blacklisted
-  npp 20260702_0050 … ✗ host blacklisted
-  npp 20260702_0100 … ✗ host blacklisted
-  npp 20260702_0110 … ✗ host blacklisted
-  npp 20260702_0150 … ✗ host blacklisted
-  npp 20260702_0200 … ✗ host blacklisted
-  npp 20260702_0210 … ✗ host blacklisted
-  npp 20260702_0250 … ✗ host blacklisted
-  npp 20260702_0300 … ✗ host blacklisted
-  npp 20260702_0310 … ✗ host blacklisted
-  npp 20260702_0350 … ✗ host blacklisted
-  npp 20260702_0400 … ✗ host blacklisted
-  npp 20260702_0410 … ✗ host blacklisted
-  npp 20260702_0450 … ✗ host blacklisted
-  npp 20260702_0500 … ✗ host blacklisted
-  npp 20260702_0510 … ✗ host blacklisted
-  npp 20260702_0550 … ✗ host blacklisted
-  npp 20260702_0600 … ✗ host blacklisted
-  npp 20260702_0610 … ✗ host blacklisted
-  npp 20260702_0650 … ✗ host blacklisted
-  npp 20260702_0700 … ✗ host blacklisted
-  npp 20260702_0710 … ✗ host blacklisted
-  npp 20260702_0750 … ✗ host blacklisted
-  npp 20260702_0800 … ✗ host blacklisted
-  npp 20260702_0810 … ✗ host blacklisted
-  npp 20260702_0850 … ✗ host blacklisted
-  npp 20260702_0900 … ✗ host blacklisted
-  npp 20260702_0910 … ✗ host blacklisted
-  npp 20260702_0950 … ✗ host blacklisted
-  npp 20260702_1000 … ✗ host blacklisted
-  npp 20260702_1010 … ✗ host blacklisted
-  npp 20260702_1050 … ✗ host blacklisted
-  npp 20260702_1100 … ✗ host blacklisted
-  npp 20260702_1110 … ✗ host blacklisted
-  npp 20260702_1150 … ✗ host blacklisted
-  npp 20260702_1200 … ✗ host blacklisted
-  npp 20260702_1210 … ✗ host blacklisted
-  npp 20260702_1250 … ✗ host blacklisted
-  npp 20260702_1300 … ✗ host blacklisted
-  npp 20260702_1310 … ✗ host blacklisted
-  npp 20260702_1350 … ✗ host blacklisted
-  npp 20260702_1400 … ✗ host blacklisted
-  npp 20260702_1410 … ✗ host blacklisted
-  npp 20260702_1450 … ✗ host blacklisted
-  npp 20260702_1500 … ✗ host blacklisted
-  npp 20260702_1510 … ✗ host blacklisted
-  npp 20260702_1550 … ✗ host blacklisted
-  npp 20260702_1600 … ✗ host blacklisted
-  npp 20260702_1610 … ✗ host blacklisted
-  npp 20260702_1650 … ✗ host blacklisted
-  npp 20260702_1700 ✓ (cached)
-  npp 20260702_1710 … ✗ host blacklisted
-  npp 20260702_1750 … ✗ host blacklisted
-  npp 20260702_1800 … ✗ host blacklisted
-  npp 20260702_1810 … ✗ host blacklisted
-  npp 20260702_1850 … ✗ host blacklisted
-  npp 20260702_1900 … ✗ host blacklisted
-  npp 20260702_1910 … ✗ host blacklisted
-  npp 20260702_1950 … ✗ host blacklisted
-  npp 20260702_2000 … ✗ host blacklisted
-  npp 20260702_2010 … ✗ host blacklisted
-  npp 20260702_2050 … ✗ host blacklisted
-  npp 20260702_2100 … ✗ host blacklisted
-  npp 20260702_2110 … ✗ host blacklisted
-  npp 20260702_2150 … ✗ host blacklisted
-  npp 20260702_2200 … ✗ host blacklisted
-  npp 20260702_2210 … ✗ host blacklisted
-  npp 20260702_2250 … ✗ host blacklisted
-  npp 20260702_2300 … ✗ host blacklisted
-  npp 20260702_2310 … ✗ host blacklisted
-  npp 20260702_2350 … ✗ host blacklisted
-  npp 20260703_0000 … ✗ host blacklisted
-  npp 20260703_0010 … ✗ host blacklisted
-  npp 20260703_0050 … ✗ host blacklisted
-  npp 20260703_0100 … ✗ host blacklisted
-  npp 20260703_0110 … ✗ host blacklisted
-  npp 20260703_0150 … ✗ host blacklisted
-  npp 20260703_0200 … ✗ host blacklisted
-  npp 20260703_0210 … ✗ host blacklisted
-  npp 20260703_0250 … ✗ host blacklisted
-  npp 20260703_0300 … ✗ host blacklisted
-  npp 20260703_0310 … ✗ host blacklisted
-  npp 20260703_0350 … ✗ host blacklisted
-  npp 20260703_0400 … ✗ host blacklisted
-  npp 20260703_0410 … ✗ host blacklisted
-  npp 20260703_0450 … ✗ host blacklisted
-  npp 20260703_0500 … ✗ host blacklisted
-  npp 20260703_0510 … ✗ host blacklisted
-  npp 20260703_0550 … ✗ host blacklisted
-  npp 20260703_0600 … ✗ host blacklisted
-  npp 20260703_0610 … ✗ host blacklisted
-  npp 20260703_0650 … ✗ host blacklisted
-  npp 20260703_0700 … ✗ host blacklisted
-  npp 20260703_0710 … ✗ host blacklisted
-  npp 20260703_0750 … ✗ host blacklisted
-  npp 20260703_0800 … ✗ host blacklisted
-  npp 20260703_0810 … ✗ host blacklisted
-  npp 20260703_0850 … ✗ host blacklisted
-  npp 20260703_0900 … ✗ host blacklisted
-  npp 20260703_0910 … ✗ host blacklisted
-  npp 20260703_0950 … ✗ host blacklisted
-  npp 20260703_1000 … ✗ host blacklisted
-  npp 20260703_1010 … ✗ host blacklisted
-  npp 20260703_1050 … ✗ host blacklisted
-  npp 20260703_1100 … ✗ host blacklisted
-  npp 20260703_1110 … ✗ host blacklisted
-  n20 20260701_1350 … ✗ host blacklisted
-  n20 20260701_1400 … ✗ host blacklisted
-  n20 20260701_1410 … ✗ host blacklisted
-  n20 20260701_1450 … ✗ host blacklisted
-  n20 20260701_1500 … ✗ host blacklisted
-  n20 20260701_1510 … ✗ host blacklisted
-  n20 20260701_1550 … ✗ host blacklisted
-  n20 20260701_1600 … ✗ host blacklisted
-  n20 20260701_1610 … ✗ host blacklisted
-  n20 20260701_1650 … ✗ host blacklisted
-  n20 20260701_1700 … ✗ host blacklisted
-  n20 20260701_1710 … ✗ host blacklisted
-  n20 20260701_1750 … ✗ host blacklisted
-  n20 20260701_1800 … ✗ host blacklisted
-  n20 20260701_1810 … ✗ host blacklisted
-  n20 20260701_1850 … ✗ host blacklisted
-  n20 20260701_1900 … ✗ host blacklisted
-  n20 20260701_1910 … ✗ host blacklisted
-  n20 20260701_1950 … ✗ host blacklisted
-  n20 20260701_2000 … ✗ host blacklisted
-  n20 20260701_2010 … ✗ host blacklisted
-  n20 20260701_2050 … ✗ host blacklisted
-  n20 20260701_2100 … ✗ host blacklisted
-  n20 20260701_2110 … ✗ host blacklisted
-  n20 20260701_2150 … ✗ host blacklisted
-  n20 20260701_2200 … ✗ host blacklisted
-  n20 20260701_2210 … ✗ host blacklisted
-  n20 20260701_2250 … ✗ host blacklisted
-  n20 20260701_2300 … ✗ host blacklisted
-  n20 20260701_2310 … ✗ host blacklisted
-  n20 20260701_2350 … ✗ host blacklisted
-  n20 20260702_0000 … ✗ host blacklisted
-  n20 20260702_0010 … ✗ host blacklisted
-  n20 20260702_0050 … ✗ host blacklisted
-  n20 20260702_0100 … ✗ host blacklisted
-  n20 20260702_0110 … ✗ host blacklisted
-  n20 20260702_0150 … ✗ host blacklisted
-  n20 20260702_0200 … ✗ host blacklisted
-  n20 20260702_0210 … ✗ host blacklisted
-  n20 20260702_0250 … ✗ host blacklisted
-  n20 20260702_0300 … ✗ host blacklisted
-  n20 20260702_0310 … ✗ host blacklisted
-  n20 20260702_0350 … ✗ host blacklisted
-  n20 20260702_0400 … ✗ host blacklisted
-  n20 20260702_0410 … ✗ host blacklisted
-  n20 20260702_0450 … ✗ host blacklisted
-  n20 20260702_0500 … ✗ host blacklisted
-  n20 20260702_0510 … ✗ host blacklisted
-  n20 20260702_0550 … ✗ host blacklisted
-  n20 20260702_0600 ✓ (cached)
-  n20 20260702_0610 … ✗ host blacklisted
-  n20 20260702_0650 … ✗ host blacklisted
-  n20 20260702_0700 … ✗ host blacklisted
-  n20 20260702_0710 … ✗ host blacklisted
-  n20 20260702_0750 … ✗ host blacklisted
-  n20 20260702_0800 … ✗ host blacklisted
-  n20 20260702_0810 … ✗ host blacklisted
-  n20 20260702_0850 … ✗ host blacklisted
-  n20 20260702_0900 … ✗ host blacklisted
-  n20 20260702_0910 … ✗ host blacklisted
-  n20 20260702_0950 … ✗ host blacklisted
-  n20 20260702_1000 … ✗ host blacklisted
-  n20 20260702_1010 … ✗ host blacklisted
-  n20 20260702_1050 … ✗ host blacklisted
-  n20 20260702_1100 … ✗ host blacklisted
-  n20 20260702_1110 … ✗ host blacklisted
-  n20 20260702_1150 … ✗ host blacklisted
-  n20 20260702_1200 … ✗ host blacklisted
-  n20 20260702_1210 … ✗ host blacklisted
-  n20 20260702_1250 … ✗ host blacklisted
-  n20 20260702_1300 … ✗ host blacklisted
-  n20 20260702_1310 … ✗ host blacklisted
-  n20 20260702_1350 … ✗ host blacklisted
-  n20 20260702_1400 … ✗ host blacklisted
-  n20 20260702_1410 … ✗ host blacklisted
-  n20 20260702_1450 … ✗ host blacklisted
-  n20 20260702_1500 … ✗ host blacklisted
-  n20 20260702_1510 … ✗ host blacklisted
-  n20 20260702_1550 … ✗ host blacklisted
-  n20 20260702_1600 … ✗ host blacklisted
-  n20 20260702_1610 … ✗ host blacklisted
-  n20 20260702_1650 … ✗ host blacklisted
-  n20 20260702_1700 … ✗ host blacklisted
-  n20 20260702_1710 … ✗ host blacklisted
-  n20 20260702_1750 … ✗ host blacklisted
-  n20 20260702_1800 … ✗ host blacklisted
-  n20 20260702_1810 … ✗ host blacklisted
-  n20 20260702_1850 … ✗ host blacklisted
-  n20 20260702_1900 … ✗ host blacklisted
-  n20 20260702_1910 … ✗ host blacklisted
-  n20 20260702_1950 … ✗ host blacklisted
-  n20 20260702_2000 … ✗ host blacklisted
-  n20 20260702_2010 … ✗ host blacklisted
-  n20 20260702_2050 … ✗ host blacklisted
-  n20 20260702_2100 … ✗ host blacklisted
-  n20 20260702_2110 … ✗ host blacklisted
-  n20 20260702_2150 … ✗ host blacklisted
-  n20 20260702_2200 … ✗ host blacklisted
-  n20 20260702_2210 … ✗ host blacklisted
-  n20 20260702_2250 … ✗ host blacklisted
-  n20 20260702_2300 … ✗ host blacklisted
-  n20 20260702_2310 … ✗ host blacklisted
-  n20 20260702_2350 … ✗ host blacklisted
-  n20 20260703_0000 … ✗ host blacklisted
-  n20 20260703_0010 … ✗ host blacklisted
-  n20 20260703_0050 … ✗ host blacklisted
-  n20 20260703_0100 … ✗ host blacklisted
-  n20 20260703_0110 … ✗ host blacklisted
-  n20 20260703_0150 … ✗ host blacklisted
-  n20 20260703_0200 … ✗ host blacklisted
-  n20 20260703_0210 … ✗ host blacklisted
-  n20 20260703_0250 … ✗ host blacklisted
-  n20 20260703_0300 … ✗ host blacklisted
-  n20 20260703_0310 … ✗ host blacklisted
-  n20 20260703_0350 … ✗ host blacklisted
-  n20 20260703_0400 … ✗ host blacklisted
-  n20 20260703_0410 … ✗ host blacklisted
-  n20 20260703_0450 … ✗ host blacklisted
-  n20 20260703_0500 … ✗ host blacklisted
-  n20 20260703_0510 … ✗ host blacklisted
-  n20 20260703_0550 … ✗ host blacklisted
-  n20 20260703_0600 … ✗ host blacklisted
-  n20 20260703_0610 … ✗ host blacklisted
-  n20 20260703_0650 … ✗ host blacklisted
-  n20 20260703_0700 … ✗ host blacklisted
-  n20 20260703_0710 … ✗ host blacklisted
-  n20 20260703_0750 … ✗ host blacklisted
-  n20 20260703_0800 … ✗ host blacklisted
-  n20 20260703_0810 … ✗ host blacklisted
-  n20 20260703_0850 … ✗ host blacklisted
-  n20 20260703_0900 … ✗ host blacklisted
-  n20 20260703_0910 … ✗ host blacklisted
-  n20 20260703_0950 … ✗ host blacklisted
-  n20 20260703_1000 … ✗ host blacklisted
-  n20 20260703_1010 … ✗ host blacklisted
-  n20 20260703_1050 … ✗ host blacklisted
-  n20 20260703_1100 … ✗ host blacklisted
-  n20 20260703_1110 … ✗ host blacklisted
-  n20 20260703_1150 … ✗ host blacklisted
-  n20 20260703_1200 … ✗ host blacklisted
-  n21 20260701_1350 … ✗ host blacklisted
-  n21 20260701_1400 … ✗ host blacklisted
-  n21 20260701_1410 … ✗ host blacklisted
-  n21 20260701_1450 … ✗ host blacklisted
-  n21 20260701_1500 … ✗ host blacklisted
-  n21 20260701_1510 … ✗ host blacklisted
-  n21 20260701_1550 … ✗ host blacklisted
-  n21 20260701_1600 … ✗ host blacklisted
-  n21 20260701_1610 … ✗ host blacklisted
-  n21 20260701_1650 … ✗ host blacklisted
-  n21 20260701_1700 … ✗ host blacklisted
-  n21 20260701_1710 … ✗ host blacklisted
-  n21 20260701_1750 … ✗ host blacklisted
-  n21 20260701_1800 … ✗ host blacklisted
-  n21 20260701_1810 … ✗ host blacklisted
-  n21 20260701_1850 … ✗ host blacklisted
-  n21 20260701_1900 … ✗ host blacklisted
-  n21 20260701_1910 … ✗ host blacklisted
-  n21 20260701_1950 … ✗ host blacklisted
-  n21 20260701_2000 … ✗ host blacklisted
-  n21 20260701_2010 … ✗ host blacklisted
-  n21 20260701_2050 … ✗ host blacklisted
-  n21 20260701_2100 … ✗ host blacklisted
-  n21 20260701_2110 … ✗ host blacklisted
-  n21 20260701_2150 … ✗ host blacklisted
-  n21 20260701_2200 … ✗ host blacklisted
-  n21 20260701_2210 … ✗ host blacklisted
-  n21 20260701_2250 … ✗ host blacklisted
-  n21 20260701_2300 … ✗ host blacklisted
-  n21 20260701_2310 … ✗ host blacklisted
-  n21 20260701_2350 … ✗ host blacklisted
-  n21 20260702_0000 … ✗ host blacklisted
-  n21 20260702_0010 … ✗ host blacklisted
-  n21 20260702_0050 … ✗ host blacklisted
-  n21 20260702_0100 … ✗ host blacklisted
-  n21 20260702_0110 … ✗ host blacklisted
-  n21 20260702_0150 … ✗ host blacklisted
-  n21 20260702_0200 … ✗ host blacklisted
-  n21 20260702_0210 … ✗ host blacklisted
-  n21 20260702_0250 … ✗ host blacklisted
-  n21 20260702_0300 … ✗ host blacklisted
-  n21 20260702_0310 … ✗ host blacklisted
-  n21 20260702_0350 … ✗ host blacklisted
-  n21 20260702_0400 … ✗ host blacklisted
-  n21 20260702_0410 … ✗ host blacklisted
-  n21 20260702_0450 … ✗ host blacklisted
-  n21 20260702_0500 … ✗ host blacklisted
-  n21 20260702_0510 … ✗ host blacklisted
-  n21 20260702_0550 … ✗ host blacklisted
-  n21 20260702_0600 … ✗ host blacklisted
-  n21 20260702_0610 … ✗ host blacklisted
-  n21 20260702_0650 ✓ (cached)
-  n21 20260702_0700 … ✗ host blacklisted
-  n21 20260702_0710 … ✗ host blacklisted
-  n21 20260702_0750 … ✗ host blacklisted
-  n21 20260702_0800 … ✗ host blacklisted
-  n21 20260702_0810 … ✗ host blacklisted
-  n21 20260702_0850 … ✗ host blacklisted
-  n21 20260702_0900 … ✗ host blacklisted
-  n21 20260702_0910 … ✗ host blacklisted
-  n21 20260702_0950 … ✗ host blacklisted
-  n21 20260702_1000 … ✗ host blacklisted
-  n21 20260702_1010 … ✗ host blacklisted
-  n21 20260702_1050 … ✗ host blacklisted
-  n21 20260702_1100 … ✗ host blacklisted
-  n21 20260702_1110 … ✗ host blacklisted
-  n21 20260702_1150 … ✗ host blacklisted
-  n21 20260702_1200 … ✗ host blacklisted
-  n21 20260702_1210 … ✗ host blacklisted
-  n21 20260702_1250 … ✗ host blacklisted
-  n21 20260702_1300 … ✗ host blacklisted
-  n21 20260702_1310 … ✗ host blacklisted
-  n21 20260702_1350 … ✗ host blacklisted
-  n21 20260702_1400 … ✗ host blacklisted
-  n21 20260702_1410 … ✗ host blacklisted
-  n21 20260702_1450 … ✗ host blacklisted
-  n21 20260702_1500 … ✗ host blacklisted
-  n21 20260702_1510 … ✗ host blacklisted
-  n21 20260702_1550 … ✗ host blacklisted
-  n21 20260702_1600 … ✗ host blacklisted
-  n21 20260702_1610 … ✗ host blacklisted
-  n21 20260702_1650 … ✗ host blacklisted
-  n21 20260702_1700 … ✗ host blacklisted
-  n21 20260702_1710 … ✗ host blacklisted
-  n21 20260702_1750 … ✗ host blacklisted
-  n21 20260702_1800 … ✗ host blacklisted
-  n21 20260702_1810 … ✗ host blacklisted
-  n21 20260702_1850 … ✗ host blacklisted
-  n21 20260702_1900 … ✗ host blacklisted
-  n21 20260702_1910 … ✗ host blacklisted
-  n21 20260702_1950 … ✗ host blacklisted
-  n21 20260702_2000 … ✗ host blacklisted
-  n21 20260702_2010 … ✗ host blacklisted
-  n21 20260702_2050 … ✗ host blacklisted
-  n21 20260702_2100 … ✗ host blacklisted
-  n21 20260702_2110 … ✗ host blacklisted
-  n21 20260702_2150 … ✗ host blacklisted
-  n21 20260702_2200 … ✗ host blacklisted
-  n21 20260702_2210 … ✗ host blacklisted
-  n21 20260702_2250 … ✗ host blacklisted
-  n21 20260702_2300 … ✗ host blacklisted
-  n21 20260702_2310 … ✗ host blacklisted
-  n21 20260702_2350 … ✗ host blacklisted
-  n21 20260703_0000 … ✗ host blacklisted
-  n21 20260703_0010 … ✗ host blacklisted
-  n21 20260703_0050 … ✗ host blacklisted
-  n21 20260703_0100 … ✗ host blacklisted
-  n21 20260703_0110 … ✗ host blacklisted
-  n21 20260703_0150 … ✗ host blacklisted
-  n21 20260703_0200 … ✗ host blacklisted
-  n21 20260703_0210 … ✗ host blacklisted
-  n21 20260703_0250 … ✗ host blacklisted
-  n21 20260703_0300 … ✗ host blacklisted
-  n21 20260703_0310 … ✗ host blacklisted
-  n21 20260703_0350 … ✗ host blacklisted
-  n21 20260703_0400 … ✗ host blacklisted
-  n21 20260703_0410 … ✗ host blacklisted
-  n21 20260703_0450 … ✗ host blacklisted
-  n21 20260703_0500 … ✗ host blacklisted
-  n21 20260703_0510 … ✗ host blacklisted
-  n21 20260703_0550 … ✗ host blacklisted
-  n21 20260703_0600 … ✗ host blacklisted
-  n21 20260703_0610 … ✗ host blacklisted
-  n21 20260703_0650 … ✗ host blacklisted
-  n21 20260703_0700 … ✗ host blacklisted
-  n21 20260703_0710 … ✗ host blacklisted
-  n21 20260703_0750 … ✗ host blacklisted
-  n21 20260703_0800 … ✗ host blacklisted
-  n21 20260703_0810 … ✗ host blacklisted
-  n21 20260703_0850 … ✗ host blacklisted
-  n21 20260703_0900 … ✗ host blacklisted
-  n21 20260703_0910 … ✗ host blacklisted
-  n21 20260703_0950 … ✗ host blacklisted
-  n21 20260703_1000 … ✗ host blacklisted
-  n21 20260703_1010 … ✗ host blacklisted
-  n21 20260703_1050 … ✗ host blacklisted
-  n21 20260703_1100 … ✗ host blacklisted
-  n21 20260703_1110 … ✗ host blacklisted
-  n21 20260703_1150 … ✗ host blacklisted
-  n21 20260703_1200 … ✗ host blacklisted
-
-  VIIRS summary: 0 written, 4 cached, 413 miss/cloud, 663 outside windows.
+  ✗ Neither VIIRS NRT file server URL is reachable.
 
 =========================================================
 ✓ Pipeline complete
