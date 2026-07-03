@@ -604,6 +604,14 @@ def _extract_contour_lines(lats: list, lons: list,
     for line in lines:
         if len(line) < MIN_POINTS:
             continue
+        # Reject spike artifacts from isolated GEBCO grid anomalies
+        # (single column/row of bad depth values -> long zero-width contour).
+        # contourpy: x=lons, y=lats so p[0]=lon, p[1]=lat.
+        xs = [p[0] for p in line]; ys = [p[1] for p in line]
+        lon_span = max(xs) - min(xs); lat_span = max(ys) - min(ys)
+        min_span = min(lon_span, lat_span); max_span = max(lon_span, lat_span)
+        if min_span < 0.05 and max_span > 0.4:
+            continue
         coords = [[float(p[0]), float(p[1])] for p in line]
         coords = _chaikin_smooth(coords, iterations=2)
         output.append(coords)
