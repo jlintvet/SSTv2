@@ -610,7 +610,7 @@ def _extract_contour_lines(lats: list, lons: list,
         xs = [p[0] for p in line]; ys = [p[1] for p in line]
         lon_span = max(xs) - min(xs); lat_span = max(ys) - min(ys)
         min_span = min(lon_span, lat_span); max_span = max(lon_span, lat_span)
-        if min_span < 0.05 and max_span > 0.4:
+        if min_span < 0.033 and max_span > 0.1:
             continue
         coords = [[float(p[0]), float(p[1])] for p in line]
         coords = _chaikin_smooth(coords, iterations=2)
