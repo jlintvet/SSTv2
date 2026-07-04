@@ -574,6 +574,47 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
         flat = new_flat
         if not changed:
             break
+    # ── GEBCO_2020 column-anomaly correction (Cape Hatteras shelf) ───────────
+    # GEBCO_2020 contains an anomalous depth column near lon -75.19 to -75.21°W,
+    # lat 35.0–35.7°N (about 30-40 miles ESE of Oregon Inlet). Cells there show
+    # depths of 120–300+ ft in water that should be 30–60 ft deep.  This causes
+    # contourpy to trace the 120 ft, 180 ft, and 300 ft isobaths as a long
+    # north–south "hairpin" embedded within the main contour lines.
+    #
+    # Fix: cells in the anomaly zone that are >60 ft deeper than BOTH their
+    # east/west neighbors (local depth maximum in E-W direction — never real in
+    # smooth shelf bathymetry) are replaced with the E/W average. Three passes
+    # handle adjacent anomalous columns.
+    _ANOM_LAT_MIN  = 34.90
+    _ANOM_LAT_MAX  = 35.70
+    _ANOM_LON_MIN  = -75.30
+    _ANOM_LON_MAX  = -75.10
+    _ANOM_EXCESS   = 60.0   # ft — both E and W neighbors must be this much shallower
+    for _pass in range(3):
+        _fixed = 0
+        for _r in range(n_rows):
+            if not (_ANOM_LAT_MIN <= lats[_r] <= _ANOM_LAT_MAX):
+                continue
+            for _c in range(1, n_cols - 1):
+                if not (_ANOM_LON_MIN <= lons[_c] <= _ANOM_LON_MAX):
+                    continue
+                _i  = _r * n_cols + _c
+                _v  = flat[_i]
+                if math.isnan(_v):
+                    continue
+                _lv = flat[_r * n_cols + _c - 1]
+                _rv = flat[_r * n_cols + _c + 1]
+                if math.isnan(_lv) or math.isnan(_rv):
+                    continue
+                if _v - _lv > _ANOM_EXCESS and _v - _rv > _ANOM_EXCESS:
+                    flat[_i] = (_lv + _rv) / 2.0
+                    _fixed += 1
+        if _fixed:
+            log.info("GEBCO anomaly fix pass %d: corrected %d cell(s) "
+                     "(Cape Hatteras shelf zone)", _pass + 1, _fixed)
+        else:
+            break
+    # ── End anomaly correction ────────────────────────────────────────────────
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
 # ---------------------------------------------------------------------------
