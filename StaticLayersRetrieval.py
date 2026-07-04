@@ -656,6 +656,44 @@ def _chaikin_smooth(coords: list, iterations: int = 2) -> list:
 # ---------------------------------------------------------------------------
 # Contour generation
 # ---------------------------------------------------------------------------
+def _split_vertical_runs(coords: list,
+                          win: int = 25,
+                          max_lon_var: float = 0.012,
+                          min_lat_span: float = 0.04) -> list[list]:
+    """
+    Split a contour line at any nearly-vertical sub-section: a window of
+    consecutive points that spans > min_lat_span in latitude but < max_lon_var
+    in longitude.  Real shelf isobaths have natural horizontal variation; a run
+    this narrow in longitude is a grid-anomaly artifact (GEBCO column spike).
+
+    Returns a list of valid sub-segments (may be just [coords] if no spike found).
+    """
+    n = len(coords)
+    if n < win * 2:
+        return [coords]
+    spike = [False] * n
+    for start in range(n - win):
+        end = start + win
+        lons_w = [coords[i][0] for i in range(start, end)]
+        lats_w = [coords[i][1] for i in range(start, end)]
+        if (max(lons_w) - min(lons_w) < max_lon_var
+                and max(lats_w) - min(lats_w) > min_lat_span):
+            for i in range(start, end):
+                spike[i] = True
+    segments: list[list] = []
+    current: list = []
+    for i, c in enumerate(coords):
+        if spike[i]:
+            if len(current) >= 6:
+                segments.append(current)
+            current = []
+        else:
+            current.append(c)
+    if len(current) >= 6:
+        segments.append(current)
+    return segments if segments else [coords]
+
+
 def _extract_contour_lines(lats: list, lons: list,
                             grid: list, depth_ft: float) -> list[list]:
     from contourpy import contour_generator
@@ -676,7 +714,12 @@ def _extract_contour_lines(lats: list, lons: list,
             continue
         coords = [[float(p[0]), float(p[1])] for p in line]
         coords = _chaikin_smooth(coords, iterations=2)
-        output.append(coords)
+        # Sub-section spike filter: split out any near-vertical runs embedded
+        # within an otherwise-valid contour (residual GEBCO grid anomalies that
+        # survived the grid-level correction but still create N-S hairpins).
+        for seg in _split_vertical_runs(coords):
+            if len(seg) >= MIN_POINTS:
+                output.append(seg)
     return output
 
 def write_bathymetry_points(rows: list) -> None:
