@@ -575,45 +575,66 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
         if not changed:
             break
     # ── GEBCO_2020 column-anomaly correction (Cape Hatteras shelf) ───────────
-    # GEBCO_2020 contains an anomalous depth column near lon -75.19 to -75.21°W,
-    # lat 35.0–35.7°N (about 30-40 miles ESE of Oregon Inlet). Cells there show
-    # depths of 120–300+ ft in water that should be 30–60 ft deep.  This causes
-    # contourpy to trace the 120 ft, 180 ft, and 300 ft isobaths as a long
-    # north–south "hairpin" embedded within the main contour lines.
+    # GEBCO_2020 has an anomalous block of deep values at lon -75.19 to -75.21°W,
+    # lat 35.0–35.7°N (Cape Hatteras shelf, ~30-40 mi ESE of Oregon Inlet). The
+    # anomalous cells show 120–300+ ft depth where the real shelf is 30–60 ft.
+    # This causes the 120 ft / 180 ft / 300 ft isobaths to trace a long N-S
+    # "hairpin" (~0.5° lat) embedded within the main contour lines.
     #
-    # Fix: cells in the anomaly zone that are >60 ft deeper than BOTH their
-    # east/west neighbors (local depth maximum in E-W direction — never real in
-    # smooth shelf bathymetry) are replaced with the E/W average. Three passes
-    # handle adjacent anomalous columns.
-    _ANOM_LAT_MIN  = 34.90
-    _ANOM_LAT_MAX  = 35.70
-    _ANOM_LON_MIN  = -75.30
-    _ANOM_LON_MAX  = -75.10
-    _ANOM_EXCESS   = 60.0   # ft — both E and W neighbors must be this much shallower
-    for _pass in range(3):
+    # Previous approach (compare to immediate E/W neighbors) failed because the
+    # anomaly spans 2-4 adjacent GEBCO columns — interior anomalous cells have
+    # other anomalous cells as neighbors, so they never appear as local maxima.
+    #
+    # Fix: for each row in the correction zone, linearly interpolate the
+    # "expected" depth from the zone's western boundary column to the eastern
+    # boundary column (both outside the anomaly, so both hold correct values).
+    # Any cell exceeding that interpolated expectation by >60 ft is replaced
+    # with the interpolated value. This is immune to multi-column anomalies.
+    _ANOM_LAT_MIN = 34.90
+    _ANOM_LAT_MAX = 35.70
+    _ANOM_LON_MIN = -75.30
+    _ANOM_LON_MAX = -75.10
+    _ANOM_EXCESS  = 60.0   # ft — cell must exceed linear interpolation by this much
+    # Find the boundary columns just outside the correction zone
+    _left_col  = None  # rightmost column with lon < _ANOM_LON_MIN
+    _right_col = None  # leftmost  column with lon > _ANOM_LON_MAX
+    _zone_cols = []    # column indices inside the zone (inclusive)
+    for _ci, _clon in enumerate(lons):
+        if _clon < _ANOM_LON_MIN:
+            _left_col = _ci
+        elif _clon > _ANOM_LON_MAX:
+            if _right_col is None:
+                _right_col = _ci
+        else:
+            _zone_cols.append(_ci)
+    if _left_col is not None and _right_col is not None and _zone_cols:
+        _left_lon  = lons[_left_col]
+        _right_lon = lons[_right_col]
+        _lon_span  = _right_lon - _left_lon
         _fixed = 0
         for _r in range(n_rows):
             if not (_ANOM_LAT_MIN <= lats[_r] <= _ANOM_LAT_MAX):
                 continue
-            for _c in range(1, n_cols - 1):
-                if not (_ANOM_LON_MIN <= lons[_c] <= _ANOM_LON_MAX):
-                    continue
-                _i  = _r * n_cols + _c
-                _v  = flat[_i]
+            _lv = flat[_r * n_cols + _left_col]
+            _rv = flat[_r * n_cols + _right_col]
+            if math.isnan(_lv) or math.isnan(_rv):
+                continue
+            for _c in _zone_cols:
+                _i = _r * n_cols + _c
+                _v = flat[_i]
                 if math.isnan(_v):
                     continue
-                _lv = flat[_r * n_cols + _c - 1]
-                _rv = flat[_r * n_cols + _c + 1]
-                if math.isnan(_lv) or math.isnan(_rv):
-                    continue
-                if _v - _lv > _ANOM_EXCESS and _v - _rv > _ANOM_EXCESS:
-                    flat[_i] = (_lv + _rv) / 2.0
+                # Linear interpolation between boundary depths
+                _alpha    = (lons[_c] - _left_lon) / _lon_span
+                _expected = _lv + _alpha * (_rv - _lv)
+                if _v - _expected > _ANOM_EXCESS:
+                    flat[_i] = _expected
                     _fixed += 1
         if _fixed:
-            log.info("GEBCO anomaly fix pass %d: corrected %d cell(s) "
-                     "(Cape Hatteras shelf zone)", _pass + 1, _fixed)
-        else:
-            break
+            log.info("GEBCO anomaly fix (interpolation): corrected %d cell(s) "
+                     "(Cape Hatteras shelf zone, lat %.2f–%.2f lon %.2f–%.2f)",
+                     _fixed, _ANOM_LAT_MIN, _ANOM_LAT_MAX,
+                     _ANOM_LON_MIN, _ANOM_LON_MAX)
     # ── End anomaly correction ────────────────────────────────────────────────
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
