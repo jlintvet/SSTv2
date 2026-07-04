@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-04 12:14:25
+  UTC    : 2026-07-04 13:55:09
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -11,9 +11,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20260703 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260703 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20260703 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260703 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectTimeout: HTTPSConnectionPool(host='upwell.pfeg.noaa.gov', port=443): Max retries exceeded with url: /erddap/gridd
+  MUR 20260703 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20260703
+  → DailySSTData/MUR/mur_20260703.csv  (8892 pts, 107 lats × 133 lons)
   ✓ MUR 20260702 (cached)
   ✓ MUR 20260701 (cached)
   ✓ MUR 20260630 (cached)
@@ -23,58 +24,160 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260704 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260704 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260704 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
-  GOES 20260704 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260704 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260704 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260703 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260703 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260703 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
-  GOES 20260703 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260703 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260703 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260702 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-07-02 12:50Z → 2026-07-04 12:10Z
+  Window range   : 2026-07-02 13:50Z → 2026-07-04 13:10Z
   Half-width     : ±10 min per bucket
-  npp 20260702_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260702_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260702_1400 … ✗ download error: ReadTimeout
   npp 20260702_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260702_1450 … ✗ download error: ReadTimeout
+  npp 20260702_1500 … ✗ host blacklisted
+  npp 20260702_1510 … ✗ host blacklisted
+  npp 20260702_1550 … ✗ host blacklisted
+  npp 20260702_1600 … ✗ host blacklisted
+  npp 20260702_1610 … ✗ host blacklisted
+  npp 20260702_1650 … ✗ host blacklisted
   npp 20260702_1700 ✓ (cached)
-  npp 20260702_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1750 … ✗ download error: ReadTimeout
-  npp 20260702_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2200 … ✗ download error: ReadTimeout
+  npp 20260702_1710 … ✗ host blacklisted
+  npp 20260702_1750 … ✗ host blacklisted
+  npp 20260702_1800 … ✗ host blacklisted
+  npp 20260702_1810 … ✗ host blacklisted
+  npp 20260702_1850 … ✗ host blacklisted
+  npp 20260702_1900 … ✗ host blacklisted
+  npp 20260702_1910 … ✗ host blacklisted
+  npp 20260702_1950 … ✗ host blacklisted
+  npp 20260702_2000 … ✗ host blacklisted
+  npp 20260702_2010 … ✗ host blacklisted
+  npp 20260702_2050 … ✗ host blacklisted
+  npp 20260702_2100 … ✗ host blacklisted
+  npp 20260702_2110 … ✗ host blacklisted
+  npp 20260702_2150 … ✗ host blacklisted
+  npp 20260702_2200 … ✗ host blacklisted
   npp 20260702_2210 … ✗ host blacklisted
   npp 20260702_2250 … ✗ host blacklisted
   npp 20260702_2300 … ✗ host blacklisted
   npp 20260702_2310 … ✗ host blacklisted
   npp 20260702_2350 … ✗ host blacklisted
-  ⚠ dir listing failed npp 2026/184: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
-  ⚠ dir listing failed npp 2026/185: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
-  n20 20260702_1250 … ✗ host blacklisted
-  n20 20260702_1300 … ✗ host blacklisted
-  n20 20260702_1310 … ✗ host blacklisted
+  npp 20260703_0000 … ✗ host blacklisted
+  npp 20260703_0010 … ✗ host blacklisted
+  npp 20260703_0050 … ✗ host blacklisted
+  npp 20260703_0100 … ✗ host blacklisted
+  npp 20260703_0110 … ✗ host blacklisted
+  npp 20260703_0150 … ✗ host blacklisted
+  npp 20260703_0200 … ✗ host blacklisted
+  npp 20260703_0210 … ✗ host blacklisted
+  npp 20260703_0250 … ✗ host blacklisted
+  npp 20260703_0300 … ✗ host blacklisted
+  npp 20260703_0310 … ✗ host blacklisted
+  npp 20260703_0350 … ✗ host blacklisted
+  npp 20260703_0400 … ✗ host blacklisted
+  npp 20260703_0410 … ✗ host blacklisted
+  npp 20260703_0450 … ✗ host blacklisted
+  npp 20260703_0500 … ✗ host blacklisted
+  npp 20260703_0510 … ✗ host blacklisted
+  npp 20260703_0550 … ✗ host blacklisted
+  npp 20260703_0600 … ✗ host blacklisted
+  npp 20260703_0610 … ✗ host blacklisted
+  npp 20260703_0650 … ✗ host blacklisted
+  npp 20260703_0700 ✓ (cached)
+  npp 20260703_0710 ✓ (cached)
+  npp 20260703_0750 … ✗ host blacklisted
+  npp 20260703_0800 … ✗ host blacklisted
+  npp 20260703_0810 … ✗ host blacklisted
+  npp 20260703_0850 … ✗ host blacklisted
+  npp 20260703_0900 … ✗ host blacklisted
+  npp 20260703_0910 … ✗ host blacklisted
+  npp 20260703_0950 … ✗ host blacklisted
+  npp 20260703_1000 … ✗ host blacklisted
+  npp 20260703_1010 … ✗ host blacklisted
+  npp 20260703_1050 … ✗ host blacklisted
+  npp 20260703_1100 … ✗ host blacklisted
+  npp 20260703_1110 … ✗ host blacklisted
+  npp 20260703_1150 … ✗ host blacklisted
+  npp 20260703_1200 … ✗ host blacklisted
+  npp 20260703_1210 … ✗ host blacklisted
+  npp 20260703_1250 … ✗ host blacklisted
+  npp 20260703_1300 … ✗ host blacklisted
+  npp 20260703_1310 … ✗ host blacklisted
+  npp 20260703_1350 … ✗ host blacklisted
+  npp 20260703_1400 … ✗ host blacklisted
+  npp 20260703_1410 … ✗ host blacklisted
+  npp 20260703_1450 … ✗ host blacklisted
+  npp 20260703_1500 … ✗ host blacklisted
+  npp 20260703_1510 … ✗ host blacklisted
+  npp 20260703_1550 … ✗ host blacklisted
+  npp 20260703_1600 … ✗ host blacklisted
+  npp 20260703_1610 … ✗ host blacklisted
+  npp 20260703_1650 ✓ (cached)
+  npp 20260703_1700 … ✗ host blacklisted
+  npp 20260703_1710 … ✗ host blacklisted
+  npp 20260703_1750 … ✗ host blacklisted
+  npp 20260703_1800 … ✗ host blacklisted
+  npp 20260703_1810 … ✗ host blacklisted
+  npp 20260703_1850 … ✗ host blacklisted
+  npp 20260703_1900 … ✗ host blacklisted
+  npp 20260703_1910 … ✗ host blacklisted
+  npp 20260703_1950 … ✗ host blacklisted
+  npp 20260703_2000 … ✗ host blacklisted
+  npp 20260703_2010 … ✗ host blacklisted
+  npp 20260703_2050 … ✗ host blacklisted
+  npp 20260703_2100 … ✗ host blacklisted
+  npp 20260703_2110 … ✗ host blacklisted
+  npp 20260703_2150 … ✗ host blacklisted
+  npp 20260703_2200 … ✗ host blacklisted
+  npp 20260703_2210 … ✗ host blacklisted
+  npp 20260703_2250 … ✗ host blacklisted
+  npp 20260703_2300 … ✗ host blacklisted
+  npp 20260703_2310 … ✗ host blacklisted
+  npp 20260703_2350 … ✗ host blacklisted
+  npp 20260704_0000 … ✗ host blacklisted
+  npp 20260704_0010 … ✗ host blacklisted
+  npp 20260704_0050 … ✗ host blacklisted
+  npp 20260704_0100 … ✗ host blacklisted
+  npp 20260704_0110 … ✗ host blacklisted
+  npp 20260704_0150 … ✗ host blacklisted
+  npp 20260704_0200 … ✗ host blacklisted
+  npp 20260704_0210 … ✗ host blacklisted
+  npp 20260704_0250 … ✗ host blacklisted
+  npp 20260704_0300 … ✗ host blacklisted
+  npp 20260704_0310 … ✗ host blacklisted
+  npp 20260704_0350 … ✗ host blacklisted
+  npp 20260704_0400 … ✗ host blacklisted
+  npp 20260704_0410 … ✗ host blacklisted
+  npp 20260704_0450 … ✗ host blacklisted
+  npp 20260704_0500 … ✗ host blacklisted
+  npp 20260704_0510 … ✗ host blacklisted
+  npp 20260704_0550 … ✗ host blacklisted
+  npp 20260704_0600 … ✗ host blacklisted
+  npp 20260704_0610 … ✗ host blacklisted
+  npp 20260704_0650 … ✗ host blacklisted
+  npp 20260704_0700 … ✗ host blacklisted
+  npp 20260704_0710 … ✗ host blacklisted
+  npp 20260704_0750 … ✗ host blacklisted
+  npp 20260704_0800 … ✗ host blacklisted
+  npp 20260704_0810 … ✗ host blacklisted
+  npp 20260704_0850 … ✗ host blacklisted
+  npp 20260704_0900 … ✗ host blacklisted
+  npp 20260704_0910 … ✗ host blacklisted
+  npp 20260704_0950 … ✗ host blacklisted
+  npp 20260704_1000 … ✗ host blacklisted
+  npp 20260704_1010 … ✗ host blacklisted
+  npp 20260704_1050 … ✗ host blacklisted
+  npp 20260704_1100 … ✗ host blacklisted
+  npp 20260704_1110 … ✗ host blacklisted
+  npp 20260704_1200 … ✗ host blacklisted
+  npp 20260704_1210 … ✗ host blacklisted
+  npp 20260704_1310 … ✗ host blacklisted
   n20 20260702_1350 … ✗ host blacklisted
   n20 20260702_1400 … ✗ host blacklisted
   n20 20260702_1410 … ✗ host blacklisted
@@ -212,9 +315,11 @@ SST PIPELINE
   n20 20260704_1010 … ✗ host blacklisted
   n20 20260704_1050 … ✗ host blacklisted
   n20 20260704_1100 … ✗ host blacklisted
-  n21 20260702_1250 … ✗ host blacklisted
-  n21 20260702_1300 … ✗ host blacklisted
-  n21 20260702_1310 … ✗ host blacklisted
+  n20 20260704_1110 … ✗ host blacklisted
+  n20 20260704_1150 … ✗ host blacklisted
+  n20 20260704_1200 … ✗ host blacklisted
+  n20 20260704_1210 … ✗ host blacklisted
+  n20 20260704_1310 … ✗ host blacklisted
   n21 20260702_1350 … ✗ host blacklisted
   n21 20260702_1400 … ✗ host blacklisted
   n21 20260702_1410 … ✗ host blacklisted
@@ -351,8 +456,14 @@ SST PIPELINE
   n21 20260704_1000 … ✗ host blacklisted
   n21 20260704_1010 … ✗ host blacklisted
   n21 20260704_1050 … ✗ host blacklisted
+  n21 20260704_1100 … ✗ host blacklisted
+  n21 20260704_1110 … ✗ host blacklisted
+  n21 20260704_1150 … ✗ host blacklisted
+  n21 20260704_1200 … ✗ host blacklisted
+  n21 20260704_1210 … ✗ host blacklisted
+  n21 20260704_1310 … ✗ host blacklisted
 
-  VIIRS summary: 0 written, 1 cached, 312 miss/cloud, 541 outside windows.
+  VIIRS summary: 0 written, 4 cached, 421 miss/cloud, 670 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -362,7 +473,7 @@ RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-04 12:23:52
+  UTC    : 2026-07-04 13:58:52
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -370,9 +481,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20260703 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20260703 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20260703 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260703 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectTimeout: HTTPSConnectionPool(host='upwell.pfeg.noaa.gov', port=443): Max retries exceeded with url: /erddap/gridd
+  MUR 20260703 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 14 coastline polygons)
+  (land filter: dropped 81 inland, kept 9965 ocean)
+  ✓ MUR 20260703
+  → DailySSTData/MUR/ga_sc/mur_20260703.csv  (9965 pts, 109 lats × 126 lons)
   ✓ MUR 20260702 (cached)
   ✓ MUR 20260701 (cached)
   ✓ MUR 20260630 (cached)
@@ -382,46 +494,43 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260704 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260704 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260704 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
-  GOES 20260704 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260704 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260704 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260703 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260703 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260703 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
-  GOES 20260703 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260703 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260703 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260702 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-07-02 12:50Z → 2026-07-04 12:10Z
+  Window range   : 2026-07-02 13:50Z → 2026-07-04 13:10Z
   Half-width     : ±10 min per bucket
-  npp 20260702_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1400 … ✗ download error: ReadTimeout
+  npp 20260702_1350 … ✗ download error: ReadTimeout
+  npp 20260702_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260702_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked
   npp 20260702_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked
+  npp 20260702_1500 … ✗ download error: ReadTimeout
+  npp 20260702_1510 … ✗ host blacklisted
+  npp 20260702_1550 … ✗ host blacklisted
+  npp 20260702_1600 … ✗ host blacklisted
+  npp 20260702_1610 … ✗ host blacklisted
+  npp 20260702_1650 … ✗ host blacklisted
   npp 20260702_1700 ✓ (cached)
-  npp 20260702_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked
-  npp 20260702_2110 … ✗ download error: ReadTimeout
+  npp 20260702_1710 … ✗ host blacklisted
+  npp 20260702_1750 … ✗ host blacklisted
+  npp 20260702_1800 … ✗ host blacklisted
+  npp 20260702_1810 … ✗ host blacklisted
+  npp 20260702_1850 … ✗ host blacklisted
+  npp 20260702_1900 … ✗ host blacklisted
+  npp 20260702_1910 … ✗ host blacklisted
+  npp 20260702_1950 … ✗ host blacklisted
+  npp 20260702_2000 … ✗ host blacklisted
+  npp 20260702_2010 … ✗ host blacklisted
+  npp 20260702_2050 … ✗ host blacklisted
+  npp 20260702_2100 … ✗ host blacklisted
+  npp 20260702_2110 … ✗ host blacklisted
   npp 20260702_2150 … ✗ host blacklisted
   npp 20260702_2200 … ✗ host blacklisted
   npp 20260702_2210 … ✗ host blacklisted
@@ -429,115 +538,8 @@ SST PIPELINE
   npp 20260702_2300 … ✗ host blacklisted
   npp 20260702_2310 … ✗ host blacklisted
   npp 20260702_2350 … ✗ host blacklisted
-  npp 20260703_0000 … ✗ host blacklisted
-  npp 20260703_0010 … ✗ host blacklisted
-  npp 20260703_0050 … ✗ host blacklisted
-  npp 20260703_0100 … ✗ host blacklisted
-  npp 20260703_0110 … ✗ host blacklisted
-  npp 20260703_0150 … ✗ host blacklisted
-  npp 20260703_0200 … ✗ host blacklisted
-  npp 20260703_0210 … ✗ host blacklisted
-  npp 20260703_0250 … ✗ host blacklisted
-  npp 20260703_0300 … ✗ host blacklisted
-  npp 20260703_0310 … ✗ host blacklisted
-  npp 20260703_0350 … ✗ host blacklisted
-  npp 20260703_0400 … ✗ host blacklisted
-  npp 20260703_0410 … ✗ host blacklisted
-  npp 20260703_0450 … ✗ host blacklisted
-  npp 20260703_0500 … ✗ host blacklisted
-  npp 20260703_0510 … ✗ host blacklisted
-  npp 20260703_0550 … ✗ host blacklisted
-  npp 20260703_0600 … ✗ host blacklisted
-  npp 20260703_0610 … ✗ host blacklisted
-  npp 20260703_0650 … ✗ host blacklisted
-  npp 20260703_0700 ✓ (cached)
-  npp 20260703_0710 ✓ (cached)
-  npp 20260703_0750 … ✗ host blacklisted
-  npp 20260703_0800 … ✗ host blacklisted
-  npp 20260703_0810 … ✗ host blacklisted
-  npp 20260703_0850 … ✗ host blacklisted
-  npp 20260703_0900 … ✗ host blacklisted
-  npp 20260703_0910 … ✗ host blacklisted
-  npp 20260703_0950 … ✗ host blacklisted
-  npp 20260703_1000 … ✗ host blacklisted
-  npp 20260703_1010 … ✗ host blacklisted
-  npp 20260703_1050 … ✗ host blacklisted
-  npp 20260703_1100 … ✗ host blacklisted
-  npp 20260703_1110 … ✗ host blacklisted
-  npp 20260703_1150 … ✗ host blacklisted
-  npp 20260703_1200 … ✗ host blacklisted
-  npp 20260703_1210 … ✗ host blacklisted
-  npp 20260703_1250 … ✗ host blacklisted
-  npp 20260703_1300 … ✗ host blacklisted
-  npp 20260703_1310 … ✗ host blacklisted
-  npp 20260703_1350 … ✗ host blacklisted
-  npp 20260703_1400 … ✗ host blacklisted
-  npp 20260703_1410 … ✗ host blacklisted
-  npp 20260703_1450 … ✗ host blacklisted
-  npp 20260703_1500 … ✗ host blacklisted
-  npp 20260703_1510 … ✗ host blacklisted
-  npp 20260703_1550 … ✗ host blacklisted
-  npp 20260703_1600 … ✗ host blacklisted
-  npp 20260703_1610 … ✗ host blacklisted
-  npp 20260703_1650 … ✗ host blacklisted
-  npp 20260703_1700 … ✗ host blacklisted
-  npp 20260703_1710 … ✗ host blacklisted
-  npp 20260703_1750 … ✗ host blacklisted
-  npp 20260703_1800 … ✗ host blacklisted
-  npp 20260703_1810 … ✗ host blacklisted
-  npp 20260703_1850 … ✗ host blacklisted
-  npp 20260703_1900 … ✗ host blacklisted
-  npp 20260703_1910 … ✗ host blacklisted
-  npp 20260703_1950 … ✗ host blacklisted
-  npp 20260703_2000 … ✗ host blacklisted
-  npp 20260703_2010 … ✗ host blacklisted
-  npp 20260703_2050 … ✗ host blacklisted
-  npp 20260703_2100 … ✗ host blacklisted
-  npp 20260703_2110 … ✗ host blacklisted
-  npp 20260703_2150 … ✗ host blacklisted
-  npp 20260703_2200 … ✗ host blacklisted
-  npp 20260703_2210 … ✗ host blacklisted
-  npp 20260703_2250 … ✗ host blacklisted
-  npp 20260703_2300 … ✗ host blacklisted
-  npp 20260703_2310 … ✗ host blacklisted
-  npp 20260703_2350 … ✗ host blacklisted
-  npp 20260704_0000 … ✗ host blacklisted
-  npp 20260704_0010 … ✗ host blacklisted
-  npp 20260704_0050 … ✗ host blacklisted
-  npp 20260704_0100 … ✗ host blacklisted
-  npp 20260704_0110 … ✗ host blacklisted
-  npp 20260704_0150 … ✗ host blacklisted
-  npp 20260704_0200 … ✗ host blacklisted
-  npp 20260704_0210 … ✗ host blacklisted
-  npp 20260704_0250 … ✗ host blacklisted
-  npp 20260704_0300 … ✗ host blacklisted
-  npp 20260704_0310 … ✗ host blacklisted
-  npp 20260704_0350 … ✗ host blacklisted
-  npp 20260704_0400 … ✗ host blacklisted
-  npp 20260704_0410 … ✗ host blacklisted
-  npp 20260704_0450 … ✗ host blacklisted
-  npp 20260704_0500 … ✗ host blacklisted
-  npp 20260704_0510 … ✗ host blacklisted
-  npp 20260704_0550 … ✗ host blacklisted
-  npp 20260704_0600 … ✗ host blacklisted
-  npp 20260704_0610 … ✗ host blacklisted
-  npp 20260704_0650 … ✗ host blacklisted
-  npp 20260704_0700 … ✗ host blacklisted
-  npp 20260704_0710 … ✗ host blacklisted
-  npp 20260704_0750 … ✗ host blacklisted
-  npp 20260704_0800 … ✗ host blacklisted
-  npp 20260704_0810 … ✗ host blacklisted
-  npp 20260704_0850 … ✗ host blacklisted
-  npp 20260704_0900 … ✗ host blacklisted
-  npp 20260704_0910 … ✗ host blacklisted
-  npp 20260704_0950 … ✗ host blacklisted
-  npp 20260704_1000 … ✗ host blacklisted
-  npp 20260704_1010 … ✗ host blacklisted
-  npp 20260704_1100 … ✗ host blacklisted
-  npp 20260704_1110 … ✗ host blacklisted
-  n20 20260702_1250 … ✗ host blacklisted
-  n20 20260702_1300 … ✗ host blacklisted
-  n20 20260702_1310 … ✗ host blacklisted
+  ⚠ dir listing failed npp 2026/184: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  ⚠ dir listing failed npp 2026/185: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=10)
   n20 20260702_1350 … ✗ host blacklisted
   n20 20260702_1400 … ✗ host blacklisted
   n20 20260702_1410 … ✗ host blacklisted
@@ -676,9 +678,10 @@ SST PIPELINE
   n20 20260704_1050 … ✗ host blacklisted
   n20 20260704_1100 … ✗ host blacklisted
   n20 20260704_1110 … ✗ host blacklisted
-  n21 20260702_1250 … ✗ host blacklisted
-  n21 20260702_1300 … ✗ host blacklisted
-  n21 20260702_1310 … ✗ host blacklisted
+  n20 20260704_1150 … ✗ host blacklisted
+  n20 20260704_1200 … ✗ host blacklisted
+  n20 20260704_1210 … ✗ host blacklisted
+  n20 20260704_1310 … ✗ host blacklisted
   n21 20260702_1350 … ✗ host blacklisted
   n21 20260702_1400 … ✗ host blacklisted
   n21 20260702_1410 … ✗ host blacklisted
@@ -782,42 +785,9 @@ SST PIPELINE
   n21 20260703_2300 … ✗ host blacklisted
   n21 20260703_2310 … ✗ host blacklisted
   n21 20260703_2350 … ✗ host blacklisted
-  n21 20260704_0000 … ✗ host blacklisted
-  n21 20260704_0010 … ✗ host blacklisted
-  n21 20260704_0050 … ✗ host blacklisted
-  n21 20260704_0100 … ✗ host blacklisted
-  n21 20260704_0110 … ✗ host blacklisted
-  n21 20260704_0150 … ✗ host blacklisted
-  n21 20260704_0200 … ✗ host blacklisted
-  n21 20260704_0210 … ✗ host blacklisted
-  n21 20260704_0250 … ✗ host blacklisted
-  n21 20260704_0300 … ✗ host blacklisted
-  n21 20260704_0310 … ✗ host blacklisted
-  n21 20260704_0350 … ✗ host blacklisted
-  n21 20260704_0400 … ✗ host blacklisted
-  n21 20260704_0410 … ✗ host blacklisted
-  n21 20260704_0450 … ✗ host blacklisted
-  n21 20260704_0500 … ✗ host blacklisted
-  n21 20260704_0510 … ✗ host blacklisted
-  n21 20260704_0550 … ✗ host blacklisted
-  n21 20260704_0600 … ✗ host blacklisted
-  n21 20260704_0610 … ✗ host blacklisted
-  n21 20260704_0650 … ✗ host blacklisted
-  n21 20260704_0700 … ✗ host blacklisted
-  n21 20260704_0710 … ✗ host blacklisted
-  n21 20260704_0750 … ✗ host blacklisted
-  n21 20260704_0800 … ✗ host blacklisted
-  n21 20260704_0810 … ✗ host blacklisted
-  n21 20260704_0850 … ✗ host blacklisted
-  n21 20260704_0900 … ✗ host blacklisted
-  n21 20260704_0910 … ✗ host blacklisted
-  n21 20260704_0950 … ✗ host blacklisted
-  n21 20260704_1000 … ✗ host blacklisted
-  n21 20260704_1010 … ✗ host blacklisted
-  n21 20260704_1050 … ✗ host blacklisted
-  n21 20260704_1110 … ✗ host blacklisted
+  ⚠ dir listing failed n21 2026/185: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=10)
 
-  VIIRS summary: 0 written, 5 cached, 416 miss/cloud, 647 outside windows.
+  VIIRS summary: 0 written, 3 cached, 273 miss/cloud, 522 outside windows.
 
 =========================================================
 ✓ Pipeline complete
