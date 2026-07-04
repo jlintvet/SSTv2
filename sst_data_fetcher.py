@@ -303,7 +303,7 @@ SST_DECIMALS   = 3
 _last_request_at  = {}
 _host_blacklisted = set()
 _host_conn_resets = {}
-CONN_RESET_THRESHOLD = 2
+CONN_RESET_THRESHOLD = 5  # consecutive (not cumulative) connection errors/timeouts before blacklisting a host this run
 # =========================================================
 # SHARED HTTP / ERDDAP HELPERS
 # =========================================================
@@ -351,7 +351,9 @@ def fetch_erddap_csv(url, label):
             if attempt <= HTTP_RETRIES:
                 time.sleep(HTTP_BACKOFF_S * attempt)
             continue
-        if resp.status_code == 200:   return resp.text
+        if resp.status_code == 200:
+            _host_conn_resets[host] = 0  # reset consecutive-failure counter on success
+            return resp.text
         if resp.status_code == 404:   raise RuntimeError("404 — no data for this date")
         if resp.status_code == 403:
             _host_blacklisted.add(host)
@@ -538,6 +540,7 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
             resp = requests.get(url, timeout=HTTP_TIMEOUT,
                                 headers={"User-Agent": USER_AGENT}, stream=False)
             resp.raise_for_status()
+        _host_conn_resets[host] = 0  # reset consecutive-failure counter on success
     except _TimeoutError as e:
         return None, f"hard timeout: {e}"
     except requests.RequestException as e:
