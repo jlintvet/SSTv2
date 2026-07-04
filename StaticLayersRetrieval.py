@@ -700,9 +700,24 @@ def _extract_contour_lines(lats: list, lons: list,
     cg    = contour_generator(x=lons, y=lats, z=grid)
     lines = cg.lines(depth_ft)
     MIN_POINTS = 6
+    # ── Zone constants for GEBCO_2020 anomaly artifact filtering ─────────────
+    # Small closed-loop segments that fall entirely within this geographic zone
+    # are residual artifacts from the GEBCO column-anomaly correction. The grid-
+    # level interpolation leaves cells that are slightly too deep, producing tiny
+    # isolated loops at multiple depth levels. No real bathymetric feature in this
+    # shallow-shelf zone produces a separate isolated small contour.
+    _AZONE_LAT_MIN, _AZONE_LAT_MAX = 34.90, 35.70
+    _AZONE_LON_MIN, _AZONE_LON_MAX = -75.28, -75.14   # lon: west=-75.28, east=-75.14
+    _AZONE_MAX_PTS = 400
     output     = []
     for line in lines:
         if len(line) < MIN_POINTS:
+            continue
+        # Reject small isolated segments entirely within the GEBCO anomaly zone
+        _xs = [p[0] for p in line]; _ys = [p[1] for p in line]
+        if (len(line) <= _AZONE_MAX_PTS
+                and min(_xs) >= _AZONE_LON_MIN and max(_xs) <= _AZONE_LON_MAX
+                and min(_ys) >= _AZONE_LAT_MIN and max(_ys) <= _AZONE_LAT_MAX):
             continue
         # Reject spike artifacts from isolated GEBCO grid anomalies
         # (single column/row of bad depth values -> long zero-width contour).
