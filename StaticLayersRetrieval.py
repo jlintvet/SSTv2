@@ -694,69 +694,6 @@ def _split_vertical_runs(coords: list,
     return segments if segments else [coords]
 
 
-def _filter_zone_hairpins(
-        coords,
-        zone_lon_min: float = -75.30,
-        zone_lon_max: float = -75.10,
-        zone_lat_min: float = 34.90,
-        zone_lat_max: float = 35.75,
-        min_reversal: float = 0.07,
-) -> list[list]:
-    """
-    Remove sub-paths where the contour makes a large latitude swing while
-    passing through the GEBCO_2020 anomaly zone.  A "large swing" means the
-    contour travels > min_reversal degrees of latitude while in the zone —
-    this is the signature of a hairpin caused by the anomaly pushing the
-    isobath far north and back.  Legitimate shelf passages through the zone
-    cover only a small lat range and are kept intact.
-    """
-    n = len(coords)
-    if n < 12:
-        return [coords]
-
-    in_zone = [
-        zone_lon_min <= c[0] <= zone_lon_max and
-        zone_lat_min <= c[1] <= zone_lat_max
-        for c in coords
-    ]
-
-    # Build alternating runs of (kind, points)
-    runs: list[tuple[str, list]] = []
-    cur: list = []
-    cur_in = in_zone[0]
-    for i, c in enumerate(coords):
-        if in_zone[i] == cur_in:
-            cur.append(c)
-        else:
-            runs.append(("zone" if cur_in else "out", cur))
-            cur = [c]
-            cur_in = in_zone[i]
-    runs.append(("zone" if cur_in else "out", cur))
-
-    # Re-assemble: keep "out" segments, splice out "zone" segments whose
-    # latitude span is large (= hairpin artifact).
-    output_segs: list[list] = []
-    accum: list = []
-    for kind, seg in runs:
-        if kind == "out":
-            accum.extend(seg)
-        else:
-            lats = [c[1] for c in seg]
-            lat_span = max(lats) - min(lats) if lats else 0.0
-            if lat_span >= min_reversal:
-                # Hairpin — break the contour here
-                if len(accum) >= 6:
-                    output_segs.append(accum)
-                accum = []
-            else:
-                # Normal shallow passage through zone — keep
-                accum.extend(seg)
-
-    if len(accum) >= 6:
-        output_segs.append(accum)
-
-    return output_segs if output_segs else [coords]
-
 
 def _extract_contour_lines(lats: list, lons: list,
                             grid: list, depth_ft: float) -> list[list]:
@@ -793,14 +730,10 @@ def _extract_contour_lines(lats: list, lons: list,
             continue
         coords = [[float(p[0]), float(p[1])] for p in line]
         coords = _chaikin_smooth(coords, iterations=2)
-        # 1. Remove hairpin sub-paths from the GEBCO anomaly zone:
-        #    any zone passage with lat_span > 0.07 deg is an artifact.
-        zone_segs = _filter_zone_hairpins(coords)
-        # 2. On each remaining sub-segment, apply the narrow vertical-run filter.
-        for zseg in zone_segs:
-            for seg in _split_vertical_runs(zseg):
-                if len(seg) >= MIN_POINTS:
-                    output.append(seg)
+        # Sub-section spike filter
+        for seg in _split_vertical_runs(coords):
+            if len(seg) >= MIN_POINTS:
+                output.append(seg)
     return output
 
 def write_bathymetry_points(rows: list) -> None:
