@@ -594,7 +594,7 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
     _ANOM_LAT_MAX = 35.70
     _ANOM_LON_MIN = -75.30
     _ANOM_LON_MAX = -75.10
-    _ANOM_EXCESS  = 60.0   # ft — cell must exceed linear interpolation by this much
+    _ANOM_EXCESS  = 20.0   # ft — cell must exceed linear interpolation by this much
     # Find the boundary columns just outside the correction zone
     _left_col  = None  # rightmost column with lon < _ANOM_LON_MIN
     _right_col = None  # leftmost  column with lon > _ANOM_LON_MAX
