@@ -585,15 +585,26 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     if ql_flat is not None:
         df["_ql"] = ql_flat  # same length as flattened grids, indices aligned
     df = df.dropna(subset=["sst"])   # removes fill/cloud-masked pixels
+    df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
+            (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
+    df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
+    # DIAGNOSTIC (temporary): capture how many pixels had a real (non-fill)
+    # SST retrieval inside the exact bbox BEFORE the quality_level filter runs,
+    # plus the quality_level histogram. This tells us whether "all masked"
+    # means ACSPO itself marked the whole swath as fill (true cloud/land/no-data
+    # upstream) or whether our own ql>=3 threshold is discarding otherwise-valid
+    # lower-confidence retrievals (e.g. sun glint / high satellite zenith angle
+    # near swath edges, which can trigger conservative QC even under clear sky).
+    _raw_valid_in_bbox = len(df)
+    _ql_dist = (df["_ql"].value_counts().sort_index().to_dict()
+                if ("_ql" in df.columns and _raw_valid_in_bbox > 0) else None)
     # Filter by quality_level — ql=0/1 pixels are cloud-contaminated but NOT fill values
     # in ACSPO NRT L3U. They have real SST retrievals that are unreliable (often too cold).
     if "_ql" in df.columns:
         df = df[df["_ql"] >= 3].drop(columns=["_ql"])
-    df = df[(df["lat"] >= SOUTH) & (df["lat"] <= NORTH) &
-            (df["lon"] >= WEST)  & (df["lon"] <= EAST)]
-    df = df[(df["sst"] > -2.0) & (df["sst"] < 40.0)]
     if df.empty:
-        return None, "swath overlaps bbox but all pixels cloud/land masked"
+        detail = f" (raw_valid_in_bbox={_raw_valid_in_bbox}, ql_dist={_ql_dist})"
+        return None, "swath overlaps bbox but all pixels cloud/land masked" + detail
     df["lat"] = df["lat"].round(COORD_DECIMALS)
     df["lon"] = df["lon"].round(COORD_DECIMALS)
     df["sst"] = df["sst"].round(SST_DECIMALS)
