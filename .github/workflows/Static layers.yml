@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5.6.0
@@ -52,6 +52,5 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: update static layers (bathymetry + wrecks)"
-            git pull --rebase origin bathy-crm
-            git push
+            git push origin HEAD
           fi
