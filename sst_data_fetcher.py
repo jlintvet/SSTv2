@@ -299,7 +299,15 @@ HTTP_CONNECT_TIMEOUT  = 15
 HTTP_READ_TIMEOUT     = 90
 HTTP_TIMEOUT          = (HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
 ERDDAP_HARD_TIMEOUT_S = 180
-VIIRS_HARD_TIMEOUT_S  = 90
+VIIRS_HARD_TIMEOUT_S  = 150  # was 90 -- a ~25MB granule with lots of real
+                             # (poorly-compressible) SST data can genuinely
+                             # need more than 90s on a free gov't server
+VIIRS_HTTP_TIMEOUT    = (HTTP_CONNECT_TIMEOUT, 150)  # VIIRS gets its own
+                             # (connect, read) tuple so ERDDAP's timeout is untouched
+VIIRS_HTTP_RETRIES    = 1    # VIIRS granule downloads previously had ZERO retries --
+                             # a single ReadTimeout permanently dropped that granule
+                             # for the whole run. Now gets one retry with backoff,
+                             # same as ERDDAP already does for non-timeout errors.
 HTTP_RETRIES      = 1
 HTTP_BACKOFF_S    = 3
 REQUEST_SPACING_S = 1.5
@@ -540,21 +548,36 @@ def _fetch_viirs_granule(base, platform, year, doy, filename):
     host = _host_of(url)
     if host in _host_blacklisted:
         return None, "host blacklisted"
-    try:
-        _throttle(host)
-        with hard_timeout(VIIRS_HARD_TIMEOUT_S, filename):
-            resp = requests.get(url, timeout=HTTP_TIMEOUT,
-                                headers={"User-Agent": USER_AGENT}, stream=False)
-            resp.raise_for_status()
-        _host_conn_resets[host] = 0  # reset consecutive-failure counter on success
-    except _TimeoutError as e:
-        return None, f"hard timeout: {e}"
-    except requests.RequestException as e:
-        if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+    resp = None
+    last_err = None
+    is_conn_err = False
+    for attempt in range(1, VIIRS_HTTP_RETRIES + 2):
+        is_conn_err = False
+        try:
+            _throttle(host)
+            with hard_timeout(VIIRS_HARD_TIMEOUT_S, filename):
+                resp = requests.get(url, timeout=VIIRS_HTTP_TIMEOUT,
+                                    headers={"User-Agent": USER_AGENT}, stream=False)
+                resp.raise_for_status()
+            _host_conn_resets[host] = 0  # reset consecutive-failure counter on success
+            break
+        except _TimeoutError as e:
+            last_err, resp = f"hard timeout: {e}", None
+        except requests.RequestException as e:
+            is_conn_err = isinstance(e, (requests.ConnectionError, requests.Timeout))
+            last_err, resp = f"download error: {type(e).__name__}", None
+        # Retry once with backoff before giving up -- previously a single
+        # transient timeout permanently dropped the granule for this run,
+        # even when it was a genuine overhead pass (large, real-data
+        # granules compress worse and are the most likely to be slow).
+        if attempt <= VIIRS_HTTP_RETRIES:
+            time.sleep(HTTP_BACKOFF_S * attempt)
+    if resp is None:
+        if is_conn_err:
             _host_conn_resets[host] = _host_conn_resets.get(host, 0) + 1
             if _host_conn_resets[host] >= CONN_RESET_THRESHOLD:
                 _host_blacklisted.add(host)
-        return None, f"download error: {type(e).__name__}"
+        return None, last_err
     try:
         ds       = nc.Dataset("inmemory.nc", memory=resp.content)
         lat_full = ds.variables["lat"][:]
