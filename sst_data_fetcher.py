@@ -80,6 +80,23 @@ except ImportError:
     print("WARNING: netCDF4 not installed — VIIRS multi-pass fetch disabled.")
     print("         pip install netCDF4")
 # =========================================================
+# SOFT TIME BUDGET (per-process, per-region)
+# =========================================================
+# GitHub Actions kills the whole job at timeout-minutes: 60 with no warning
+# and no chance to run later steps -- including the "Commit SST data to
+# repo" step. That means a run that overruns doesn't just lose the slow
+# part, it loses EVERYTHING fetched that run (both regions), because the
+# commit step never executes. This process-local wall clock lets each
+# region's script bail out of VIIRS fetching (by far the most expensive
+# phase) with enough margin for the workflow to still commit whatever
+# succeeded, instead of being killed mid-request with nothing to show
+# for it. Each region runs as its own `python sst_data_fetcher.py`
+# process from the workflow's shell loop, so this budget is independent
+# per region: 25 min x 2 regions = 50 min, leaving ~10 min for checkout,
+# dependency install, and the commit/verify steps within the 60 min cap.
+PIPELINE_START_MONO = time.monotonic()
+SOFT_TIME_BUDGET_S  = 25 * 60  # 25 minutes
+# =========================================================
 # HARD TIMEOUT CONTEXT MANAGER
 # =========================================================
 class _TimeoutError(Exception):
@@ -660,12 +677,24 @@ def fetch_viirs_passes():
         for dt in (w_start, w_end):
             day_pairs.add((dt.year, dt.timetuple().tm_yday))
     total_new = total_skipped = total_filtered = total_miss = 0
+    budget_hit = False
     for platform in VIIRS_PLATFORMS:
+        if budget_hit:
+            break
         for (year, doy) in sorted(day_pairs):
+            if budget_hit:
+                break
             filenames = _list_viirs_granules(live_base, platform, year, doy)
             if not filenames:
                 continue
             for fname in filenames:
+                if time.monotonic() - PIPELINE_START_MONO > SOFT_TIME_BUDGET_S:
+                    print(f"\n  ⏱ soft time budget ({SOFT_TIME_BUDGET_S // 60} min) reached"
+                          " -- stopping VIIRS fetch early so this run can still"
+                          " commit what succeeded, rather than risk the external"
+                          " 60-min GitHub Actions job kill (which commits nothing).")
+                    budget_hit = True
+                    break
                 try:
                     gran_time = _granule_time(fname)
                 except ValueError:
