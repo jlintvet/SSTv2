@@ -225,7 +225,13 @@ DIRS = {
     "viirs_passes":   _dpath("VIIRS", "Passes"),
     "mur":            _dpath("MUR"),
 }
-VIIRS_BBOX_PAD = 1.0   # degrees padding for granule bbox slice
+VIIRS_BBOX_PAD = 0.15  # degrees padding for granule bbox slice
+# NOTE: was 1.0 (~60-70 mi). At 1.0 deg, a wide-swath VIIRS orbit only had to
+# graze the padding ring to be logged as "swath overlaps bbox", get fully
+# processed, and then yield raw_valid_in_bbox=0 once cropped to the true box
+# -- misreported as "cloud/land masked" when the swath never actually reached
+# the region at all. 0.15 deg still catches genuine edge-of-box data while
+# correctly reporting true misses as "swath does not overlap bbox" instead.
 # =========================================================
 # ERDDAP CONFIG
 # =========================================================
