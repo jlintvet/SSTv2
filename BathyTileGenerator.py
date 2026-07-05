@@ -41,6 +41,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# PIL decompression bomb limit — our rasters are ~115M pixels (legitimate, not an attack)
+Image.MAX_IMAGE_PIXELS = None
+
 # ── Region config ──────────────────────────────────────────────────────────
 REGION_CONFIGS = {
     "mid_atlantic": {
@@ -429,11 +432,10 @@ def generate_tiles(blended_tif: Path, tiles_dir: Path) -> None:
     tiles_dir.mkdir(parents=True, exist_ok=True)
     run([
         gdal2tiles_cmd(),
-        "--zoom", f"{ZOOM_MIN}-{ZOOM_MAX}",
-        "--tile-driver", "PNG",
-        "--resampling", "lanczos",
-        "--xyz",                   # standard XYZ convention (Leaflet default)
-        "--processes", "4",        # parallel tile rendering
+        "-z", f"{ZOOM_MIN}-{ZOOM_MAX}",
+        "-r", "lanczos",
+        "--xyz",                    # standard XYZ convention (Leaflet default)
+        "--nb-processes", "4",      # parallel tile rendering
         str(blended_tif),
         str(tiles_dir),
     ])
