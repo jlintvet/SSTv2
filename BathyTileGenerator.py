@@ -33,6 +33,13 @@ import netCDF4
 import boto3
 from PIL import Image
 
+try:
+    from scipy.ndimage import convolve as _sp_convolve
+    _SCIPY_AVAILABLE = True
+except ImportError:
+    _SCIPY_AVAILABLE = False
+
+
 # ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -72,7 +79,7 @@ CRM_VOLUMES = [
 
 # ── Tile output ────────────────────────────────────────────────────────────
 ZOOM_MIN = 5
-ZOOM_MAX = 12
+ZOOM_MAX = 11
 
 # ── AWS / CloudFront ───────────────────────────────────────────────────────
 S3_BUCKET    = "sst-bathy-tiles"
@@ -178,6 +185,48 @@ def _clean_z(z_raw) -> np.ndarray:
         arr = np.asarray(z_raw, dtype=np.float32)
     arr[arr <= -99990.0] = np.nan
     return np.where(np.isnan(arr), NODATA, arr)
+
+
+def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
+    """
+    Fill NODATA holes in the elevation grid by iteratively averaging from
+    4-connected valid neighbours.  A single pass resolves isolated-pixel
+    checkerboard artefacts caused by grid misalignment between CRM volumes.
+    """
+    if not _SCIPY_AVAILABLE:
+        log.warning("scipy not installed — skipping gap-fill (checkerboard may appear)")
+        return elev
+
+    kernel = np.array([[0, 1, 0],
+                       [1, 0, 1],
+                       [0, 1, 0]], dtype=np.float32)
+
+    for pass_num in range(max_passes):
+        nodata_mask = elev == NODATA
+        n_nodata = int(nodata_mask.sum())
+        if n_nodata == 0:
+            break
+
+        valid  = (~nodata_mask).astype(np.float32)
+        values = np.where(~nodata_mask, elev, 0.0).astype(np.float32)
+
+        neighbor_sum   = _sp_convolve(values, kernel, mode="constant", cval=0.0)
+        neighbor_count = _sp_convolve(valid,  kernel, mode="constant", cval=0.0)
+
+        fillable = nodata_mask & (neighbor_count > 0)
+        n_filled = int(fillable.sum())
+        if n_filled == 0:
+            break
+
+        elev = elev.copy()
+        elev[fillable] = neighbor_sum[fillable] / neighbor_count[fillable]
+        log.info("Gap-fill pass %d: filled %d / %d NODATA cells",
+                 pass_num + 1, n_filled, n_nodata)
+
+    remaining = int((elev == NODATA).sum())
+    if remaining:
+        log.info("Gap-fill complete: %d unfillable NODATA cells remain (likely land)", remaining)
+    return elev
 
 
 def fetch_crm_region(lat_min: float, lat_max: float,
@@ -291,6 +340,7 @@ def fetch_crm_region(lat_min: float, lat_max: float,
 
     ocean_cells = int(np.sum((master < 0) & (master != NODATA)))
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
+    master = _fill_ocean_gaps(master)
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
@@ -356,7 +406,7 @@ def generate_hillshade(vrt: Path, workdir: Path) -> Path:
     out = workdir / "hillshade.tif"
     run([
         "gdaldem", "hillshade", str(vrt), str(out),
-        "-z", "3",       # vertical exaggeration — dramatic canyon walls
+        "-z", "2",       # vertical exaggeration
         "-az", "315",    # light from NW
         "-alt", "45",    # sun angle
         "-compute_edges",
@@ -391,11 +441,22 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
     hs_img = Image.open(hillshade_tif).convert("L")   # grayscale
     cr_img = Image.open(color_tif).convert("RGBA")
 
+    # Ensure PIL images exactly match the elevation array (GDAL may differ by 1px)
+    target_wh = (geo['n_cols'], geo['n_rows'])
+    if hs_img.size != target_wh:
+        log.warning("Resizing hillshade %s → %s", hs_img.size, target_wh)
+        hs_img = hs_img.resize(target_wh, Image.BILINEAR)
+    if cr_img.size != target_wh:
+        log.warning("Resizing color-relief %s → %s", cr_img.size, target_wh)
+        cr_img = cr_img.resize(target_wh, Image.BILINEAR)
+
     hs = np.array(hs_img, dtype=np.float32) / 255.0   # 0-1
     cr = np.array(cr_img, dtype=np.float32)            # 0-255 RGBA
 
-    # Multiply blend: each RGB channel × hillshade brightness
-    blended_rgb = np.clip(cr[:, :, :3] * hs[:, :, np.newaxis], 0, 255).astype(np.uint8)
+    # Soft multiply: shift hillshade to [0.4, 1.0] so even full-shadow areas
+    # retain 40% of their original colour (avoids excessively dark rendering).
+    hs_soft = 0.4 + hs * 0.6
+    blended_rgb = np.clip(cr[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
 
     # Alpha channel: ocean cells opaque, land + nodata transparent
     ocean_mask = (elev < 0) & (elev != NODATA)
