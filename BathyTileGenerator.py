@@ -103,6 +103,12 @@ nv      0    0   0
 # ── NODATA sentinel ────────────────────────────────────────────────────────
 NODATA = -9999.0
 
+# ── OPeNDAP chunk size ─────────────────────────────────────────────────────
+# The CRM server times out on requests > ~5M cells. At stride 2 the full
+# mid_atlantic region is ~115M cells — must be fetched in lat chunks.
+# 0.25° × (1800/stride2) rows × 12025 cols ≈ 2.7M cells per chunk → safe.
+LAT_CHUNK_DEG = 0.25
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Utilities
@@ -135,21 +141,58 @@ def gdal2tiles_cmd() -> str:
 # Step 1 — Fetch CRM elevation data via OPeNDAP
 # ──────────────────────────────────────────────────────────────────────────
 
+def _place_chunk(master: np.ndarray, z_arr: np.ndarray,
+                 fetch_lats: np.ndarray, fetch_lons: np.ndarray,
+                 lat_max: float, lon_min: float,
+                 res_deg: float, n_rows: int, n_cols: int) -> int:
+    """Place a fetched z chunk into the master grid. Returns cell count placed."""
+    # Ensure rows run north → south
+    if len(fetch_lats) > 1 and fetch_lats[0] < fetch_lats[-1]:
+        z_arr      = z_arr[::-1]
+        fetch_lats = fetch_lats[::-1]
+
+    n_r, n_c = z_arr.shape
+    row0 = round((lat_max - fetch_lats[0]) / res_deg)
+    col0 = round((fetch_lons[0]  - lon_min)  / res_deg)
+
+    row_end = min(row0 + n_r, n_rows)
+    col_end = min(col0 + n_c, n_cols)
+    r_src   = row_end - row0
+    c_src   = col_end - col0
+
+    if r_src <= 0 or c_src <= 0:
+        return 0
+
+    master[row0:row_end, col0:col_end] = z_arr[:r_src, :c_src]
+    return r_src * c_src
+
+
+def _clean_z(z_raw) -> np.ndarray:
+    """Unmask and replace fill/NaN with NODATA sentinel."""
+    if hasattr(z_raw, 'filled'):
+        arr = z_raw.filled(np.nan).astype(np.float32)
+    else:
+        arr = np.asarray(z_raw, dtype=np.float32)
+    arr[arr <= -99990.0] = np.nan
+    return np.where(np.isnan(arr), NODATA, arr)
+
+
 def fetch_crm_region(lat_min: float, lat_max: float,
                      lon_min: float, lon_max: float) -> tuple[np.ndarray, dict]:
     """
     Fetch CRM 2023 elevation data for the given bbox via OPeNDAP.
-    Returns (elevation_array, geo_info) where:
-      - elevation_array: float32 array [n_rows × n_cols], rows north→south
-      - geo_info: dict with lat_min/max, lon_min/max, n_rows, n_cols, res_deg
 
-    Elevation values: negative = ocean depth (metres), positive = land,
-    NaN → replaced with NODATA sentinel.
-    Multiple CRM volumes are stitched into a single master grid.
+    The CRM OPeNDAP server times out on requests larger than ~5M cells.
+    At stride 2 the full mid_atlantic region is ~115M cells, so we chunk
+    the lat dimension into LAT_CHUNK_DEG pieces (~2.7M cells each) and
+    reopen the dataset for each chunk to avoid persistent connection issues.
+
+    Returns (elevation_array, geo_info):
+      - elevation_array: float32 [n_rows × n_cols], rows north→south
+      - geo_info: dict with lat/lon bounds, grid dimensions, res_deg
     """
-    res_deg = CRM_STRIDE / 3600.0   # degrees per pixel
+    res_deg = CRM_STRIDE / 3600.0
 
-    # Build master grid (north → south, west → east)
     n_rows = round((lat_max - lat_min) / res_deg) + 1
     n_cols = round((lon_max - lon_min) / res_deg) + 1
     master = np.full((n_rows, n_cols), NODATA, dtype=np.float32)
@@ -158,8 +201,8 @@ def fetch_crm_region(lat_min: float, lat_max: float,
              n_rows, n_cols, n_rows * n_cols * 4 / 1e6)
 
     any_data = False
+
     for vol_file, v_lat_min, v_lat_max, v_lon_min, v_lon_max in CRM_VOLUMES:
-        # Intersection of volume bbox with requested region
         olat_min = max(lat_min, v_lat_min)
         olat_max = min(lat_max, v_lat_max)
         olon_min = max(lon_min, v_lon_min)
@@ -168,74 +211,83 @@ def fetch_crm_region(lat_min: float, lat_max: float,
             continue
 
         url = CRM_BASE + vol_file
-        log.info("Opening %s (lat %.2f–%.2f, lon %.2f–%.2f) …",
+        log.info("Volume %s  lat %.2f–%.2f  lon %.2f–%.2f",
                  vol_file, olat_min, olat_max, olon_min, olon_max)
 
+        # Read axis arrays once (small — no timeout risk)
         try:
-            ds = netCDF4.Dataset(url)
+            ds0 = netCDF4.Dataset(url)
+            vol_lats = np.array(ds0.variables['lat'][:])
+            vol_lons = np.array(ds0.variables['lon'][:])
+            ds0.close()
         except Exception as exc:
-            log.warning("Could not open %s: %s — skipping", vol_file, exc)
+            log.warning("Cannot open %s: %s — skipping", vol_file, exc)
             continue
 
-        try:
-            vol_lats = np.array(ds.variables['lat'][:])
-            vol_lons = np.array(ds.variables['lon'][:])
+        lon_idx = np.where(
+            (vol_lons >= olon_min - 1e-7) & (vol_lons <= olon_max + 1e-7)
+        )[0]
+        if len(lon_idx) == 0:
+            log.warning("No lon overlap in %s", vol_file)
+            continue
+        lo0, lo1    = int(lon_idx[0]), int(lon_idx[-1])
+        fetch_lons  = vol_lons[lo0:lo1+1:CRM_STRIDE]
+
+        # Chunk lat dimension to stay under OPeNDAP timeout
+        chunk_start = olat_min
+        chunk_num   = 0
+        while chunk_start < olat_max - 1e-7:
+            chunk_end = min(chunk_start + LAT_CHUNK_DEG, olat_max)
 
             lat_idx = np.where(
-                (vol_lats >= olat_min - 1e-7) & (vol_lats <= olat_max + 1e-7)
+                (vol_lats >= chunk_start - 1e-7) & (vol_lats <= chunk_end + 1e-7)
             )[0]
-            lon_idx = np.where(
-                (vol_lons >= olon_min - 1e-7) & (vol_lons <= olon_max + 1e-7)
-            )[0]
-            if len(lat_idx) == 0 or len(lon_idx) == 0:
-                log.warning("No overlapping indices in %s — skipping", vol_file)
+            if len(lat_idx) == 0:
+                chunk_start = chunk_end
                 continue
 
-            li0, li1 = int(lat_idx[0]),  int(lat_idx[-1])
-            lo0, lo1 = int(lon_idx[0]),  int(lon_idx[-1])
+            li0, li1 = int(lat_idx[0]), int(lat_idx[-1])
+            fetch_lats_chunk = vol_lats[li0:li1+1:CRM_STRIDE]
 
-            z_raw      = ds.variables['z'][li0:li1+1:CRM_STRIDE,
-                                           lo0:lo1+1:CRM_STRIDE]
-            fetch_lats = vol_lats[li0:li1+1:CRM_STRIDE]
-            fetch_lons = vol_lons[lo0:lo1+1:CRM_STRIDE]
-        finally:
-            ds.close()
+            # Retry each chunk up to 3× on DAP failure
+            z_arr = None
+            for attempt in range(3):
+                try:
+                    ds = netCDF4.Dataset(url)
+                    z_raw = ds.variables['z'][li0:li1+1:CRM_STRIDE,
+                                              lo0:lo1+1:CRM_STRIDE]
+                    ds.close()
+                    z_arr = _clean_z(z_raw)
+                    break
+                except Exception as exc:
+                    try:
+                        ds.close()
+                    except Exception:
+                        pass
+                    if attempt < 2:
+                        wait = 10 * (attempt + 1)
+                        log.warning("  Chunk %d attempt %d failed: %s — retry in %ds",
+                                    chunk_num, attempt + 1, exc, wait)
+                        time.sleep(wait)
+                    else:
+                        log.error("  Chunk %d failed after 3 attempts — skipping",
+                                  chunk_num)
 
-        # Unmask / clean fill values
-        if hasattr(z_raw, 'filled'):
-            z_arr = z_raw.filled(np.nan).astype(np.float32)
-        else:
-            z_arr = np.asarray(z_raw, dtype=np.float32)
-        z_arr[z_arr <= -99990.0] = np.nan
-        z_arr = np.where(np.isnan(z_arr), NODATA, z_arr)
+            if z_arr is not None:
+                placed = _place_chunk(master, z_arr, fetch_lats_chunk, fetch_lons,
+                                      lat_max, lon_min, res_deg, n_rows, n_cols)
+                log.info("  Chunk %2d  lat %.3f–%.3f  placed %d cells",
+                         chunk_num, chunk_start, chunk_end, placed)
+                any_data = True
 
-        n_r, n_c = z_arr.shape
-
-        # Ensure rows run north → south in z_arr
-        if len(fetch_lats) > 1 and fetch_lats[0] < fetch_lats[-1]:
-            z_arr      = z_arr[::-1]
-            fetch_lats = fetch_lats[::-1]
-
-        # Map fetched lats/lons → master grid indices
-        row0 = round((lat_max - fetch_lats[0]) / res_deg)
-        col0 = round((fetch_lons[0] - lon_min)  / res_deg)
-
-        # Clip to master grid bounds (safety)
-        row_end = min(row0 + n_r, n_rows)
-        col_end = min(col0 + n_c, n_cols)
-        r_src = row_end - row0
-        c_src = col_end - col0
-
-        master[row0:row_end, col0:col_end] = z_arr[:r_src, :c_src]
-        log.info("  Placed %d × %d cells at master row=%d col=%d",
-                 r_src, c_src, row0, col0)
-        any_data = True
+            chunk_start = chunk_end
+            chunk_num  += 1
 
     if not any_data:
         raise RuntimeError("CRM fetch returned no data — check OPeNDAP connectivity.")
 
     ocean_cells = int(np.sum((master < 0) & (master != NODATA)))
-    log.info("Merged grid: %d ocean cells", ocean_cells)
+    log.info("Merged grid complete: %d ocean cells", ocean_cells)
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
