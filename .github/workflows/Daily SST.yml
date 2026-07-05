@@ -91,12 +91,33 @@ jobs:
           echo "      VIIRS via STAR NESDIS NRT file server (no auth)."
           echo ""
 
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           > sst_fetch.log
           for REGION in $REGIONS; do
             echo "========================================" | tee -a sst_fetch.log
             echo "RUNNING REGION: $REGION" | tee -a sst_fetch.log
             echo "========================================" | tee -a sst_fetch.log
             REGION="$REGION" python -u sst_data_fetcher.py 2>&1 | tee -a sst_fetch.log
+
+            # Commit this region's data immediately, before starting the next
+            # region. Previously all regions were committed together in one
+            # step at the very end -- if the job hit the 60-minute GitHub
+            # Actions ceiling while processing a later region, data already
+            # fetched for an earlier region was lost too, because the commit
+            # step never ran. Each region now survives independently.
+            git add DailySSTData/
+            if git diff --cached --quiet; then
+              echo "No data changes to commit for $REGION" | tee -a sst_fetch.log
+            else
+              git commit -m "data: SST update $REGION ${{ steps.date.outputs.date }}"
+              for i in 1 2 3 4 5; do
+                git pull --rebase --autostash origin HEAD && git push origin HEAD && break
+                echo "push attempt $i failed, retrying in 5s..." | tee -a sst_fetch.log
+                sleep 5
+              done
+            fi
           done
       - name: Debug output
         if: always()
@@ -146,25 +167,6 @@ jobs:
           find DailySSTData/ -type f | sort
           echo ""
           du -sh DailySSTData/ 2>/dev/null || true
-      - name: Commit SST data to repo
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Stage all data changes — includes new files, removals of stale
-          # Hourly CSVs, and new VIIRS pass files
-          git add DailySSTData/
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            # Commit BEFORE rebasing: `git pull --rebase` refuses to run while the index
-            # has staged changes. --autostash guards any stray worktree changes; retry
-            # handles a concurrent push from another scheduled run.
-            git commit -m "data: SST update ${{ steps.date.outputs.date }}"
-            for i in 1 2 3 4 5; do
-              git pull --rebase --autostash origin HEAD && git push origin HEAD && break
-              echo "push attempt $i failed, retrying in 5s..."; sleep 5
-            done
-          fi
       - name: Commit fetch log to repo
         if: always()
         run: |
