@@ -4,6 +4,19 @@ This document describes the full architecture of the SST data ingest pipeline: h
 
 ---
 
+## Changelog
+
+### 2026-07-05 — VIIRS bbox padding false-positive fix
+Diagnostic logging added the day before (see 2026-07-04 entry) showed every "swath overlaps bbox but all pixels cloud/land masked" line that day had `raw_valid_in_bbox=0` — zero real pixels in the exact bbox *before* the quality filter even ran. Root cause: `VIIRS_BBOX_PAD` was 1.0° (~60-70 mi), used as the overlap test. VIIRS' swath is 3000+ km wide, so orbits that only grazed that generous padding ring — without ever crossing the true regional bbox — were flagged as "overlaps", fully processed, and correctly ended up with zero data once cropped to the true box. That was then misreported as "cloud/land masked" when the honest answer was "swath never reached the area." Fix: `VIIRS_BBOX_PAD` reduced to 0.15° — still enough margin for genuine edge-of-box data, but grazers now correctly report "swath does not overlap bbox" instead. No data-availability change; this is a log-accuracy and minor-performance fix. Real VIIRS coverage remains ~2 genuine overhead passes per satellite per day, which is the expected polar-orbit revisit cadence for a fixed regional box, clear skies or not.
+
+### 2026-07-04 — Host-blacklist consecutive-failure fix + diagnostic logging
+Two related fixes to `sst_data_fetcher.py`, deployed same day:
+
+1. **Circuit-breaker bug:** `CONN_RESET_THRESHOLD` counted connection errors/timeouts *cumulatively for the entire run* rather than consecutively, and was never reset on a successful fetch. Two ordinary `ReadTimeout`s anywhere across a ~150-request-per-satellite VIIRS run permanently blacklisted the shared NOAA STAR host for the rest of that run — across all three satellites (npp/n20/n21) — regardless of sky conditions. Logs from 2026-06-30 through 2026-07-04 showed 0 new VIIRS passes written every single day as a result. Fix: the failure counter now resets to 0 on any successful fetch (consecutive, not cumulative), and the threshold was raised from 2 to 5.
+2. **Diagnostic logging:** added `raw_valid_in_bbox` and `ql_dist` reporting to the "all pixels cloud/land masked" message so a future masked window shows whether zero data is because ACSPO's own fill mask genuinely emptied the swath, or because the local `quality_level >= 3` filter discarded otherwise-valid pixels. This directly led to identifying the 2026-07-05 padding bug above — the diagnostic showed `raw_valid_in_bbox=0` on every masked window, ruling out the quality filter as a cause.
+
+---
+
 ## Overview
 
 Three independent satellite data sources serve three distinct UI views. Each answers a different question about current ocean conditions and they are intentionally not redundant — they use different sensors, different algorithms, and different temporal cadences.
@@ -73,7 +86,7 @@ MUR mirrors in priority order:
 All three mirror `jplMURSST41`. Mirror logic:
 - Each request is polite-throttled (1.5s between requests to the same host)
 - On TCP reset or timeout: raise immediately, fall through to next mirror without retry
-- After 2 connection resets on a host in one run, that host is blacklisted for the remainder of the run
+- After 5 *consecutive* connection resets/timeouts on a host, that host is blacklisted for the remainder of the run (counter resets to 0 on any successful fetch — see Changelog, 2026-07-04)
 - 403 is an immediate permanent blacklist for that run (GitHub Actions runner IPs are frequently rate-limited by pfeg/upwell)
 - 404 means "no data for this date" — legitimate, not retried
 - A 403 on one mirror does not affect the others — blacklist is per-host
@@ -134,14 +147,16 @@ Ground truth. Unlike MUR and GOES, VIIRS pass files contain direct satellite mea
 Cloud cover is the primary constraint. The ACSPO algorithm masks cloudy pixels as fill values — on overcast days a pass may return no usable data at all over the region. This is correct behavior, not an error. Users will see spatial gaps in the heatmap corresponding to cloud cover at the time of the pass. The swath geometry also means only the portion of the bbox directly under the satellite track has data — adjacent areas outside the ~3000 km swath are empty.
 
 ### Pass timing for the Mid-Atlantic (~36°N, 75.5°W = UTC-5.03h)
-All three satellites fly the same orbit type. Pass center times are derived from the ~1:30pm local solar time ascending node:
+**Superseded 2026-07-04 — see Changelog.** The pipeline no longer targets two fixed pass-center windows. It now builds one ±10 minute window per UTC hour for the past `VIIRS_HOURS_BACK` hours (48 by default — tunable via `VIIRS_HOURS_BACK` / `VIIRS_WINDOW_HALF_MIN`), and checks every window against the live directory listing. The fixed 2-window pass-center approach was dropped because it missed real swaths whenever overpass timing drifted outside the ±20 minute envelope.
 
-| Pass | UTC time | Local time | Status |
-|---|---|---|---|
-| Night (descending) | ~06:10 UTC | ~01:10 AM | ✓ Confirmed from CI logs 2026-04-22 |
-| Day (ascending) | ~18:33 UTC | ~01:33 PM | ✓ Confirmed from CI logs 2026-04-22 (N21 at 18:40) |
+Most of the 48 hourly windows in a given run will have no swath overlapping the bbox at all — routine misses, not errors. Roughly 2 real overhead passes per satellite per day actually land data (matching the ascending/descending orbit geometry below); the rest are either genuine no-overlap misses or edge-grazing swaths that overlap only the small `VIIRS_BBOX_PAD` margin without ever crossing the true region (see Changelog, 2026-07-05).
 
-The pipeline targets ±20 minutes around each center time, limiting downloads to ~5 granules per pass per platform instead of scanning the full 24-hour directory (144 granules/satellite/day). This window is tunable via `VIIRS_PASS_CENTER_WINDOW_MIN` in the script.
+Typical pass centers for this region (informational only — the pipeline no longer restricts to these windows):
+
+| Pass | UTC time | Local time |
+|---|---|---|
+| Night (descending) | ~06:10 UTC | ~01:10 AM |
+| Day (ascending) | ~18:33 UTC | ~01:33 PM |
 
 ### File server
 Primary: `https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs`  
@@ -152,10 +167,10 @@ The pipeline probes both at startup and uses the first that responds with HTTP 2
 ### Granule fetch process
 1. List directory via HTTP for each platform × (year, doy) pair
 2. Parse filenames with regex to extract timestamp
-3. Pre-filter to pass center windows — skip granules outside ±20 min of known centers
+3. Pre-filter to the rolling 48-hour hourly window set — skip granules outside every ±10 min bucket (logged as "outside windows")
 4. Cache check — skip granules already written in a previous run
 5. Download full granule (~25 MB NetCDF4) into memory using `netCDF4.Dataset(memory=...)`
-6. Slice to bbox (with 1° padding to catch swath edges)
+6. Slice to bbox (with `VIIRS_BBOX_PAD = 0.15°` padding to catch swath edges — was 1.0° before 2026-07-05, see Changelog)
 7. Convert fill values to NaN, drop NaN rows (removes cloud + land pixels)
 8. Clip to exact bbox, apply SST sanity filter (-2°C to 40°C)
 9. Write CSV
@@ -312,13 +327,15 @@ MUR 20260422 (coastwatch.noaa.gov) … ✗ RuntimeError   ← T+0 often 404 (not
 **VIIRS:**
 ```
 ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/...
-Target windows this run: 2
-  2026-04-22 05:50 – 06:30 UTC  (0610UTC)
-  2026-04-22 18:13 – 18:53 UTC  (1833UTC)
-npp 20260422_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked
-npp 20260422_0610 … → DailySSTData/VIIRS/Passes/viirs_npp_20260422_0610.csv  (36737 pts)
-VIIRS summary: 2 written, 3 cached, 8 miss/cloud, 134 outside windows.
+Hourly windows : 48
+Window range   : 2026-07-03 00:50Z → 2026-07-05 00:10Z
+Half-width     : ±10 min per bucket
+npp 20260704_0650 …   → DailySSTData/VIIRS/Passes/viirs_npp_20260704_0650.csv  (51707 pts, 265 lats × 333 lons)
+npp 20260704_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+VIIRS summary: 2 written, 3 cached, 415 miss/cloud, 754 outside windows.
 ```
+
+Reading the `raw_valid_in_bbox`/`ql_dist` diagnostic on a masked line (added 2026-07-04): `raw_valid_in_bbox=0` means the swath had zero real pixels in the exact bbox *before* the quality filter ran — this is normal for a grazing edge-of-swath hit, not cloud cover. A nonzero `raw_valid_in_bbox` with an empty `ql_dist` result after filtering would indicate the quality_level threshold is the actual cause — that pattern has not been observed as of 2026-07-05.
 
 **Land filter sanity check:**
 ```
@@ -351,7 +368,9 @@ VIIRS summary: 2 written, 3 cached, 8 miss/cloud, 134 outside windows.
 | MUR T+0 unavailable | 1–2 day publication lag from NASA JPL | 5-day rolling window; T-1 is always available |
 | VIIRS granule cloud cover | Cannot predict before downloading | Pass center targeting limits wasted downloads to ~5/pass/platform |
 | VIIRS land filter hang | 36k pts × 24 polygons in Python loop = 86M iterations | Filter removed — ACSPO pre-masks land upstream |
-| VIIRS all-cloud pass | Cloud cover at pass time | Expected; logged as "swath overlaps bbox but all pixels cloud/land masked" |
+| VIIRS all-cloud pass | Cloud cover at pass time | Expected; logged as "swath overlaps bbox but all pixels cloud/land masked" — check the `raw_valid_in_bbox` diagnostic to confirm it is really cloud and not a grazing-edge miss (see below) |
+| VIIRS "cloud/land masked" on clear-sky days | `VIIRS_BBOX_PAD` was 1.0° (~60-70 mi) — wide VIIRS swaths only had to graze this padding ring to be logged as "overlaps bbox" and get fully processed, then correctly yield zero pixels once cropped to the true (much smaller) box | Fixed 2026-07-05: pad reduced to 0.15°; genuine misses now correctly report "swath does not overlap bbox" instead of a misleading cloud/land message |
+| VIIRS/MUR host falsely blacklisted after 1-2 ordinary timeouts | `CONN_RESET_THRESHOLD` counted connection errors *cumulatively* for the whole run instead of consecutively — 2 unrelated timeouts anywhere in a ~150-request run permanently disabled the host for every remaining window | Fixed 2026-07-04: counter now resets to 0 on any successful fetch (consecutive, not cumulative) and threshold raised 2 → 5 |
 | Retired VIIRS dataset (`noaacwL3CollatednppC`) | S-NPP retired mid-2025 | Replaced with direct L3U granule downloads from STAR NESDIS NRT |
 | Fake GOES hourly files in repo | Old pipeline replicated 1 daily snapshot into 24 identical files | `rm -rf DailySSTData/GOES/Hourly` in workflow before each run |
 
