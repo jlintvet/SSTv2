@@ -86,28 +86,28 @@ S3_BUCKET    = "sst-bathy-tiles"
 CLOUDFRONT   = "https://d3qy1jhzqojgwx.cloudfront.net"
 
 # ── Color ramp (elevation in meters; negative = below sea level) ───────────
-# Format: elevation_m  R  G  B
-# nv = nodata → transparent (alpha=0 handled separately in blend step)
+# Nautical-chart palette: warm sand shallows → bright aqua shelf →
+# medium blue mid-depth → dark navy deep (NOT black).
 COLOR_RAMP = """\
 200    230 215 175
 50     218 205 160
 10     210 195 145
 0      200 185 135
--1     188 175 125
--5     165 198 158
--15    122 192 162
--30    88  182 170
--60    70  172 186
--100   56  158 196
--200   44  136 190
--310   34  108 178
--366   28  100 170
--600   20   78 158
--914   12   56 136
--1829   6   34  94
--3000   3   18  58
--6000   1    8  30
-nv      0    0   0
+-1     185 170 118
+-5     110 200 210
+-15     80 190 215
+-30     60 178 215
+-60     48 162 210
+-100    38 144 205
+-200    30 118 195
+-310    24  96 182
+-366    20  80 170
+-600    16  64 152
+-914    14  52 130
+-1829   12  42 108
+-3000   10  34  85
+-6000    8  26  65
+nv       0   0   0
 """
 
 # ── NODATA sentinel ────────────────────────────────────────────────────────
