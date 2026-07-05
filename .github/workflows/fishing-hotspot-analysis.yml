@@ -1,0 +1,143 @@
+name: Fishing Hotspot Analysis
+
+on:
+  # ── Primary trigger: run automatically after the VIIRS bundler finishes ──
+  workflow_run:
+    workflows: ["VIIRS Hourly Bundler"]
+    types: [completed]
+
+  # ── Manual trigger with optional overrides ──────────────────────────────
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Analysis date (YYYY-MM-DD). Defaults to today.'
+        required: false
+        default: ''
+      species:
+        description: 'Single species key to run (yellowfin, mahi, wahoo, bluefin, kingfish). Leave blank for all.'
+        required: false
+        default: ''
+      skip_chl:
+        description: 'Skip local CHL/kd490 data (offline test with SST+bathy only)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    name: Score Fishing Hotspots
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Only proceed if triggered manually OR if the upstream workflow succeeded
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy scipy
+
+      - name: Resolve analysis date
+        id: date
+        run: |
+          INPUT_DATE="${{ github.event.inputs.date }}"
+          if [ -z "$INPUT_DATE" ]; then
+            echo "date=$(date -u '+%Y-%m-%d')" >> $GITHUB_OUTPUT
+          else
+            echo "date=$INPUT_DATE" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run FishingHotspotAnalyzer
+        env:
+          DATE:     ${{ steps.date.outputs.date }}
+          SPECIES:  ${{ github.event.inputs.species || '' }}
+          SKIP_CHL: ${{ github.event.inputs.skip_chl == 'true' && '1' || '0' }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -u FishingHotspotAnalyzer.py 2>&1 | tee hotspot_analysis.log
+
+      - name: Verify output exists
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          FILE="DailySST/fishing_hotspots_${DATE}.json"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Expected output not found: $FILE"
+            cat hotspot_analysis.log
+            exit 1
+          fi
+          echo "Output: $FILE"
+          echo "Size  : $(du -sh $FILE | cut -f1)"
+          # Print zone summary
+          python3 -c "
+          import json, sys
+          with open('$FILE') as f: d = json.load(f)
+          for sp, res in d['species'].items():
+              zones = res.get('zones', [])
+              print(f'{sp}: {len(zones)} zone(s)', end='')
+              for z in zones:
+                  print(f'  [rank {z[\"rank\"]} score={z[\"score\"]} area={z[\"area_sq_nm\"]} sqnm]', end='')
+              print()
+          "
+
+      - name: Prune hotspot files older than 7 days
+        run: |
+          find DailySST -maxdepth 1 -name "fishing_hotspots_*.json" | while read f; do
+            fname=$(basename "$f" .json)
+            fdate="${fname#fishing_hotspots_}"
+            if [ "$(date -d "$fdate" +%s 2>/dev/null)" != "" ]; then
+              age=$(( ( $(date -u +%s) - $(date -d "$fdate" +%s) ) / 86400 ))
+              if [ "$age" -gt 7 ]; then
+                echo "Removing old file: $f (age ${age}d)"
+                rm "$f"
+              fi
+            fi
+          done
+
+      - name: Commit hotspot output to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add DailySST/fishing_hotspots_*.json
+          git diff --cached --quiet && echo "No changes to commit" || \
+            git commit -m "hotspots: fishing analysis ${{ steps.date.outputs.date }}"
+          git push origin HEAD
+
+      - name: Commit analysis log
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p DailySST/logs
+          cp hotspot_analysis.log \
+             DailySST/logs/hotspot_analysis_${{ steps.date.outputs.date }}.log 2>/dev/null || true
+          git add DailySST/logs/ 2>/dev/null || true
+          git diff --cached --quiet && echo "No log changes" || \
+            git commit -m "log: hotspot analysis ${{ steps.date.outputs.date }}"
+          git push origin HEAD 2>/dev/null || true
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Fishing hotspot analysis failed for ${{ steps.date.outputs.date }}"
+          echo "Check the log above or download the run logs for details."

@@ -1,0 +1,51 @@
+name: VIIRS Hourly Bundler
+
+# Runs automatically after every "SST Data Fetch" completes, so the hourly
+# bundles + index are rebuilt as soon as new passes land (event-driven — the
+# old standalone hourly cron was unreliable and raced the fetch's commits).
+on:
+  workflow_run:
+    workflows: ["SST Data Fetch"]
+    types: [completed]
+  workflow_dispatch:        # manual trigger from GitHub UI
+  schedule:
+    - cron: '40 * * * *'    # safety net in case a workflow_run event is missed
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main          # always bundle the latest committed passes
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests numpy xarray netcdf4
+      - name: Bundle all regions
+        env:
+          DAYS_BACK: 3
+          USE_LOCAL_PASSES: "true"
+        run: |
+          echo "=== Bundling REGION=mid_atlantic ==="
+          REGION="mid_atlantic" python VIIRSHourlyBundler.py
+          # ga_sc needs a 72h composite window — VIIRS coverage is sparser at lower
+          # latitudes (29.8–35.2°N) so a 36h window leaves large swath gaps.
+          echo "=== Bundling REGION=ga_sc (72h composite) ==="
+          REGION="ga_sc" COMPOSITE_WINDOW_HOURS="72" python VIIRSHourlyBundler.py
+      - name: Commit updated bundles
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add DailySSTData/VIIRS/Bundled/
+          if git diff --cached --quiet; then
+            echo "No bundle changes to commit"
+          else
+            # Commit BEFORE rebasing (pull --rebase refuses with staged changes);
+            # --autostash + retry loop handles concurrent pushes from the SST fetch.
+            git commit -m "chore: VIIRS hourly bundle $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin HEAD && git push origin HEAD && break
+              echo "push attempt $i failed, retrying in 5s..."; sleep 5
+            done
+          fi

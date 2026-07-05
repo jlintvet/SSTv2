@@ -1,0 +1,51 @@
+name: Community Seed
+
+# Temporary beta seeding (see community-seed-content-spec.md).
+# - schedule => ALWAYS runs "tick" only (light pins/tips), gated by the DB kill switch.
+# - workflow_dispatch => choose tick | create | teardown | status. create/teardown
+#   additionally require typing the confirm phrase (mapped to SEED_CONFIRM_* env).
+#
+# Requires repo secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+# Dormant until merged to the default branch (schedules only run from default).
+
+on:
+  schedule:
+    - cron: '0 11,17,23 * * *'   # ~3x/day => 5-10 pins/day total
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "tick | create | teardown | status"
+        default: "status"
+        required: true
+      confirm:
+        description: "Type CONFIRM to allow create/teardown"
+        default: ""
+        required: false
+
+concurrency:
+  group: community-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run seeder
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # scheduled runs have no inputs -> default to the safe "tick"
+          ACTION:  ${{ github.event.inputs.action || 'tick' }}
+          CONFIRM: ${{ github.event.inputs.confirm || '' }}
+        run: |
+          if [ "$ACTION" = "create" ] && [ "$CONFIRM" = "CONFIRM" ]; then
+            export SEED_CONFIRM_CREATE=true
+          fi
+          if [ "$ACTION" = "teardown" ] && [ "$CONFIRM" = "CONFIRM" ]; then
+            export SEED_CONFIRM_TEARDOWN=true
+          fi
+          python community_seed.py "$ACTION"
