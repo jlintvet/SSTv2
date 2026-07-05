@@ -434,8 +434,7 @@ def generate_tiles(blended_tif: Path, tiles_dir: Path) -> None:
         gdal2tiles_cmd(),
         "-z", f"{ZOOM_MIN}-{ZOOM_MAX}",
         "-r", "lanczos",
-        "--xyz",                    # standard XYZ convention (Leaflet default)
-        "--nb-processes", "4",      # parallel tile rendering
+        "--xyz",          # standard XYZ convention (Leaflet default)
         str(blended_tif),
         str(tiles_dir),
     ])
