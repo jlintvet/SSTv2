@@ -32,6 +32,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Clear bathymetry cache (force CRM re-fetch on bathy-crm branch)
+        run: rm -f DailySST/bathymetry*.json DailySST/bathymetry_contours*.json DailySST/bathymetry_grid*.json
+
       - name: Run StaticLayersRetrieval.py (mid_atlantic)
         run: python StaticLayersRetrieval.py
 
@@ -49,6 +52,6 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: update static layers (bathymetry + wrecks)"
-            git pull --rebase origin main
+            git pull --rebase origin bathy-crm
             git push
           fi
