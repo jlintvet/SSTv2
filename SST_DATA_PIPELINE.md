@@ -6,6 +6,9 @@ This document describes the full architecture of the SST data ingest pipeline: h
 
 ## Changelog
 
+### 2026-07-05 — VIIRS granule download retry + timeout increase
+`_fetch_viirs_granule` had zero retry logic — unlike MUR/GOES (`fetch_erddap_csv`, which already retries), a single `ReadTimeout` on a VIIRS granule was instant, final failure for that granule in that run. Evidence this was dropping real data: in one session's logs, `n20` wrote a genuine pass at `20260703_1700` while `n21` — a closely-aligned orbit — timed out at the exact same timestamp the same day. ACSPO L3U grids are fixed-size regardless of content, but NetCDF4 compression means a granule full of real (high-entropy) SST values compresses worse than one dominated by repeated fill values, so the files with the most real data are plausibly the ones most likely to be large enough to bump a fixed timeout. Fix: `VIIRS_HARD_TIMEOUT_S` raised 90s → 150s, VIIRS now uses its own `(connect, read)` timeout tuple separate from ERDDAP's (unaffected), and granule downloads get one retry with backoff before giving up. The consecutive-failure/blacklist counter only increments after the *final* attempt fails, and only for `ConnectionError`/`Timeout` — hard SIGALRM timeouts still never count toward blacklist, unchanged from prior behavior. Verified with a standalone simulation of recover-on-retry, fail-both-counts-once, hard-timeout-never-blacklists, and repeated-failure-still-blacklists before deploying.
+
 ### 2026-07-05 — VIIRS bbox padding false-positive fix
 Diagnostic logging added the day before (see 2026-07-04 entry) showed every "swath overlaps bbox but all pixels cloud/land masked" line that day had `raw_valid_in_bbox=0` — zero real pixels in the exact bbox *before* the quality filter even ran. Root cause: `VIIRS_BBOX_PAD` was 1.0° (~60-70 mi), used as the overlap test. VIIRS' swath is 3000+ km wide, so orbits that only grazed that generous padding ring — without ever crossing the true regional bbox — were flagged as "overlaps", fully processed, and correctly ended up with zero data once cropped to the true box. That was then misreported as "cloud/land masked" when the honest answer was "swath never reached the area." Fix: `VIIRS_BBOX_PAD` reduced to 0.15° — still enough margin for genuine edge-of-box data, but grazers now correctly report "swath does not overlap bbox" instead. No data-availability change; this is a log-accuracy and minor-performance fix. Real VIIRS coverage remains ~2 genuine overhead passes per satellite per day, which is the expected polar-orbit revisit cadence for a fixed regional box, clear skies or not.
 
@@ -266,7 +269,7 @@ A `SIGALRM`-based context manager enforces an absolute wall-clock ceiling regard
 
 ```
 ERDDAP_HARD_TIMEOUT_S = 180   # 3 min max per ERDDAP request
-VIIRS_HARD_TIMEOUT_S  = 90    # 90s max per granule download
+VIIRS_HARD_TIMEOUT_S  = 150   # 150s max per granule download (was 90s until 2026-07-05; VIIRS also gets its own read timeout and 1 retry, see Changelog)
 ```
 
 ### Why this was necessary
