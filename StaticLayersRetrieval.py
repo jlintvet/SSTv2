@@ -2,7 +2,7 @@
 StaticLayersRetrieval.py
 ========================
 Fetches:
-- Bathymetry (GEBCO_2023 primary via NCEI, fallback GEBCO_2020 + ETOPO)
+- Bathymetry (NCEI Coastal Relief Model 2023, 1 arc-second, via OPeNDAP)
 - Depth contours (fathom-aligned depths, dual ft/fathom labeling, shelf_break flag)
 - Bathymetry grid JSON (raw depth grid for feature detection algorithms)
 - Coastline line (Natural Earth 10m, public domain)
@@ -34,10 +34,8 @@ Outputs into DailySST/
   landmask.json             — GeoJSON Polygons / MultiPolygons (Natural Earth 10m)
   wrecks.json               — GeoJSON FeatureCollection from source GPX files
 """
-import csv
 import datetime
 import os
-import io
 import json
 import logging
 import math
@@ -112,19 +110,18 @@ NE_OCEAN_URL     = f"{NE_BASE}/ne_10m_ocean.geojson"
 CONTOUR_DEPTHS_FT = [60, 120, 180, 300, 600, 1200, 1800, 3000, 6000]
 SHELF_BREAK_FT = 1200   # 200 fathoms — flagged in contour properties
 # ---------------------------------------------------------------------------
-# ERDDAP bathymetry sources — tried in order until one succeeds
+# CRM bathymetry source — NCEI Coastal Relief Model 2023 via OPeNDAP
+# Resolution: 1 arc-second (~30 m).  Stride 15 → ~450 m effective spacing.
+# Variable z: meters, positive-up (negative = ocean depth, positive = land).
 # ---------------------------------------------------------------------------
-BATHY_SOURCES = [
-    # GEBCO 2023 — try multiple mirrors in order
-    ("https://www.ncei.noaa.gov/erddap/griddap/GEBCO_2023.csvp",                 "elevation"),
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2023.csvp",          "elevation"),
-    # GEBCO 2020 legacy fallbacks
-    ("https://coastwatch.pfeg.noaa.gov/erddap/griddap/GEBCO_2020.csvp",          "elevation"),
-    # ETOPO fallbacks — dataset IDs vary by server
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",          "z"),
-    ("https://oceanwatch.pifsc.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.csvp",  "z"),
-    ("https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_60s.csvp",          "z"),
-    ("https://erddap.ifremer.fr/erddap/griddap/ETOPO1_bedrock.csvp",             "z"),
+_CRM_BASE = "https://www.ngdc.noaa.gov/thredds/dodsC/crm/cudem/"
+_CRM_STRIDE = 15   # 1 arc-sec × 15 = ~450 m; matches old GEBCO stride=1
+
+# (filename, lat_min, lat_max, lon_min, lon_max)
+_CRM_VOLUMES = [
+    ("crm_vol1_2023.nc", 39.0, 46.0, -77.0, -65.0),  # NE Atlantic
+    ("crm_vol2_2023.nc", 32.0, 39.0, -83.0, -68.0),  # SE Atlantic
+    ("crm_vol3_2023.nc", 24.0, 32.0, -84.0, -76.0),  # FL / E Gulf
 ]
 # ---------------------------------------------------------------------------
 # HTTP session with retry
@@ -376,53 +373,93 @@ def write_wrecks_json() -> None:
 # ---------------------------------------------------------------------------
 # Bathymetry fetch
 # ---------------------------------------------------------------------------
-def _parse_erddap_csvp(text: str) -> list[dict]:
-    reader = csv.reader(io.StringIO(text))
-    rows   = list(reader)[2:]
-    data   = []
-    for row in rows:
-        try:
-            lat  = float(row[0])
-            lon  = float(row[1])
-            elev = float(row[2])
-        except (IndexError, ValueError):
-            continue
-        if elev >= 0:
-            data.append({"lat": lat, "lon": lon, "depth_ft": None, "depth_fathoms": None})
-        else:
-            depth_m       = abs(elev)
-            depth_ft      = round(depth_m * 3.28084, 1)
-            depth_fathoms = round(depth_m / 1.8288,  2)
-            data.append({"lat": lat, "lon": lon,
-                         "depth_ft": depth_ft, "depth_fathoms": depth_fathoms})
-    return data
-def _try_erddap_source(session: requests.Session, base_url: str,
-                       var: str, stride: int) -> list[dict]:
-    url = (
-        f"{base_url}"
-        f"?{var}"
-        f"[({LAT_MIN}):{stride}:({LAT_MAX})]"
-        f"[({LON_MIN}):{stride}:({LON_MAX})]"
-    )
-    log.info("  Trying %s ...", base_url)
-    r = session.get(url, timeout=TIMEOUT)
-    r.raise_for_status()
-    return _parse_erddap_csvp(r.text)
 def _fetch_bathymetry(session: requests.Session) -> list[dict]:
-    log.info("Fetching bathymetry  (stride=%d, ~%.0f m resolution) ...",
-             BATHY_STRIDE, BATHY_STRIDE * 450)
-    last_err = None
-    for base_url, var in BATHY_SOURCES:
+    """
+    Fetch bathymetry from NCEI CRM 2023 via OPeNDAP (netCDF4).
+    Iterates over the CRM volumes that overlap the current region, fetches
+    the z grid at _CRM_STRIDE resolution, and returns rows in the same
+    {lat, lon, depth_ft, depth_fathoms} format used by the rest of the pipeline.
+    """
+    import netCDF4 as nc4
+    import numpy as np
+
+    log.info("Fetching CRM bathymetry (stride=%d, ~%d m resolution) ...",
+             _CRM_STRIDE, _CRM_STRIDE * 30)
+    rows: list[dict] = []
+
+    for vol_file, v_lat_min, v_lat_max, v_lon_min, v_lon_max in _CRM_VOLUMES:
+        olat_min = max(LAT_MIN, v_lat_min)
+        olat_max = min(LAT_MAX, v_lat_max)
+        olon_min = max(LON_MIN, v_lon_min)
+        olon_max = min(LON_MAX, v_lon_max)
+        if olat_min >= olat_max or olon_min >= olon_max:
+            continue
+
+        url = _CRM_BASE + vol_file
+        log.info("  Opening %s (lat %.2f-%.2f, lon %.2f-%.2f) ...",
+                 vol_file, olat_min, olat_max, olon_min, olon_max)
         try:
-            data = _try_erddap_source(session, base_url, var, BATHY_STRIDE)
-            if data:
-                ocean = sum(1 for r in data if r["depth_ft"] is not None)
-                log.info("  Got %d points (%d ocean) from %s", len(data), ocean, base_url)
-                return data
+            ds = nc4.Dataset(url)
         except Exception as exc:
-            log.warning("  Source failed (%s): %s", base_url, exc)
-            last_err = exc
-    raise RuntimeError(f"All bathymetry sources failed. Last error: {last_err}")
+            log.warning("  Could not open %s: %s", vol_file, exc)
+            continue
+
+        try:
+            vol_lats = np.array(ds.variables['lat'][:])
+            vol_lons = np.array(ds.variables['lon'][:])
+
+            lat_idx = np.where(
+                (vol_lats >= olat_min - 1e-7) & (vol_lats <= olat_max + 1e-7)
+            )[0]
+            lon_idx = np.where(
+                (vol_lons >= olon_min - 1e-7) & (vol_lons <= olon_max + 1e-7)
+            )[0]
+            if len(lat_idx) == 0 or len(lon_idx) == 0:
+                log.warning("  No data in %s for this region.", vol_file)
+                continue
+
+            li0, li1 = int(lat_idx[0]),  int(lat_idx[-1])
+            lo0, lo1 = int(lon_idx[0]),  int(lon_idx[-1])
+
+            z_raw = ds.variables['z'][li0:li1+1:_CRM_STRIDE,
+                                      lo0:lo1+1:_CRM_STRIDE]
+            fetch_lats = vol_lats[li0:li1+1:_CRM_STRIDE]
+            fetch_lons = vol_lons[lo0:lo1+1:_CRM_STRIDE]
+        finally:
+            ds.close()
+
+        # Unmask / clean fill values
+        if hasattr(z_raw, 'filled'):
+            z_arr = z_raw.filled(np.nan).astype(float)
+        else:
+            z_arr = np.asarray(z_raw, dtype=float)
+        z_arr[z_arr <= -99990.0] = np.nan
+
+        n_lat, n_lon = z_arr.shape
+        log.info("  Got %d × %d = %d cells from %s",
+                 n_lat, n_lon, n_lat * n_lon, vol_file)
+
+        lat_rep = np.repeat(fetch_lats, n_lon)
+        lon_rep = np.tile(fetch_lons, n_lat)
+        z_flat  = z_arr.ravel()
+
+        for lat, lon, z in zip(lat_rep, lon_rep, z_flat):
+            lat = round(float(lat), 7)
+            lon = round(float(lon), 7)
+            if np.isnan(z) or z >= 0:
+                rows.append({"lat": lat, "lon": lon,
+                             "depth_ft": None, "depth_fathoms": None})
+            else:
+                depth_m = float(-z)
+                rows.append({"lat": lat, "lon": lon,
+                             "depth_ft":      round(depth_m * 3.28084, 1),
+                             "depth_fathoms": round(depth_m / 1.8288,  2)})
+
+    if not rows:
+        raise RuntimeError("CRM fetch returned no data — check OPeNDAP connectivity.")
+    ocean = sum(1 for r in rows if r["depth_ft"] is not None)
+    log.info("CRM: total %d points (%d ocean).", len(rows), ocean)
+    return rows
 
 # ---------------------------------------------------------------------------
 # Ocean mask — retired (Natural Earth 10m polygon approach)
@@ -574,68 +611,6 @@ def _build_grid(rows: list[dict]) -> tuple[list, list, list]:
         flat = new_flat
         if not changed:
             break
-    # ── GEBCO_2020 column-anomaly correction (Cape Hatteras shelf) ───────────
-    # GEBCO_2020 has an anomalous block of deep values at lon -75.19 to -75.21°W,
-    # lat 35.0–35.7°N (Cape Hatteras shelf, ~30-40 mi ESE of Oregon Inlet). The
-    # anomalous cells show 120–300+ ft depth where the real shelf is 30–60 ft.
-    # This causes the 120 ft / 180 ft / 300 ft isobaths to trace a long N-S
-    # "hairpin" (~0.5° lat) embedded within the main contour lines.
-    #
-    # Previous approach (compare to immediate E/W neighbors) failed because the
-    # anomaly spans 2-4 adjacent GEBCO columns — interior anomalous cells have
-    # other anomalous cells as neighbors, so they never appear as local maxima.
-    #
-    # Fix: for each row in the correction zone, linearly interpolate the
-    # "expected" depth from the zone's western boundary column to the eastern
-    # boundary column (both outside the anomaly, so both hold correct values).
-    # Any cell exceeding that interpolated expectation by >60 ft is replaced
-    # with the interpolated value. This is immune to multi-column anomalies.
-    _ANOM_LAT_MIN = 34.90
-    _ANOM_LAT_MAX = 35.70
-    _ANOM_LON_MIN = -75.30
-    _ANOM_LON_MAX = -75.10
-    _ANOM_EXCESS  = 20.0   # ft — cell must exceed linear interpolation by this much
-    # Find the boundary columns just outside the correction zone
-    _left_col  = None  # rightmost column with lon < _ANOM_LON_MIN
-    _right_col = None  # leftmost  column with lon > _ANOM_LON_MAX
-    _zone_cols = []    # column indices inside the zone (inclusive)
-    for _ci, _clon in enumerate(lons):
-        if _clon < _ANOM_LON_MIN:
-            _left_col = _ci
-        elif _clon > _ANOM_LON_MAX:
-            if _right_col is None:
-                _right_col = _ci
-        else:
-            _zone_cols.append(_ci)
-    if _left_col is not None and _right_col is not None and _zone_cols:
-        _left_lon  = lons[_left_col]
-        _right_lon = lons[_right_col]
-        _lon_span  = _right_lon - _left_lon
-        _fixed = 0
-        for _r in range(n_rows):
-            if not (_ANOM_LAT_MIN <= lats[_r] <= _ANOM_LAT_MAX):
-                continue
-            _lv = flat[_r * n_cols + _left_col]
-            _rv = flat[_r * n_cols + _right_col]
-            if math.isnan(_lv) or math.isnan(_rv):
-                continue
-            for _c in _zone_cols:
-                _i = _r * n_cols + _c
-                _v = flat[_i]
-                if math.isnan(_v):
-                    continue
-                # Linear interpolation between boundary depths
-                _alpha    = (lons[_c] - _left_lon) / _lon_span
-                _expected = _lv + _alpha * (_rv - _lv)
-                if _v - _expected > _ANOM_EXCESS:
-                    flat[_i] = _expected
-                    _fixed += 1
-        if _fixed:
-            log.info("GEBCO anomaly fix (interpolation): corrected %d cell(s) "
-                     "(Cape Hatteras shelf zone, lat %.2f–%.2f lon %.2f–%.2f)",
-                     _fixed, _ANOM_LAT_MIN, _ANOM_LAT_MAX,
-                     _ANOM_LON_MIN, _ANOM_LON_MAX)
-    # ── End anomaly correction ────────────────────────────────────────────────
     grid = [flat[r * n_cols:(r + 1) * n_cols] for r in range(n_rows)]
     return lats, lons, grid
 # ---------------------------------------------------------------------------
@@ -664,7 +639,7 @@ def _split_vertical_runs(coords: list,
     Split a contour line at any nearly-vertical sub-section: a window of
     consecutive points that spans > min_lat_span in latitude but < max_lon_var
     in longitude.  Real shelf isobaths have natural horizontal variation; a run
-    this narrow in longitude is a grid-anomaly artifact (GEBCO column spike).
+    this narrow in longitude is a grid-anomaly artifact (single-column spike).
 
     Returns a list of valid sub-segments (may be just [coords] if no spike found).
     """
@@ -701,26 +676,11 @@ def _extract_contour_lines(lats: list, lons: list,
     cg    = contour_generator(x=lons, y=lats, z=grid)
     lines = cg.lines(depth_ft)
     MIN_POINTS = 6
-    # ── Zone constants for GEBCO_2020 anomaly artifact filtering ─────────────
-    # Small closed-loop segments that fall entirely within this geographic zone
-    # are residual artifacts from the GEBCO column-anomaly correction. The grid-
-    # level interpolation leaves cells that are slightly too deep, producing tiny
-    # isolated loops at multiple depth levels. No real bathymetric feature in this
-    # shallow-shelf zone produces a separate isolated small contour.
-    _AZONE_LAT_MIN, _AZONE_LAT_MAX = 34.90, 35.70
-    _AZONE_LON_MIN, _AZONE_LON_MAX = -75.28, -75.14   # lon: west=-75.28, east=-75.14
-    _AZONE_MAX_PTS = 400
     output     = []
     for line in lines:
         if len(line) < MIN_POINTS:
             continue
-        # Reject small isolated segments entirely within the GEBCO anomaly zone
-        _xs = [p[0] for p in line]; _ys = [p[1] for p in line]
-        if (len(line) <= _AZONE_MAX_PTS
-                and min(_xs) >= _AZONE_LON_MIN and max(_xs) <= _AZONE_LON_MAX
-                and min(_ys) >= _AZONE_LAT_MIN and max(_ys) <= _AZONE_LAT_MAX):
-            continue
-        # Reject spike artifacts from isolated GEBCO grid anomalies
+        # Reject spike artifacts: single-column/row grid noise produces
         # (single column/row of bad depth values -> long zero-width contour).
         # contourpy: x=lons, y=lats so p[0]=lon, p[1]=lat.
         xs = [p[0] for p in line]; ys = [p[1] for p in line]
@@ -747,8 +707,8 @@ def write_bathymetry_points(rows: list) -> None:
         "lon_max": max(r["lon"] for r in ocean_pts) if ocean_pts else LON_MAX,
     }
     payload = {
-        "dataset":       "GEBCO_2020 (primary) | ETOPO_2022_v1_15s | ETOPO_2022_v1_60s",
-        "source":        "ERDDAP griddap",
+        "dataset":       "NCEI CRM 2023 via OPeNDAP",
+        "source":        "NCEI CRM 2023 (OPeNDAP/netCDF4)",
         "resolution":    f"stride={BATHY_STRIDE} (~{BATHY_STRIDE * 450:.0f} m)",
         "stride":        BATHY_STRIDE,
         "units":         {"depth_ft": "feet below surface; null = land/no data"},
