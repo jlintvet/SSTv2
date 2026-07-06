@@ -437,12 +437,24 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
     Multiply the hillshade onto the color relief to produce the lit depth image.
     Apply an alpha mask: ocean pixels (elev < 0) → opaque, land → transparent.
     Output is a georeferenced RGBA PNG GeoTIFF.
-    """
-    hs_img = Image.open(hillshade_tif).convert("L")   # grayscale
-    cr_img = Image.open(color_tif).convert("RGBA")
 
-    # Ensure PIL images exactly match the elevation array (GDAL may differ by 1px)
-    target_wh = (geo['n_cols'], geo['n_rows'])
+    Memory strategy: extract ocean_mask from elev then immediately free the
+    1.8 GB float32 array. Blend in 500-row strips so float32 working buffers
+    never exceed ~250 MB, keeping peak RAM well under 7 GB at stride=1.
+    """
+    import gc as _gc
+
+    # Extract ocean mask then release the large elevation array.
+    ocean_mask = (elev < 0) & (elev != NODATA)   # bool: ~1/4 the size
+    del elev
+    _gc.collect()
+    log.info("Freed elevation array; ocean_mask: %.0f MB", ocean_mask.nbytes / 1e6)
+
+    hs_img = Image.open(hillshade_tif).convert("L")   # grayscale, lazy
+    cr_img = Image.open(color_tif).convert("RGBA")    # RGBA, lazy
+
+    W, H = geo["n_cols"], geo["n_rows"]
+    target_wh = (W, H)
     if hs_img.size != target_wh:
         log.warning("Resizing hillshade %s → %s", hs_img.size, target_wh)
         hs_img = hs_img.resize(target_wh, Image.BILINEAR)
@@ -450,24 +462,21 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
         log.warning("Resizing color-relief %s → %s", cr_img.size, target_wh)
         cr_img = cr_img.resize(target_wh, Image.BILINEAR)
 
-    hs = np.array(hs_img, dtype=np.float32) / 255.0   # 0-1
-    cr = np.array(cr_img, dtype=np.float32)            # 0-255 RGBA
+    # Strip-based blend: process STRIP_H rows at a time.
+    # Full float32 at stride=1 would be 7+ GB; strips cap working RAM at ~250 MB.
+    STRIP_H = 500
+    blended_img = Image.new("RGBA", (W, H))
+    for y0 in range(0, H, STRIP_H):
+        y1 = min(y0 + STRIP_H, H)
+        box = (0, y0, W, y1)
+        hs_s = np.array(hs_img.crop(box), dtype=np.float32) / 255.0
+        cr_s = np.array(cr_img.crop(box), dtype=np.float32)
+        # Soft multiply floor 0.6: flat deep seafloor retains 60% brightness
+        hs_soft = 0.6 + hs_s * 0.4
+        rgb  = np.clip(cr_s[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
+        alph = np.where(ocean_mask[y0:y1, :W], 255, 0).astype(np.uint8)
+        blended_img.paste(Image.fromarray(np.dstack([rgb, alph]), "RGBA"), (0, y0))
 
-    # Soft multiply: shift hillshade to [0.4, 1.0] so even full-shadow areas
-    # retain 40% of their original colour (avoids excessively dark rendering).
-    # Soft multiply floor raised 0.4 -> 0.6: prevents flat deep-water
-    # areas from going near-black after hillshade multiply.
-    hs_soft = 0.6 + hs * 0.4
-    blended_rgb = np.clip(cr[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
-
-    # Alpha channel: ocean cells opaque, land + nodata transparent
-    ocean_mask = (elev < 0) & (elev != NODATA)
-    alpha = np.where(ocean_mask, 255, 0).astype(np.uint8)
-
-    rgba = np.dstack([blended_rgb, alpha])
-    blended_img = Image.fromarray(rgba, mode="RGBA")
-
-    # Save as PNG first (PIL handles RGBA cleanly)
     png_path = workdir / "blended.png"
     blended_img.save(png_path, "PNG")
     log.info("Saved blended PNG: %s", png_path.name)
