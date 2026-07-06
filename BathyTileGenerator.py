@@ -87,9 +87,7 @@ CLOUDFRONT   = "https://d3qy1jhzqojgwx.cloudfront.net"
 
 # ── Color ramp (elevation in meters; negative = below sea level) ───────────
 # Nautical-chart palette: warm sand shallows → bright aqua shelf →
-# medium-bright blues through mid-depth → deep navy (never near-black).
-# Deep water lifted significantly so that 200-2000m range (shelf break,
-# canyon heads, upper slope) remains clearly visible after hillshade blend.
+# medium blue mid-depth → dark navy deep (NOT black).
 COLOR_RAMP = """\
 200    230 215 175
 50     218 205 160
@@ -455,9 +453,10 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
     hs = np.array(hs_img, dtype=np.float32) / 255.0   # 0-1
     cr = np.array(cr_img, dtype=np.float32)            # 0-255 RGBA
 
-    # Soft multiply: shift hillshade to [0.6, 1.0] so even full-shadow areas
-    # retain 60% of their original colour. Floor raised from 0.4 → 0.6 to
-    # prevent flat deep-water areas (low hillshade variance) going near-black.
+    # Soft multiply: shift hillshade to [0.4, 1.0] so even full-shadow areas
+    # retain 40% of their original colour (avoids excessively dark rendering).
+    # Soft multiply floor raised 0.4 -> 0.6: prevents flat deep-water
+    # areas from going near-black after hillshade multiply.
     hs_soft = 0.6 + hs * 0.4
     blended_rgb = np.clip(cr[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
 
@@ -617,4 +616,13 @@ if __name__ == "__main__":
     if region_env == "all":
         regions = list(REGION_CONFIGS.keys())
     elif region_env in REGION_CONFIGS:
-        regi
+        regions = [region_env]
+    else:
+        log.error("Unknown REGION=%r. Choose: %s or 'all'",
+                  region_env, ", ".join(REGION_CONFIGS))
+        sys.exit(1)
+
+    for r in regions:
+        process_region(r)
+
+    log.info("All done.")
