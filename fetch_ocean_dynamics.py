@@ -46,12 +46,23 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
-BBOX = {
-    "lat_min": 33.70,
-    "lat_max": 39.00,
-    "lon_min": -78.89,
-    "lon_max": -72.21,
+_REGION_CONFIGS = {
+    "mid_atlantic": {
+        "bbox": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21},
+        "subdir": "",
+    },
+    "ga_sc": {
+        "bbox": {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20},
+        "subdir": "ga_sc",
+    },
 }
+_REGION = os.environ.get("REGION", "mid_atlantic").strip()
+if _REGION not in _REGION_CONFIGS:
+    print(f"WARNING: Unknown REGION={_REGION!r} — falling back to mid_atlantic")
+    _REGION = "mid_atlantic"
+_REGION_CFG = _REGION_CONFIGS[_REGION]
+BBOX    = _REGION_CFG["bbox"]
+_SUBDIR = _REGION_CFG["subdir"]
 _date_override = os.environ.get("TARGET_DATE_OVERRIDE", "").strip()
 TARGET_DATE = (
     datetime.date.fromisoformat(_date_override)
@@ -59,8 +70,8 @@ TARGET_DATE = (
     else datetime.date.today() - datetime.timedelta(days=1)
 )
 OUTPUT_DIR  = Path("DailySST")
-CURR_DIR    = OUTPUT_DIR / "Currents"
-ALT_DIR     = OUTPUT_DIR / "Altimetry"
+CURR_DIR    = OUTPUT_DIR / "Currents" / _SUBDIR if _SUBDIR else OUTPUT_DIR / "Currents"
+ALT_DIR     = OUTPUT_DIR / "Altimetry" / _SUBDIR if _SUBDIR else OUTPUT_DIR / "Altimetry"
 CURR_DIR.mkdir(parents=True, exist_ok=True)
 ALT_DIR.mkdir(parents=True, exist_ok=True)
 TIMEOUT    = 180
@@ -195,7 +206,7 @@ def fetch_hycom(date):
     for try_date in _recent_dates(date, n=3):
         for hour in ("12", "00"):
             for url in _hycom_ncss_urls(dataset, try_date, hour):
-                nc_path = OUTPUT_DIR / f"_hycom_{try_date}_{hour}.nc"
+                nc_path = OUTPUT_DIR / f"_hycom_{_REGION}_{try_date}_{hour}.nc"
                 try:
                     print(f"  Trying {url[:80]}...")
                     r = SESSION.get(url, timeout=TIMEOUT, stream=True)
@@ -292,7 +303,7 @@ def fetch_oscar(date):
                     f"[({b['lat_min']}):1:({b['lat_max']})]"
                     f"[({b['lon_min']}):1:({b['lon_max']})]"
                 )
-                nc_path = OUTPUT_DIR / f"_oscar_{dataset_id}_{try_date}.nc"
+                nc_path = OUTPUT_DIR / f"_oscar_{_REGION}_{dataset_id}_{try_date}.nc"
                 try:
                     host_label = host.split("/")[2]
                     print(f"  Trying {dataset_id} @ {host_label} {try_date} ...")
@@ -365,7 +376,7 @@ def fetch_cmems_currents(date):
         print("  Run: pip install copernicusmarine")
         return None
     b = BBOX
-    nc_path = OUTPUT_DIR / f"_cmems_curr_{date}.nc"
+    nc_path = OUTPUT_DIR / f"_cmems_curr_{_REGION}_{date}.nc"
     try:
         # v1.0+: no username/password params — auth via env vars set above
         cm.subset(
@@ -410,7 +421,7 @@ def fetch_cmems_altimetry(date):
         print("  Run: pip install copernicusmarine")
         return None, None
     b = BBOX
-    nc_path = OUTPUT_DIR / f"_cmems_alt_{date}.nc"
+    nc_path = OUTPUT_DIR / f"_cmems_alt_{_REGION}_{date}.nc"
     try:
         # v1.0+: no username/password params — auth via env vars set above
         cm.subset(
