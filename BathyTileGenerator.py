@@ -87,7 +87,9 @@ CLOUDFRONT   = "https://d3qy1jhzqojgwx.cloudfront.net"
 
 # ── Color ramp (elevation in meters; negative = below sea level) ───────────
 # Nautical-chart palette: warm sand shallows → bright aqua shelf →
-# medium blue mid-depth → dark navy deep (NOT black).
+# medium-bright blues through mid-depth → deep navy (never near-black).
+# Deep water lifted significantly so that 200-2000m range (shelf break,
+# canyon heads, upper slope) remains clearly visible after hillshade blend.
 COLOR_RAMP = """\
 200    230 215 175
 50     218 205 160
@@ -97,16 +99,16 @@ COLOR_RAMP = """\
 -5     110 200 210
 -15     80 190 215
 -30     60 178 215
--60     48 162 210
--100    38 144 205
--200    30 118 195
--310    24  96 182
--366    20  80 170
--600    16  64 152
--914    14  52 130
--1829   12  42 108
--3000   10  34  85
--6000    8  26  65
+-60     50 168 215
+-100    65 160 220
+-200    55 140 212
+-310    47 122 202
+-366    43 112 196
+-600    38  96 184
+-914    34  82 168
+-1829   28  65 150
+-3000   22  50 124
+-6000   14  36  92
 nv       0   0   0
 """
 
@@ -453,9 +455,10 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
     hs = np.array(hs_img, dtype=np.float32) / 255.0   # 0-1
     cr = np.array(cr_img, dtype=np.float32)            # 0-255 RGBA
 
-    # Soft multiply: shift hillshade to [0.4, 1.0] so even full-shadow areas
-    # retain 40% of their original colour (avoids excessively dark rendering).
-    hs_soft = 0.4 + hs * 0.6
+    # Soft multiply: shift hillshade to [0.6, 1.0] so even full-shadow areas
+    # retain 60% of their original colour. Floor raised from 0.4 → 0.6 to
+    # prevent flat deep-water areas (low hillshade variance) going near-black.
+    hs_soft = 0.6 + hs * 0.4
     blended_rgb = np.clip(cr[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
 
     # Alpha channel: ocean cells opaque, land + nodata transparent
@@ -614,13 +617,4 @@ if __name__ == "__main__":
     if region_env == "all":
         regions = list(REGION_CONFIGS.keys())
     elif region_env in REGION_CONFIGS:
-        regions = [region_env]
-    else:
-        log.error("Unknown REGION=%r. Choose: %s or 'all'",
-                  region_env, ", ".join(REGION_CONFIGS))
-        sys.exit(1)
-
-    for r in regions:
-        process_region(r)
-
-    log.info("All done.")
+        regi
