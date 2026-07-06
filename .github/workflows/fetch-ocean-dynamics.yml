@@ -25,7 +25,7 @@ jobs:
   fetch:
     name: Fetch Currents + Altimetry
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     # Only proceed if triggered manually OR if the upstream workflow succeeded
     if: >
@@ -47,7 +47,24 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests xarray netCDF4 numpy pandas copernicusmarine
+          pip install requests xarray netCDF4 numpy pandas
+
+      - name: Check CMEMS credentials
+        id: cmems_check
+        env:
+          CMEMS_USER: ${{ secrets.CMEMS_USER }}
+        run: |
+          if [ -n "$CMEMS_USER" ]; then
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "CMEMS credentials present — will install copernicusmarine"
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "No CMEMS credentials — skipping copernicusmarine install"
+          fi
+
+      - name: Install copernicusmarine (CMEMS only)
+        if: steps.cmems_check.outputs.available == 'true'
+        run: pip install copernicusmarine
 
       - name: Resolve target date
         id: date
