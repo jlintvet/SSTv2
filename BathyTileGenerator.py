@@ -229,53 +229,45 @@ def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
     return elev
 
 
-def fetch_etopo_fallback(lat_min: float, lat_max: float,
-                         lon_min: float, lon_max: float,
-                         n_rows: int, n_cols: int) -> "np.ndarray | None":
+def _fill_offshore_nodata(elev: np.ndarray) -> np.ndarray:
     """
-    Fetch ETOPO1 (1 arc-minute) for the bbox via NGDC OPeNDAP and upsample
-    to the target grid shape. Returns a float32 elevation array, or None on
-    failure. Used ONLY to fill NODATA cells that CUDEM doesn't cover — CUDEM
-    values are always preferred over ETOPO1.
+    Fill NODATA cells that are spatially connected to the eastern (open-ocean)
+    edge of the grid with a deep-water default (-3000 m). These are offshore
+    areas beyond CUDEM coverage. NODATA cells not connected to the eastern edge
+    are inland land or enclosed bays — left as NODATA (transparent in tiles).
+
+    Uses scipy connected-component labeling on the NODATA mask. No external
+    data fetch required.
     """
-    ETOPO_URL = "https://www.ngdc.noaa.gov/thredds/dodsC/etopo1/etopo1_ice_c_f4.nc"
-    try:
-        import netCDF4 as _nc4
-        ds = _nc4.Dataset(ETOPO_URL)
-        # ETOPO1 variables: x = lon (-180→180), y = lat (-90→90), z = elevation
-        et_lat = np.array(ds.variables["y"][:])
-        et_lon = np.array(ds.variables["x"][:])
-        li0 = int(np.searchsorted(et_lat, lat_min - 0.02))
-        li1 = int(np.searchsorted(et_lat, lat_max + 0.02)) + 1
-        lo0 = int(np.searchsorted(et_lon, lon_min - 0.02))
-        lo1 = int(np.searchsorted(et_lon, lon_max + 0.02)) + 1
-        # Clamp to valid range
-        li0 = max(0, li0); li1 = min(len(et_lat), li1)
-        lo0 = max(0, lo0); lo1 = min(len(et_lon), lo1)
-        z_coarse = np.array(ds.variables["z"][li0:li1, lo0:lo1], dtype=np.float32)
-        ds.close()
-        log.info("ETOPO1 fetch: %d×%d coarse cells", z_coarse.shape[0], z_coarse.shape[1])
-    except Exception as exc:
-        log.warning("ETOPO1 fetch failed: %s — skipping fallback fill", exc)
-        return None
+    import gc
+    from scipy.ndimage import label as _label
 
-    # Upsample ocean mask (not full elevation) to avoid large intermediate array.
-    # PIL resize is memory-efficient; use BILINEAR to smooth the coarse mask edges.
-    ocean_coarse = (z_coarse < 0).astype(np.uint8) * 255   # 0 or 255
-    pil_coarse = Image.fromarray(ocean_coarse, mode="L")
-    # PIL size = (width=n_cols, height=n_rows)
-    pil_fine = pil_coarse.resize((n_cols, n_rows), Image.BILINEAR)
-    ocean_fine = np.array(pil_fine, dtype=np.uint8) > 127  # bool
+    nodata_mask = (elev == NODATA)
+    n_nodata = int(nodata_mask.sum())
+    if n_nodata == 0:
+        return elev
 
-    # Also upsample elevation for the actual fill values
-    pil_elev_coarse = Image.fromarray(z_coarse, mode="F")
-    pil_elev_fine   = pil_elev_coarse.resize((n_cols, n_rows), Image.BILINEAR)
-    elev_fine = np.array(pil_elev_fine, dtype=np.float32)
+    log.info("Offshore fill: labeling %d NODATA cells ...", n_nodata)
+    labeled, _ = _label(nodata_mask)
+    del nodata_mask
+    gc.collect()
 
-    del z_coarse, ocean_coarse, pil_coarse, pil_fine, pil_elev_coarse, pil_elev_fine
-    # Return masked array: ocean cells have their ETOPO1 depth, non-ocean NaN
-    result = np.where(ocean_fine, elev_fine, np.float32(NODATA))
-    return result
+    # Any connected NODATA region touching the eastern column = open ocean.
+    east_labels = set(int(x) for x in np.unique(labeled[:, -1]) if x != 0)
+    if not east_labels:
+        log.info("No NODATA regions touch eastern edge — offshore fill skipped")
+        del labeled
+        return elev
+
+    fill_mask = np.isin(labeled, list(east_labels))
+    del labeled
+    gc.collect()
+
+    n_filled = int(fill_mask.sum())
+    elev[fill_mask] = -3000.0
+    log.info("Offshore fill: %d cells → -3000m (%d east-edge regions)",
+             n_filled, len(east_labels))
+    return elev
 
 
 def fetch_crm_region(lat_min: float, lat_max: float,
@@ -391,17 +383,7 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
     master = _fill_ocean_gaps(master)
 
-    nodata_remaining = int((master == NODATA).sum())
-    if nodata_remaining > 0:
-        log.info("Fetching ETOPO1 fallback for %d remaining NODATA cells ...", nodata_remaining)
-        etopo = fetch_etopo_fallback(lat_min, lat_max, lon_min, lon_max, n_rows, n_cols)
-        if etopo is not None:
-            fill_mask = (master == NODATA) & (etopo != NODATA)
-            filled = int(fill_mask.sum())
-            master[fill_mask] = etopo[fill_mask]
-            log.info("ETOPO1 fallback filled %d ocean cells (%.1f%% of NODATA)",
-                     filled, 100.0 * filled / max(nodata_remaining, 1))
-            del etopo
+    master = _fill_offshore_nodata(master)
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
@@ -598,7 +580,7 @@ def upload_tiles(tiles_dir: Path, region: str) -> None:
                 local_path, S3_BUCKET, s3_key,
                 ExtraArgs={
                     "ContentType":  "image/png",
-                    "CacheControl": "max-age=31536000, immutable",
+                    "CacheControl": "max-age=86400",
                 },
             )
             uploaded += 1
@@ -616,6 +598,31 @@ def upload_tiles(tiles_dir: Path, region: str) -> None:
     log.info("  %s/bathy/%s/{z}/{x}/{y}.png", CLOUDFRONT, region)
     if errors:
         raise RuntimeError(f"{errors} tiles failed to upload — check S3 permissions.")
+
+    # Invalidate CloudFront cache so updated tiles are served immediately.
+    try:
+        import re as _re
+        cf_domain = _re.search(r"https://([^/]+\.cloudfront\.net)", CLOUDFRONT)
+        cf_host = cf_domain.group(1) if cf_domain else ""
+        cf = boto3.client("cloudfront")
+        dists = cf.list_distributions().get("DistributionList", {}).get("Items", [])
+        dist_id = next(
+            (d["Id"] for d in dists if d.get("DomainName", "") == cf_host),
+            None,
+        )
+        if dist_id:
+            cf.create_invalidation(
+                DistributionId=dist_id,
+                InvalidationBatch={
+                    "Paths": {"Quantity": 1, "Items": [f"/bathy/{region}/*"]},
+                    "CallerReference": str(int(time.time())),
+                },
+            )
+            log.info("CloudFront invalidation submitted: /bathy/%s/* on %s", region, dist_id)
+        else:
+            log.warning("CloudFront distribution not found for %s — cache may serve stale tiles", cf_host)
+    except Exception as _exc:
+        log.warning("CloudFront invalidation skipped: %s", _exc)
 
 
 # ──────────────────────────────────────────────────────────────────────────
