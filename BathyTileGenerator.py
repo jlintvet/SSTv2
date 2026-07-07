@@ -600,17 +600,12 @@ def upload_tiles(tiles_dir: Path, region: str) -> None:
         raise RuntimeError(f"{errors} tiles failed to upload — check S3 permissions.")
 
     # Invalidate CloudFront cache so updated tiles are served immediately.
-    try:
-        import re as _re
-        cf_domain = _re.search(r"https://([^/]+\.cloudfront\.net)", CLOUDFRONT)
-        cf_host = cf_domain.group(1) if cf_domain else ""
-        cf = boto3.client("cloudfront")
-        dists = cf.list_distributions().get("DistributionList", {}).get("Items", [])
-        dist_id = next(
-            (d["Id"] for d in dists if d.get("DomainName", "") == cf_host),
-            None,
-        )
-        if dist_id:
+    # Set CLOUDFRONT_DISTRIBUTION_ID env var (GitHub secret) to enable.
+    # IAM user needs cloudfront:CreateInvalidation on the distribution.
+    dist_id = os.environ.get("CLOUDFRONT_DISTRIBUTION_ID", "").strip()
+    if dist_id:
+        try:
+            cf = boto3.client("cloudfront")
             cf.create_invalidation(
                 DistributionId=dist_id,
                 InvalidationBatch={
@@ -619,10 +614,10 @@ def upload_tiles(tiles_dir: Path, region: str) -> None:
                 },
             )
             log.info("CloudFront invalidation submitted: /bathy/%s/* on %s", region, dist_id)
-        else:
-            log.warning("CloudFront distribution not found for %s — cache may serve stale tiles", cf_host)
-    except Exception as _exc:
-        log.warning("CloudFront invalidation skipped: %s", _exc)
+        except Exception as _exc:
+            log.warning("CloudFront invalidation failed: %s", _exc)
+    else:
+        log.warning("CLOUDFRONT_DISTRIBUTION_ID not set — tiles cached for up to 24h")
 
 
 # ──────────────────────────────────────────────────────────────────────────
