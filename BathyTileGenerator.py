@@ -187,7 +187,7 @@ def _clean_z(z_raw) -> np.ndarray:
     return np.where(np.isnan(arr), NODATA, arr)
 
 
-def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 25) -> np.ndarray:
+def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
     """
     Fill NODATA holes in the elevation grid by iteratively averaging from
     4-connected valid neighbours.  A single pass resolves isolated-pixel
