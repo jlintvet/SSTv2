@@ -725,4 +725,4 @@ if __name__ == "__main__":
     for r in regions:
         process_region(r)
 
-    log.info("All don
+    log.info("All done.")
