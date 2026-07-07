@@ -320,56 +320,17 @@ def write_wrecks_json() -> None:
       ]
     }
     """
-    log.info("Building wrecks.json from %d GPX file(s) ...", len(WRECK_GPX_FILES))
-    all_features   = []
-    gpx_files_used = []
-
-    for gpx_name, region in WRECK_GPX_FILES.items():
-        gpx_path = OUTPUT_DIR / gpx_name
-        if not gpx_path.exists():
-            log.warning("  GPX not found, skipping: %s", gpx_path)
-            continue
-        features = _parse_gpx_file(gpx_path, region)
-        log.info("  %-40s → %d waypoints  (region: %s)", gpx_name, len(features), region)
-        all_features.extend(features)
-        gpx_files_used.append(gpx_name)
-
-    if not all_features:
-        log.warning("No waypoints found — wrecks.json not written.")
-        return
-
-    regions_present = list(dict.fromkeys(          # preserve insertion order, dedupe
-        f["properties"]["region"] for f in all_features
-    ))
-
-    fc = {
-        "type": "FeatureCollection",
-        "metadata": {
-            "source":    WRECK_SOURCE_LABEL,
-            "generated": datetime.datetime.utcnow().isoformat() + "Z",
-            "gpx_files": gpx_files_used,
-            "regions":   regions_present,
-            "region": {
-                "lat_min": LAT_MIN,
-                "lat_max": LAT_MAX,
-                "lon_min": LON_MIN,
-                "lon_max": LON_MAX,
-            },
-            "symbols": WRECK_SYMBOL_DESCRIPTIONS,
-        },
-        "feature_count": len(all_features),
-        "features":      all_features,
-    }
-
-    dest = OUTPUT_DIR / "wrecks.json"
-    tmp  = dest.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(fc, fh, separators=(",", ":"))
-    tmp.rename(dest)
-
-    size_kb = dest.stat().st_size / 1024
-    log.info("wrecks.json written: %d features across %d region(s)  (%.1f KB)",
-             len(all_features), len(regions_present), size_kb)
+    # wrecks.json is now a manually-curated static file.
+    # GPX source files were removed from the repo (commit 4568501).
+    # This function intentionally does not modify wrecks.json.
+    wrecks_path = OUTPUT_DIR / "wrecks.json"
+    if wrecks_path.exists():
+        with open(wrecks_path, encoding="utf-8") as _fh:
+            _d = json.load(_fh)
+        _count = _d.get("feature_count", len(_d.get("features", [])))
+        log.info("wrecks.json is manually curated (%d features) — skipping GPX rebuild.", _count)
+    else:
+        log.warning("wrecks.json not found and GPX sources are no longer used — skipping.")
 # ---------------------------------------------------------------------------
 # Bathymetry fetch
 # ---------------------------------------------------------------------------
