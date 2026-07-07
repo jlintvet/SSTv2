@@ -99,14 +99,14 @@ COLOR_RAMP = """\
 -30     60 178 215
 -60     50 168 215
 -100    65 160 220
--200    55 140 212
--310    47 122 202
--366    43 112 196
--600    38  96 184
--914    34  82 168
--1829   28  65 150
--3000   22  50 124
--6000   14  36  92
+-200    58 148 215
+-310    52 132 207
+-366    48 120 200
+-600    46 106 190
+-914    44  92 180
+-1829   42  76 165
+-3000   40  62 150
+-6000   36  50 130
 nv       0   0   0
 """
 
@@ -227,6 +227,29 @@ def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
     if remaining:
         log.info("Gap-fill complete: %d unfillable NODATA cells remain (likely land)", remaining)
     return elev
+
+
+def _smooth_elevation(elev, sigma=1.5):
+    """
+    Gaussian-smooth elevation to reduce blocky artifacts from coarser-resolution
+    source data within the CRM (e.g. 3 arc-sec data interpolated to 1 arc-sec grid).
+    Uses weighted normalized filter so NODATA boundaries are not contaminated.
+    Canyon/shelf-break features are wide enough that sigma=1.5 preserves structure.
+    """
+    if not _SCIPY_AVAILABLE:
+        return elev
+    from scipy.ndimage import gaussian_filter as _gf
+    import numpy as np
+    nodata_mask = (elev == NODATA)
+    if not nodata_mask.any():
+        return _gf(elev.astype(np.float32), sigma=sigma).astype(np.float32)
+    values  = np.where(~nodata_mask, elev, 0.0).astype(np.float32)
+    weights = (~nodata_mask).astype(np.float32)
+    fv = _gf(values,  sigma=sigma)
+    fw = _gf(weights, sigma=sigma)
+    smoothed = np.where(fw > 1e-6, fv / fw, NODATA).astype(np.float32)
+    smoothed[nodata_mask] = NODATA
+    return smoothed
 
 
 def _fill_offshore_nodata(elev: np.ndarray) -> np.ndarray:
@@ -382,6 +405,8 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     ocean_cells = int(np.sum((master < 0) & (master != NODATA)))
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
     master = _fill_ocean_gaps(master)
+    master = _smooth_elevation(master, sigma=1.5)
+    log.info("Elevation smoothing complete (sigma=1.5)")
 
     # _fill_offshore_nodata disabled: offshore NODATA is left transparent (alpha=0)
     # so the GL basemap shows through for open ocean. This prevents the light-colored
@@ -517,8 +542,8 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
         box = (0, y0, W, y1)
         hs_s = np.array(hs_img.crop(box), dtype=np.float32) / 255.0
         cr_s = np.array(cr_img.crop(box), dtype=np.float32)
-        # Soft multiply floor 0.6: flat deep seafloor retains 60% brightness
-        hs_soft = 0.6 + hs_s * 0.4
+        # Soft multiply floor 0.65: flat deep seafloor retains 65% brightness
+        hs_soft = 0.65 + hs_s * 0.35
         rgb  = np.clip(cr_s[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
         alph = np.where(ocean_mask[y0:y1, :W], 255, 0).astype(np.uint8)
         blended_img.paste(Image.fromarray(np.dstack([rgb, alph]), "RGBA"), (0, y0))
