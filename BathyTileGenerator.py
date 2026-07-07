@@ -99,14 +99,14 @@ COLOR_RAMP = """\
 -30     60 178 215
 -60     50 168 215
 -100    65 160 220
--200    58 148 215
--310    52 132 207
--366    48 120 200
--600    46 106 190
--914    44  92 180
--1829   42  76 165
--3000   40  62 150
--6000   36  50 130
+-200    60 152 218
+-310    56 138 212
+-366    54 126 206
+-600    54 116 200
+-914    54 108 196
+-1829   52  96 186
+-3000   50  84 175
+-6000   46  72 162
 nv       0   0   0
 """
 
@@ -187,7 +187,7 @@ def _clean_z(z_raw) -> np.ndarray:
     return np.where(np.isnan(arr), NODATA, arr)
 
 
-def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
+def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 25) -> np.ndarray:
     """
     Fill NODATA holes in the elevation grid by iteratively averaging from
     4-connected valid neighbours.  A single pass resolves isolated-pixel
@@ -405,8 +405,8 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     ocean_cells = int(np.sum((master < 0) & (master != NODATA)))
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
     master = _fill_ocean_gaps(master)
-    master = _smooth_elevation(master, sigma=1.5)
-    log.info("Elevation smoothing complete (sigma=1.5)")
+    master = _smooth_elevation(master, sigma=2.2)
+    log.info("Elevation smoothing complete (sigma=2.2)")
 
     # _fill_offshore_nodata disabled: offshore NODATA is left transparent (alpha=0)
     # so the GL basemap shows through for open ocean. This prevents the light-colored
@@ -543,7 +543,7 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
         hs_s = np.array(hs_img.crop(box), dtype=np.float32) / 255.0
         cr_s = np.array(cr_img.crop(box), dtype=np.float32)
         # Soft multiply floor 0.20: deep shadows go near-black for strong contrast
-        hs_soft = 0.20 + hs_s * 0.80
+        hs_soft = 0.42 + hs_s * 0.58
         rgb  = np.clip(cr_s[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
         alph = np.where(ocean_mask[y0:y1, :W], 255, 0).astype(np.uint8)
         blended_img.paste(Image.fromarray(np.dstack([rgb, alph]), "RGBA"), (0, y0))
