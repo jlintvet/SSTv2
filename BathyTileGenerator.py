@@ -93,7 +93,7 @@ COLOR_RAMP = """\
 50     218 205 160
 10     210 195 145
 0      200 185 135
--1     185 170 118
+-1     110 200 210
 -5     110 200 210
 -15     80 190 215
 -30     60 178 215
@@ -229,6 +229,55 @@ def _fill_ocean_gaps(elev: np.ndarray, max_passes: int = 5) -> np.ndarray:
     return elev
 
 
+def fetch_etopo_fallback(lat_min: float, lat_max: float,
+                         lon_min: float, lon_max: float,
+                         n_rows: int, n_cols: int) -> "np.ndarray | None":
+    """
+    Fetch ETOPO1 (1 arc-minute) for the bbox via NGDC OPeNDAP and upsample
+    to the target grid shape. Returns a float32 elevation array, or None on
+    failure. Used ONLY to fill NODATA cells that CUDEM doesn't cover — CUDEM
+    values are always preferred over ETOPO1.
+    """
+    ETOPO_URL = "https://www.ngdc.noaa.gov/thredds/dodsC/etopo1/etopo1_ice_c_f4.nc"
+    try:
+        import netCDF4 as _nc4
+        ds = _nc4.Dataset(ETOPO_URL)
+        # ETOPO1 variables: x = lon (-180→180), y = lat (-90→90), z = elevation
+        et_lat = np.array(ds.variables["y"][:])
+        et_lon = np.array(ds.variables["x"][:])
+        li0 = int(np.searchsorted(et_lat, lat_min - 0.02))
+        li1 = int(np.searchsorted(et_lat, lat_max + 0.02)) + 1
+        lo0 = int(np.searchsorted(et_lon, lon_min - 0.02))
+        lo1 = int(np.searchsorted(et_lon, lon_max + 0.02)) + 1
+        # Clamp to valid range
+        li0 = max(0, li0); li1 = min(len(et_lat), li1)
+        lo0 = max(0, lo0); lo1 = min(len(et_lon), lo1)
+        z_coarse = np.array(ds.variables["z"][li0:li1, lo0:lo1], dtype=np.float32)
+        ds.close()
+        log.info("ETOPO1 fetch: %d×%d coarse cells", z_coarse.shape[0], z_coarse.shape[1])
+    except Exception as exc:
+        log.warning("ETOPO1 fetch failed: %s — skipping fallback fill", exc)
+        return None
+
+    # Upsample ocean mask (not full elevation) to avoid large intermediate array.
+    # PIL resize is memory-efficient; use BILINEAR to smooth the coarse mask edges.
+    ocean_coarse = (z_coarse < 0).astype(np.uint8) * 255   # 0 or 255
+    pil_coarse = Image.fromarray(ocean_coarse, mode="L")
+    # PIL size = (width=n_cols, height=n_rows)
+    pil_fine = pil_coarse.resize((n_cols, n_rows), Image.BILINEAR)
+    ocean_fine = np.array(pil_fine, dtype=np.uint8) > 127  # bool
+
+    # Also upsample elevation for the actual fill values
+    pil_elev_coarse = Image.fromarray(z_coarse, mode="F")
+    pil_elev_fine   = pil_elev_coarse.resize((n_cols, n_rows), Image.BILINEAR)
+    elev_fine = np.array(pil_elev_fine, dtype=np.float32)
+
+    del z_coarse, ocean_coarse, pil_coarse, pil_fine, pil_elev_coarse, pil_elev_fine
+    # Return masked array: ocean cells have their ETOPO1 depth, non-ocean NaN
+    result = np.where(ocean_fine, elev_fine, np.float32(NODATA))
+    return result
+
+
 def fetch_crm_region(lat_min: float, lat_max: float,
                      lon_min: float, lon_max: float) -> tuple[np.ndarray, dict]:
     """
@@ -341,6 +390,18 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     ocean_cells = int(np.sum((master < 0) & (master != NODATA)))
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
     master = _fill_ocean_gaps(master)
+
+    nodata_remaining = int((master == NODATA).sum())
+    if nodata_remaining > 0:
+        log.info("Fetching ETOPO1 fallback for %d remaining NODATA cells ...", nodata_remaining)
+        etopo = fetch_etopo_fallback(lat_min, lat_max, lon_min, lon_max, n_rows, n_cols)
+        if etopo is not None:
+            fill_mask = (master == NODATA) & (etopo != NODATA)
+            filled = int(fill_mask.sum())
+            master[fill_mask] = etopo[fill_mask]
+            log.info("ETOPO1 fallback filled %d ocean cells (%.1f%% of NODATA)",
+                     filled, 100.0 * filled / max(nodata_remaining, 1))
+            del etopo
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
