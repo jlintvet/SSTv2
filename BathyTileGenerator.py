@@ -383,7 +383,10 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     log.info("Merged grid complete: %d ocean cells", ocean_cells)
     master = _fill_ocean_gaps(master)
 
-    master = _fill_offshore_nodata(master)
+    # _fill_offshore_nodata disabled: offshore NODATA is left transparent (alpha=0)
+    # so the GL basemap shows through for open ocean. This prevents the light-colored
+    # NODATA fill from visually contaminating the CUDEM detail boundary at the
+    # continental shelf edge. _fill_ocean_gaps handles inshore survey gaps.
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
