@@ -542,8 +542,8 @@ def blend_and_mask(hillshade_tif: Path, color_tif: Path,
         box = (0, y0, W, y1)
         hs_s = np.array(hs_img.crop(box), dtype=np.float32) / 255.0
         cr_s = np.array(cr_img.crop(box), dtype=np.float32)
-        # Soft multiply floor 0.65: flat deep seafloor retains 65% brightness
-        hs_soft = 0.65 + hs_s * 0.35
+        # Soft multiply floor 0.20: deep shadows go near-black for strong contrast
+        hs_soft = 0.20 + hs_s * 0.80
         rgb  = np.clip(cr_s[:, :, :3] * hs_soft[:, :, np.newaxis], 0, 255).astype(np.uint8)
         alph = np.where(ocean_mask[y0:y1, :W], 255, 0).astype(np.uint8)
         blended_img.paste(Image.fromarray(np.dstack([rgb, alph]), "RGBA"), (0, y0))
@@ -725,4 +725,4 @@ if __name__ == "__main__":
     for r in regions:
         process_region(r)
 
-    log.info("All done.")
+    log.info("All don
