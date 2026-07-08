@@ -132,17 +132,26 @@ def admin_delete_user(uid):
     return _req("DELETE", f"admin/users/{uid}", base="auth")
 
 
-# ── Kill switch ─────────────────────────────────────────────────────────────
-def seed_enabled():
+# ── Kill switch + admin-editable volume knobs ───────────────────────────────
+# seed_config is a single row holding both the kill switch (enabled/end_date)
+# and the pin volume/frequency knobs (pins_per_run_min/max, live_fraction,
+# tip_fraction, backfill_days) added by community-seed-region-and-volume.sql
+# and editable from the admin tool's Seed tab. Falls back to the env-var
+# module constants above if a column is missing (e.g. migration not yet run).
+def load_seed_config():
     try:
-        rows = rest_get("seed_config", "id=eq.1&select=enabled,end_date")
+        rows = rest_get("seed_config",
+                        "id=eq.1&select=enabled,end_date,pins_per_run_min,pins_per_run_max,"
+                        "live_fraction,tip_fraction,backfill_days")
     except RuntimeError as e:
         log.warning("seed_config unreadable (%s) — run community-seed-schema.sql first", e)
-        return False
-    if not rows:
+        return None
+    return rows[0] if rows else None
+
+def seed_enabled(cfg):
+    if not cfg:
         log.warning("no seed_config row — seeding disabled")
         return False
-    cfg = rows[0]
     if not cfg.get("enabled"):
         log.info("kill switch: seed_config.enabled = false — exiting")
         return False
@@ -150,6 +159,14 @@ def seed_enabled():
         log.info("past end_date %s — exiting", cfg["end_date"])
         return False
     return True
+
+def _cfg_int(cfg, key, default):
+    v = (cfg or {}).get(key)
+    return int(v) if v is not None else default
+
+def _cfg_float(cfg, key, default):
+    v = (cfg or {}).get(key)
+    return float(v) if v is not None else default
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -290,13 +307,21 @@ def maybe_tip(pin, users):
 
 # ── Commands ────────────────────────────────────────────────────────────────
 def cmd_status():
-    su = rest_get("seed_users", "select=user_id")
-    cl = rest_get("community_locations", "select=id&limit=1")
-    log.info("seed_users: %d | seed_config enabled: %s", len(su), seed_enabled())
+    su  = rest_get("seed_users", "select=user_id")
+    cl  = rest_get("community_locations", "select=id&limit=1")
+    cfg = load_seed_config()
+    log.info("seed_users: %d | seed_config enabled: %s", len(su), seed_enabled(cfg))
+    if cfg:
+        log.info("volume knobs: pins_per_run=%s-%s live_fraction=%s tip_fraction=%s backfill_days=%s",
+                 cfg.get("pins_per_run_min"), cfg.get("pins_per_run_max"),
+                 cfg.get("live_fraction"), cfg.get("tip_fraction"), cfg.get("backfill_days"))
 
 def cmd_create():
     if os.environ.get("SEED_CONFIRM_CREATE") != "true":
         log.error("refusing to create — set SEED_CONFIRM_CREATE=true"); sys.exit(2)
+    cfg = load_seed_config()
+    create_backfill_days = _cfg_int(cfg, "backfill_days", BACKFILL_DAYS)
+    create_tip_fraction  = _cfg_float(cfg, "tip_fraction", TIP_FRACTION)
     registered    = {r["email"] for r in rest_get("seed_users", "select=email")}
     existing_auth = list_seed_auth()   # reuse auth users from any prior partial run
     log.info("create: %d registered, %d seed auth users already exist",
@@ -334,41 +359,47 @@ def cmd_create():
     # Light back-fill so the map/leaderboard aren't empty at launch.
     users = active_seed_users()
     zones = load_zones()
-    if users and BACKFILL_DAYS > 0:
+    if users and create_backfill_days > 0:
         n = 0
-        for d in range(1, BACKFILL_DAYS + 1):
+        for d in range(1, create_backfill_days + 1):
             for _ in range(random.randint(*BACKFILL_PER_DAY)):
                 when = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
                     days=d, hours=random.randint(0, 12), minutes=random.randint(0, 59))
                 u = random.choice(users)
                 pin = rest_insert("community_locations", make_pin(u, "report", created_at=when, zones=zones))[0]
                 bump_points(u["user_id"], "report")
-                if random.random() < TIP_FRACTION:
+                if random.random() < create_tip_fraction:
                     maybe_tip(pin, users)
                 n += 1
         log.info("back-filled %d recent report pins", n)
 
 def cmd_tick():
-    if not seed_enabled():
+    cfg = load_seed_config()
+    if not seed_enabled(cfg):
         return
     users = active_seed_users()
     if not users:
         log.warning("no active seed users — run create first"); return
     zones = load_zones()
-    n = random.randint(*PINS_PER_RUN)
+    pins_min      = _cfg_int(cfg, "pins_per_run_min", PINS_PER_RUN[0])
+    pins_max      = max(pins_min, _cfg_int(cfg, "pins_per_run_max", PINS_PER_RUN[1]))
+    live_fraction = _cfg_float(cfg, "live_fraction", LIVE_FRACTION)
+    tip_fraction  = _cfg_float(cfg, "tip_fraction", TIP_FRACTION)
+    n = random.randint(pins_min, pins_max)
     posted = 0
     for _ in range(n):
         u = random.choice(users)
-        kind = "live" if random.random() < LIVE_FRACTION else "report"
+        kind = "live" if random.random() < live_fraction else "report"
         try:
             pin = rest_insert("community_locations", make_pin(u, kind, zones=zones))[0]
             bump_points(u["user_id"], kind)
-            if kind == "report" and random.random() < TIP_FRACTION:
+            if kind == "report" and random.random() < tip_fraction:
                 maybe_tip(pin, users)
             posted += 1
         except RuntimeError as e:
             log.warning("pin skipped: %s", e)
-    log.info("tick: posted %d pin(s)", posted)
+    log.info("tick: posted %d pin(s) (range %d-%d, live_fraction=%.2f, tip_fraction=%.2f)",
+             posted, pins_min, pins_max, live_fraction, tip_fraction)
 
 def cmd_teardown():
     if os.environ.get("SEED_CONFIRM_TEARDOWN") != "true":
