@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-09 21:37:05
+  UTC    : 2026-07-09 23:21:04
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -22,23 +22,16 @@ SST PIPELINE
   GOES 20260709 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260709 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260709 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20260707 (cached)
+  GOES 20260708 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 70 inland, kept 2237 ocean)
+✓
+  → DailySSTData/GOES/Composite/goes_composite_20260708.csv  (2237 pts, 54 lats × 66 lons)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-07-07 21:50Z → 2026-07-09 21:10Z
+  Window range   : 2026-07-07 23:50Z → 2026-07-09 23:10Z
   Half-width     : ±10 min per bucket
-  npp 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -172,12 +165,11 @@ SST PIPELINE
   npp 20260709_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -313,12 +305,11 @@ SST PIPELINE
   n20 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -454,19 +445,24 @@ SST PIPELINE
   n21 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 0 written, 11 cached, 410 miss/cloud, 810 outside windows.
+  VIIRS summary: 0 written, 11 cached, 408 miss/cloud, 843 outside windows.
 
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for mid_atlantic
 ========================================
 RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-07-09 21:51:12
+  UTC    : 2026-07-09 23:32:05
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -485,25 +481,89 @@ SST PIPELINE
   GOES 20260709 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260709 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260709 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260708 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20260707 (cached)
+  GOES 20260708 [noaa/noaacwBLENDEDsstDLDaily] …   (land filter: loaded 14 coastline polygons)
+  (land filter: dropped 34 inland, kept 2558 ocean)
+✓
+  → DailySSTData/GOES/Composite/ga_sc/goes_composite_20260708.csv  (2558 pts, 55 lats × 64 lons)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-07-07 21:50Z → 2026-07-09 21:10Z
+  Window range   : 2026-07-07 23:50Z → 2026-07-09 23:10Z
   Half-width     : ±10 min per bucket
-  npp 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  ⚠ dir listing failed npp 2026/189: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
+  npp 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0710 ✓ (cached)
+  npp 20260708_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260708_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -564,12 +624,11 @@ SST PIPELINE
   npp 20260709_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -706,13 +765,12 @@ SST PIPELINE
   n20 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20260707_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260709_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260707_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260708_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260708_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -848,11 +906,16 @@ SST PIPELINE
   n21 20260709_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260709_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260709_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260709_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260709_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 0 written, 9 cached, 342 miss/cloud, 741 outside windows.
+  VIIRS summary: 0 written, 10 cached, 411 miss/cloud, 845 outside windows.
 
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for ga_sc
