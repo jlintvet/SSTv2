@@ -39,4 +39,24 @@ jobs:
           git config user.email "github-actions@github.com"
           git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json DailySSTData/ne_fl/ocean_mask.json
           git commit -m "Update ocean masks (mid-Atlantic + GA/SC + NE Florida)" || echo "No changes"
-          git push
+
+          # This job takes several minutes (downloads + classifies Natural Earth
+          # polygons for 3 regions), and this repo has other automated workflows
+          # (VIIRS bundler, hotspots, buoys, SST fetch) committing to main every
+          # few minutes. A plain `git push` here was silently losing that race
+          # every time (non-fast-forward rejection), which is why no ocean-mask
+          # commit had ever landed. Retry with a rebase against origin/main.
+          for i in 1 2 3 4 5 6; do
+            if git push; then
+              echo "Pushed on attempt $i"
+              break
+            fi
+            if [ "$i" -eq 6 ]; then
+              echo "Push still failing after 6 attempts, giving up"
+              exit 1
+            fi
+            echo "Push rejected (attempt $i) — fetching + rebasing onto origin/main and retrying..."
+            git fetch origin main
+            git rebase origin/main
+            sleep $((5 * i))
+          done
