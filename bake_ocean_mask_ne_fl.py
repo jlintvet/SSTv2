@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# retrigger: force Ocean_Mask.yml push-path trigger (2026-07-11 — original combined commit with workflow-file edit did not fire it)
+# retrigger: re-run now that Ocean_Mask.yml has push-rebase-retry logic (2026-07-11)
 """
 Pre-bake the ocean mask for the Northeast Florida region.
 
