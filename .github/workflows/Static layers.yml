@@ -41,6 +41,9 @@ jobs:
       - name: Run StaticLayersRetrieval.py (ga_sc)
         run: REGION=ga_sc python StaticLayersRetrieval.py
 
+      - name: Run StaticLayersRetrieval.py (ne_fl)
+        run: REGION=ne_fl python StaticLayersRetrieval.py
+
       - name: Commit static layers to repository
         run: |
           git config user.name  "github-actions[bot]"

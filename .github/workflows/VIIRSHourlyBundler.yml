@@ -33,6 +33,10 @@ jobs:
           # latitudes (29.8–35.2°N) so a 36h window leaves large swath gaps.
           echo "=== Bundling REGION=ga_sc (72h composite) ==="
           REGION="ga_sc" COMPOSITE_WINDOW_HOURS="72" python VIIRSHourlyBundler.py
+          # ne_fl is also a lower-latitude region (26.0–30.5°N) with potentially
+          # sparser coverage than mid_atlantic — same 72h composite window as ga_sc.
+          echo "=== Bundling REGION=ne_fl (72h composite) ==="
+          REGION="ne_fl" COMPOSITE_WINDOW_HOURS="72" python VIIRSHourlyBundler.py
       - name: Commit updated bundles
         run: |
           git config user.name  "github-actions[bot]"

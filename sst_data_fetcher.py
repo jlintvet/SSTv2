@@ -15,11 +15,14 @@ Set the REGION environment variable before running:
 
   REGION=mid_atlantic python sst_data_fetcher.py   # default
   REGION=ga_sc        python sst_data_fetcher.py   # Georgia & South Carolina
+  REGION=ne_fl         python sst_data_fetcher.py   # Northeast Florida
 
 mid_atlantic  — writes to DailySSTData/MUR/, DailySSTData/GOES/Composite/,
                 DailySSTData/VIIRS/Passes/  (no subdir — backward-compatible)
 ga_sc         — writes to DailySSTData/MUR/ga_sc/, DailySSTData/GOES/Composite/ga_sc/,
                 DailySSTData/VIIRS/Passes/ga_sc/
+ne_fl         — writes to DailySSTData/MUR/ne_fl/, DailySSTData/GOES/Composite/ne_fl/,
+                DailySSTData/VIIRS/Passes/ne_fl/
 =========================================================
 LAND FILTER POLICY
 =========================================================
@@ -121,6 +124,7 @@ def hard_timeout(seconds: int, label: str = ""):
 # Set REGION env var to select which ocean region to generate data for.
 #   REGION=mid_atlantic  (default — no subdir, backward-compatible)
 #   REGION=ga_sc         (Georgia & South Carolina)
+#   REGION=ne_fl         (Northeast Florida)
 _REGION_CONFIGS = {
     "mid_atlantic": {
         "north":  39.00,
@@ -135,6 +139,13 @@ _REGION_CONFIGS = {
         "west":  -82.00,
         "east":  -75.20,
         "subdir": "ga_sc",   # files go into DIRS paths + /ga_sc/
+    },
+    "ne_fl": {
+        "north":  30.50,
+        "south":  26.00,
+        "west":  -81.75,
+        "east":  -77.27,
+        "subdir": "ne_fl",   # files go into DIRS paths + /ne_fl/
     },
 }
 REGION = os.environ.get("REGION", "mid_atlantic").strip()
@@ -233,6 +244,7 @@ def _dpath(*parts):
     """Build an output path, inserting _SUBDIR before the final component."""
     # mid_atlantic: DailySSTData/MUR
     # ga_sc:        DailySSTData/MUR/ga_sc
+    # ne_fl:        DailySSTData/MUR/ne_fl
     if _SUBDIR:
         return os.path.join(BASE_DIR, *parts, _SUBDIR)
     return os.path.join(BASE_DIR, *parts)

@@ -6,6 +6,7 @@ on:
     paths:
       - "bake_ocean_mask.py"
       - "bake_ocean_mask_ga_sc.py"
+      - "bake_ocean_mask_ne_fl.py"
 
 permissions:
   contents: write
@@ -29,10 +30,13 @@ jobs:
       - name: Bake GA/SC mask
         run: python bake_ocean_mask_ga_sc.py
 
+      - name: Bake NE Florida mask
+        run: python bake_ocean_mask_ne_fl.py
+
       - name: Commit generated files
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json
-          git commit -m "Update ocean masks (mid-Atlantic + GA/SC)" || echo "No changes"
+          git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json DailySSTData/ne_fl/ocean_mask.json
+          git commit -m "Update ocean masks (mid-Atlantic + GA/SC + NE Florida)" || echo "No changes"
           git push

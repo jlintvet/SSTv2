@@ -9,6 +9,7 @@ Pipeline: OPeNDAP fetch → merged elevation GeoTIFF → hillshade + color-relie
 Usage:
     python BathyTileGenerator.py                # mid_atlantic
     REGION=ga_sc python BathyTileGenerator.py
+    REGION=ne_fl python BathyTileGenerator.py
     REGION=all python BathyTileGenerator.py
 
 System requirements (installed in GitHub Actions workflow):
@@ -60,6 +61,10 @@ REGION_CONFIGS = {
     "ga_sc": {
         "lat_min": 29.80, "lat_max": 35.20,
         "lon_min": -82.00, "lon_max": -75.20,
+    },
+    "ne_fl": {
+        "lat_min": 26.00, "lat_max": 30.50,
+        "lon_min": -81.75, "lon_max": -77.27,
     },
 }
 

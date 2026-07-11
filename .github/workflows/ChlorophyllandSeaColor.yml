@@ -102,6 +102,23 @@ jobs:
           REGION: ga_sc
         run: python CHLSeaColorBundler.py
 
+      # ── 5c. Run retrieval + bundler for Northeast Florida region ──────────
+      - name: Run DailyChlorophyllandSeaColorRetrieval.py (ne_fl)
+        env:
+          REGION: ne_fl
+          CMEMS_USER:            ${{ secrets.CMEMS_USER }}
+          CMEMS_PASSWORD:        ${{ secrets.CMEMS_PASSWORD }}
+          COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.CMEMS_USER }}
+          COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
+          TARGET_DATE_OVERRIDE:  ${{ github.event.inputs.date_override }}
+          SOURCES_OVERRIDE:      ${{ github.event.inputs.sources_override || 'all' }}
+        run: python DailyChlorophyllandSeaColorRetrieval.py
+
+      - name: Run CHLSeaColorBundler.py (ne_fl)
+        env:
+          REGION: ne_fl
+        run: python CHLSeaColorBundler.py
+
       # ── 5. Commit & push output files ────────────────────────────────────
       # Only commits if files actually changed (git diff --staged --quiet guard).
       # Uses github-actions bot identity to keep commit history clean.

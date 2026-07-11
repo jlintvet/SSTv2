@@ -27,6 +27,7 @@ on:
           - ''
           - mid_atlantic
           - ga_sc
+          - ne_fl
 permissions:
   contents: write
 jobs:
@@ -79,7 +80,7 @@ jobs:
           if [ -n "$REGION_INPUT" ]; then
             REGIONS="$REGION_INPUT"
           else
-            REGIONS="mid_atlantic ga_sc"
+            REGIONS="mid_atlantic ga_sc ne_fl"
           fi
 
           echo "Target date : ${{ steps.date.outputs.date }}"
