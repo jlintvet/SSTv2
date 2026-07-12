@@ -180,5 +180,30 @@ jobs:
                   "DailySST/logs/ocean_dynamics_va_ri_${{ steps.date.outputs.date }}.log" || true
           git diff --cached --quiet && echo "No changes to commit" || \
             git commit -m "ocean: currents + altimetry + log ${{ steps.date.outputs.date }}"
-          git pull --rebase origin HEAD
-          git push origin HEAD
+
+          # This job's output files (currents/altimetry grids + per-region logs)
+          # are fully regenerated every run, so there is no meaningful line-level
+          # merge if a concurrent run (this workflow re-triggered, or another
+          # automated workflow) already pushed conflicting versions of the same
+          # generated JSON -- just keep OUR freshly-fetched data. Plain
+          # `git pull --rebase && git push` here would hard-fail on real content
+          # conflicts (seen 2026-07-11: CONFLICT on altimetry_*_grid.json,
+          # currents_*.json, and the log files, in a run that raced another
+          # instance of this same workflow). Retry with `-X ours` so both the
+          # ordinary non-fast-forward race AND real content conflicts resolve
+          # automatically in our favor, same push-rebase-retry pattern already
+          # used in Ocean_Mask.yml.
+          for i in 1 2 3 4 5 6; do
+            if git push origin HEAD; then
+              echo "Pushed on attempt $i"
+              break
+            fi
+            if [ "$i" -eq 6 ]; then
+              echo "Push still failing after 6 attempts, giving up"
+              exit 1
+            fi
+            echo "Push rejected (attempt $i) — fetching + rebasing (-X ours) and retrying..."
+            git fetch origin HEAD
+            git rebase -X ours FETCH_HEAD || { echo "Rebase conflict persisted even with -X ours — aborting"; git rebase --abort; exit 1; }
+            sleep $((5 * i))
+          done
