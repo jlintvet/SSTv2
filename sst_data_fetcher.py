@@ -143,8 +143,8 @@ _REGION_CONFIGS = {
     "ne_fl": {
         "north":  30.50,
         "south":  26.00,
-        "west":  -81.75,
-        "east":  -77.27,
+        "west":  -81.97,
+        "east":  -76.14,
         "subdir": "ne_fl",   # files go into DIRS paths + /ne_fl/
     },
 }

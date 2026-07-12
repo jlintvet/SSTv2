@@ -64,7 +64,7 @@ REGION_CONFIGS = {
     },
     "ne_fl": {
         "lat_min": 26.00, "lat_max": 30.50,
-        "lon_min": -81.75, "lon_max": -77.27,
+        "lon_min": -81.97, "lon_max": -76.14,
     },
 }
 

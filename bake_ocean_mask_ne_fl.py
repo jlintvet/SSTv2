@@ -16,7 +16,7 @@ import os
 import requests
 
 NORTH, SOUTH = 30.50, 26.00
-WEST,  EAST  = -81.75, -77.27
+WEST,  EAST  = -81.97, -76.14
 STEP = 0.02
 
 NE_LAND_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_land.geojson"

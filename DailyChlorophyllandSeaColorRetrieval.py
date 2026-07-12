@@ -96,7 +96,7 @@ from urllib3.util.retry import Retry
 _REGION_CONFIGS = {
     "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "subdir": ""},
     "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "subdir": "ga_sc"},
-    "ne_fl":        {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.75, "lon_max": -77.27, "subdir": "ne_fl"},
+    "ne_fl":        {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14, "subdir": "ne_fl"},
 }
 _REGION     = os.environ.get("REGION", "mid_atlantic")
 _region_cfg = _REGION_CONFIGS[_REGION]

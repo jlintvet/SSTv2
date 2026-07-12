@@ -56,7 +56,7 @@ _REGION_CONFIGS = {
         "subdir": "ga_sc",
     },
     "ne_fl": {
-        "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.75, "lon_max": -77.27},
+        "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},
         "subdir": "ne_fl",
     },
 }

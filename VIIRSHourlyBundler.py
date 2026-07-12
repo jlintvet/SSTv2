@@ -79,7 +79,7 @@ _REGION_CONFIGS = {
     },
     "ne_fl": {
         "subdir": "ne_fl",
-        "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.75, "lon_max": -77.27},
+        "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},
     },
 }
 _REGION = os.environ.get("REGION", "mid_atlantic").strip()
@@ -236,7 +236,7 @@ def _fill_col_gaps(flat: list, n_lats: int, n_lons: int, max_gap: int = 1) -> li
 
     mid_atlantic is unaffected because its lon_min=-78.89 already carries
     the same 0.01 degree offset, so its canonical grid aligns perfectly
-    with the satellite pixel positions.  ne_fl (lon_min=-81.75) also carries
+    with the satellite pixel positions.  ne_fl (lon_min=-81.97) also carries
     this 0.01 degree offset and is likewise unaffected.  This fill pass runs
     unconditionally for every region regardless, so no region-specific gating
     is required here -- it is a no-op (or a benign single-cell cloud-gap fill)
