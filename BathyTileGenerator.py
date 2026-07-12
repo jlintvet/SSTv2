@@ -339,14 +339,29 @@ def fetch_crm_region(lat_min: float, lat_max: float,
         log.info("Volume %s  lat %.2f–%.2f  lon %.2f–%.2f",
                  vol_file, olat_min, olat_max, olon_min, olon_max)
 
-        # Read axis arrays once (small — no timeout risk)
-        try:
-            ds0 = netCDF4.Dataset(url)
-            vol_lats = np.array(ds0.variables['lat'][:])
-            vol_lons = np.array(ds0.variables['lon'][:])
-            ds0.close()
-        except Exception as exc:
-            log.warning("Cannot open %s: %s — skipping", vol_file, exc)
+        # Read axis arrays once (small payload, but the open itself can still
+        # fail transiently -- retry before skipping the whole volume. This
+        # silently dropped va_ri's crm_vol1_2023.nc coverage in
+        # StaticLayersRetrieval.py (same pattern, no retry there either,
+        # fixed alongside this) so harden it here too rather than trusting
+        # "no timeout risk" to mean "never fails".
+        vol_lats = vol_lons = None
+        for attempt in range(3):
+            try:
+                ds0 = netCDF4.Dataset(url)
+                vol_lats = np.array(ds0.variables['lat'][:])
+                vol_lons = np.array(ds0.variables['lon'][:])
+                ds0.close()
+                break
+            except Exception as exc:
+                if attempt < 2:
+                    wait = 10 * (attempt + 1)
+                    log.warning("Cannot open %s (attempt %d): %s — retry in %ds",
+                                vol_file, attempt + 1, exc, wait)
+                    time.sleep(wait)
+                else:
+                    log.warning("Cannot open %s after 3 attempts: %s — skipping", vol_file, exc)
+        if vol_lats is None:
             continue
 
         lon_idx = np.where(

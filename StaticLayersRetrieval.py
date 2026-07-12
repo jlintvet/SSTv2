@@ -345,6 +345,7 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     """
     import netCDF4 as nc4
     import numpy as np
+    import time
 
     log.info("Fetching CRM bathymetry (stride=%d, ~%d m resolution) ...",
              _CRM_STRIDE, _CRM_STRIDE * 30)
@@ -361,35 +362,68 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
         url = _CRM_BASE + vol_file
         log.info("  Opening %s (lat %.2f-%.2f, lon %.2f-%.2f) ...",
                  vol_file, olat_min, olat_max, olon_min, olon_max)
-        try:
-            ds = nc4.Dataset(url)
-        except Exception as exc:
-            log.warning("  Could not open %s: %s", vol_file, exc)
+
+        # Retry the open + fetch a few times before giving up on this volume.
+        # OPeNDAP is flaky enough that BathyTileGenerator.py already retries
+        # its chunked z-fetch 3x -- this function had no retry at all, which
+        # silently produced a near-empty bathymetry_contours file for va_ri
+        # (the first region needing crm_vol1_2023.nc; a single transient
+        # failure opening vol1 dropped ~2/3 of the region with only a
+        # warning logged, and the job still exited 0).
+        z_raw = fetch_lats = fetch_lons = None
+        for attempt in range(3):
+            try:
+                ds = nc4.Dataset(url)
+            except Exception as exc:
+                if attempt < 2:
+                    wait = 10 * (attempt + 1)
+                    log.warning("  Could not open %s (attempt %d): %s — retry in %ds",
+                                vol_file, attempt + 1, exc, wait)
+                    time.sleep(wait)
+                    continue
+                else:
+                    log.error("  Could not open %s after 3 attempts: %s — skipping volume", vol_file, exc)
+                    ds = None
+                break
+
+            try:
+                vol_lats = np.array(ds.variables['lat'][:])
+                vol_lons = np.array(ds.variables['lon'][:])
+
+                lat_idx = np.where(
+                    (vol_lats >= olat_min - 1e-7) & (vol_lats <= olat_max + 1e-7)
+                )[0]
+                lon_idx = np.where(
+                    (vol_lons >= olon_min - 1e-7) & (vol_lons <= olon_max + 1e-7)
+                )[0]
+                if len(lat_idx) == 0 or len(lon_idx) == 0:
+                    log.warning("  No data in %s for this region.", vol_file)
+                    ds.close()
+                    z_raw = None
+                    break
+
+                li0, li1 = int(lat_idx[0]),  int(lat_idx[-1])
+                lo0, lo1 = int(lon_idx[0]),  int(lon_idx[-1])
+
+                z_raw = ds.variables['z'][li0:li1+1:_CRM_STRIDE,
+                                          lo0:lo1+1:_CRM_STRIDE]
+                fetch_lats = vol_lats[li0:li1+1:_CRM_STRIDE]
+                fetch_lons = vol_lons[lo0:lo1+1:_CRM_STRIDE]
+                ds.close()
+                break
+            except Exception as exc:
+                ds.close()
+                if attempt < 2:
+                    wait = 10 * (attempt + 1)
+                    log.warning("  Fetch from %s failed (attempt %d): %s — retry in %ds",
+                                vol_file, attempt + 1, exc, wait)
+                    time.sleep(wait)
+                else:
+                    log.error("  Fetch from %s failed after 3 attempts: %s — skipping volume", vol_file, exc)
+                    z_raw = None
+
+        if z_raw is None:
             continue
-
-        try:
-            vol_lats = np.array(ds.variables['lat'][:])
-            vol_lons = np.array(ds.variables['lon'][:])
-
-            lat_idx = np.where(
-                (vol_lats >= olat_min - 1e-7) & (vol_lats <= olat_max + 1e-7)
-            )[0]
-            lon_idx = np.where(
-                (vol_lons >= olon_min - 1e-7) & (vol_lons <= olon_max + 1e-7)
-            )[0]
-            if len(lat_idx) == 0 or len(lon_idx) == 0:
-                log.warning("  No data in %s for this region.", vol_file)
-                continue
-
-            li0, li1 = int(lat_idx[0]),  int(lat_idx[-1])
-            lo0, lo1 = int(lon_idx[0]),  int(lon_idx[-1])
-
-            z_raw = ds.variables['z'][li0:li1+1:_CRM_STRIDE,
-                                      lo0:lo1+1:_CRM_STRIDE]
-            fetch_lats = vol_lats[li0:li1+1:_CRM_STRIDE]
-            fetch_lons = vol_lons[lo0:lo1+1:_CRM_STRIDE]
-        finally:
-            ds.close()
 
         # Unmask / clean fill values
         if hasattr(z_raw, 'filled'):
