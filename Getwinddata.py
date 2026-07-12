@@ -82,18 +82,30 @@ batches = [
 print(f"Fetching from Open-Meteo in {len(batches)} batches of up to {BATCH_SIZE} points...")
 
 raw = []
+failed_batches = 0
 for bi, (lat_batch, lon_batch) in enumerate(batches):
     print(f"  Batch {bi+1}/{len(batches)} ({len(lat_batch)} points)...")
     try:
         raw.extend(fetch_batch(lat_batch, lon_batch))
     except Exception as e:
-        print(f"ERROR: Batch {bi+1} failed after retries: {e}")
-        sys.exit(1)
+        # Don't let one flaky batch abort the whole hourly run. The grid
+        # widened from 51 to 82 batches for va_ri (2026-07-12), raising the
+        # odds that some single batch hits a transient Open-Meteo failure;
+        # previously that aborted the entire run via sys.exit(1) with no
+        # commit at all, silently leaving the pre-widening file in place
+        # through every subsequent hourly attempt. Skip this batch's points
+        # instead -- they're absent from hour_grids and default to 0 wind,
+        # same as any other missing point, rather than losing the whole
+        # region's update over one bad batch.
+        failed_batches += 1
+        print(f"WARNING: Batch {bi+1} failed after retries, skipping ({len(lat_batch)} points lost): {e}")
     time.sleep(0.3)  # brief pause between batches to avoid rate limiting
 
 if not raw:
-    print("ERROR: No data returned from Open-Meteo")
+    print("ERROR: No data returned from Open-Meteo (all batches failed)")
     sys.exit(1)
+if failed_batches:
+    print(f"Completed with {failed_batches}/{len(batches)} batch(es) failed -- proceeding with partial grid")
 
 print(f"Got {len(raw)} point responses total")
 
