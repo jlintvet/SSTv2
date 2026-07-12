@@ -22,7 +22,7 @@ on:
 jobs:
   update-wind:
     runs-on: ubuntu-latest
-    timeout-minutes: 10       # kill the job if Open-Meteo or GitHub API hangs
+    timeout-minutes: 20       # kill the job if Open-Meteo or GitHub API hangs (raised from 10 — ne_fl widened the grid from 45x41 to 61x41 points, 37->51 Open-Meteo batches, which was tipping the job over the old 10-min cap)
 
     steps:
       - name: Checkout repo
