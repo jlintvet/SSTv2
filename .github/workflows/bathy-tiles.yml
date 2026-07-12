@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       region:
-        description: "Region to process: mid_atlantic | ga_sc | all"
+        description: "Region to process: mid_atlantic | ga_sc | ne_fl | all"
         required: true
         default: "all"
         type: choice
@@ -14,6 +14,7 @@ on:
           - all
           - mid_atlantic
           - ga_sc
+          - ne_fl
       crm_stride:
         description: "CRM stride (1=30m max detail, 2=60m default, 3=90m fast test)"
         required: true
