@@ -209,39 +209,75 @@ gh_headers = {
     "Accept":        "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
 }
-file_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
+api_base = f"https://api.github.com/repos/{GITHUB_REPO}"
 
-# Get current file SHA (required by GitHub API to overwrite an existing file)
-sha = None
+# The Contents API's single-shot PUT (base64 content inline in the JSON
+# body) rejects large files with a 422 "file is too large to be processed"
+# -- hit in production once the va_ri grid widening (61x41 -> 69x59 points)
+# pushed this payload past ~40 MB. Use the Git Data API instead: it handles
+# arbitrarily large blobs via a multi-step blob/tree/commit/ref sequence,
+# exactly what GitHub's own 422 error message recommends switching to.
+print(f"Writing to GitHub via Git Data API: {GITHUB_PATH}")
 try:
-    get_resp = requests.get(file_url, headers=gh_headers,
-                            params={"ref": GITHUB_BRANCH}, timeout=15)
-    if get_resp.status_code == 200:
-        sha = get_resp.json().get("sha")
-        print(f"Existing file SHA: {sha[:8]}...")
-    else:
-        print("No existing file — will create fresh")
-except Exception as e:
-    print(f"Warning: could not fetch existing SHA: {e}")
+    # 1) Current branch ref -> latest commit SHA
+    ref_resp = requests.get(f"{api_base}/git/ref/heads/{GITHUB_BRANCH}",
+                             headers=gh_headers, timeout=15)
+    ref_resp.raise_for_status()
+    latest_commit_sha = ref_resp.json()["object"]["sha"]
 
-commit_body = {
-    "message": f"wind data update {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M')}Z",
-    "content": content_b64,
-    "branch":  GITHUB_BRANCH,
-}
-if sha:
-    commit_body["sha"] = sha
+    # 2) Latest commit -> its tree SHA (used as base_tree so every other
+    #    file in the repo is carried forward unchanged)
+    commit_resp = requests.get(f"{api_base}/git/commits/{latest_commit_sha}",
+                                headers=gh_headers, timeout=15)
+    commit_resp.raise_for_status()
+    base_tree_sha = commit_resp.json()["tree"]["sha"]
 
-print(f"Writing to GitHub: {GITHUB_PATH}")
-try:
-    put_resp = requests.put(file_url, headers=gh_headers,
-                            json=commit_body, timeout=30)
-    put_resp.raise_for_status()
+    # 3) Create a blob for the new file content
+    blob_resp = requests.post(f"{api_base}/git/blobs", headers=gh_headers,
+                               json={"content": content_b64, "encoding": "base64"},
+                               timeout=120)
+    blob_resp.raise_for_status()
+    blob_sha = blob_resp.json()["sha"]
+
+    # 4) Create a new tree that replaces just this one path
+    tree_resp = requests.post(f"{api_base}/git/trees", headers=gh_headers,
+                               json={
+                                   "base_tree": base_tree_sha,
+                                   "tree": [{
+                                       "path": GITHUB_PATH,
+                                       "mode": "100644",
+                                       "type": "blob",
+                                       "sha":  blob_sha,
+                                   }],
+                               }, timeout=30)
+    tree_resp.raise_for_status()
+    new_tree_sha = tree_resp.json()["sha"]
+
+    # 5) Create a new commit on top of the latest one
+    new_commit_resp = requests.post(f"{api_base}/git/commits", headers=gh_headers,
+                                     json={
+                                         "message": f"wind data update {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M')}Z",
+                                         "tree":    new_tree_sha,
+                                         "parents": [latest_commit_sha],
+                                     }, timeout=30)
+    new_commit_resp.raise_for_status()
+    new_commit_sha = new_commit_resp.json()["sha"]
+
+    # 6) Fast-forward the branch ref to the new commit
+    update_ref_resp = requests.patch(f"{api_base}/git/refs/heads/{GITHUB_BRANCH}",
+                                      headers=gh_headers,
+                                      json={"sha": new_commit_sha, "force": False},
+                                      timeout=30)
+    update_ref_resp.raise_for_status()
+    print(f"Committed as {new_commit_sha[:8]}")
 except Exception as e:
     print(f"ERROR: GitHub write failed: {e}")
-    if put_resp is not None:
-        print(f"Status: {put_resp.status_code}")
-        print(f"Body: {put_resp.text[:500]}")
+    resp = locals().get("update_ref_resp") or locals().get("new_commit_resp") or \
+           locals().get("tree_resp") or locals().get("blob_resp") or \
+           locals().get("commit_resp") or locals().get("ref_resp")
+    if resp is not None:
+        print(f"Status: {resp.status_code}")
+        print(f"Body: {resp.text[:500]}")
     sys.exit(1)
 
 print(f"Done. {n_hours} hours, {len(grid_lats)} grid points, {file_size_kb:.1f} KB")
