@@ -440,9 +440,18 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
         lon_rep = np.tile(fetch_lons, n_lat)
         z_flat  = z_arr.ravel()
 
+        # Snap onto a single canonical grid (multiples of res_deg from the
+        # origin) instead of trusting each volume's raw native float value.
+        # CRM volumes are independently-produced OPeNDAP datasets and do not
+        # share the same native lon/lat origin offset -- confirmed for
+        # va_ri, the first region spanning crm_vol1_2023.nc + crm_vol2_2023.nc
+        # (see docstring above). Without this snap, _build_grid()'s
+        # sorted(set(...)) axis unions two offset grids into a checkerboard
+        # pattern that the morphological open-ocean filter sees as land.
+        res_deg = _CRM_STRIDE / 3600.0
         for lat, lon, z in zip(lat_rep, lon_rep, z_flat):
-            lat = round(float(lat), 7)
-            lon = round(float(lon), 7)
+            lat = round(round(float(lat) / res_deg) * res_deg, 7)
+            lon = round(round(float(lon) / res_deg) * res_deg, 7)
             if np.isnan(z) or z >= 0:
                 rows.append({"lat": lat, "lon": lon,
                              "depth_ft": None, "depth_fathoms": None})
