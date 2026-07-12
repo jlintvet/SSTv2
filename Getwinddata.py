@@ -12,11 +12,13 @@ GITHUB_PATH   = "WindData/wind_latest.json"
 GITHUB_BRANCH = "main"
 
 # Grid covers mid_atlantic (33.7–39.0N, -78.89–-72.21W), ga_sc
-# (29.80–35.20N, -82.0–-75.20W), and ne_fl (26.00–30.50N, -81.97–-76.14W)
-# with margin on all sides. LAT_MIN was widened from 29.0 to 25.0 to reach
-# ne_fl's southern edge (26.00N); LON range already covered ne_fl's span.
-LAT_MIN, LAT_MAX, LAT_STEP = 25.0, 40.0, 0.25
-LON_MIN, LON_MAX, LON_STEP = -82.5, -72.5, 0.25
+# (29.80–35.20N, -82.0–-75.20W), ne_fl (26.00–30.50N, -81.97–-76.14W), and
+# va_ri (37.26–41.51N, -77.46–-68.97W) with margin on all sides. LAT_MIN was
+# widened from 29.0 to 25.0 to reach ne_fl's southern edge (26.00N); LAT_MAX
+# widened from 40.0 to 42.0 and LON_MAX widened from -72.5 to -68.0 to reach
+# va_ri's northern (41.51N) and eastern (-68.97W) edges.
+LAT_MIN, LAT_MAX, LAT_STEP = 25.0, 42.0, 0.25
+LON_MIN, LON_MAX, LON_STEP = -82.5, -68.0, 0.25
 
 # ── Build grid ────────────────────────────────────────────────────────────────
 lats, lons = [], []

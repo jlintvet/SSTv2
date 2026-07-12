@@ -7,6 +7,7 @@ on:
       - "bake_ocean_mask.py"
       - "bake_ocean_mask_ga_sc.py"
       - "bake_ocean_mask_ne_fl.py"
+      - "bake_ocean_mask_va_ri.py"
 
 permissions:
   contents: write
@@ -33,12 +34,15 @@ jobs:
       - name: Bake NE Florida mask
         run: python bake_ocean_mask_ne_fl.py
 
+      - name: Bake VA-RI mask
+        run: python bake_ocean_mask_va_ri.py
+
       - name: Commit generated files
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json DailySSTData/ne_fl/ocean_mask.json
-          git commit -m "Update ocean masks (mid-Atlantic + GA/SC + NE Florida)" || echo "No changes"
+          git add DailySSTData/ocean_mask.json DailySSTData/ga_sc/ocean_mask.json DailySSTData/ne_fl/ocean_mask.json DailySSTData/va_ri/ocean_mask.json
+          git commit -m "Update ocean masks (mid-Atlantic + GA/SC + NE Florida + VA-RI)" || echo "No changes"
 
           # This job takes several minutes (downloads + classifies Natural Earth
           # polygons for 3 regions), and this repo has other automated workflows

@@ -37,6 +37,10 @@ jobs:
           # sparser coverage than mid_atlantic — same 72h composite window as ga_sc.
           echo "=== Bundling REGION=ne_fl (72h composite) ==="
           REGION="ne_fl" COMPOSITE_WINDOW_HOURS="72" python VIIRSHourlyBundler.py
+          # va_ri is a higher-latitude region (37.26-41.51N) like mid_atlantic —
+          # default composite window should be sufficient (no override).
+          echo "=== Bundling REGION=va_ri ==="
+          REGION="va_ri" python VIIRSHourlyBundler.py
       - name: Commit updated bundles
         run: |
           git config user.name  "github-actions[bot]"

@@ -125,6 +125,7 @@ def hard_timeout(seconds: int, label: str = ""):
 #   REGION=mid_atlantic  (default — no subdir, backward-compatible)
 #   REGION=ga_sc         (Georgia & South Carolina)
 #   REGION=ne_fl         (Northeast Florida)
+#   REGION=va_ri         (Virginia to Rhode Island)
 _REGION_CONFIGS = {
     "mid_atlantic": {
         "north":  39.00,
@@ -146,6 +147,13 @@ _REGION_CONFIGS = {
         "west":  -81.97,
         "east":  -76.14,
         "subdir": "ne_fl",   # files go into DIRS paths + /ne_fl/
+    },
+    "va_ri": {
+        "north":  41.51,
+        "south":  37.26,
+        "west":  -77.46,
+        "east":  -68.97,
+        "subdir": "va_ri",   # files go into DIRS paths + /va_ri/
     },
 }
 REGION = os.environ.get("REGION", "mid_atlantic").strip()

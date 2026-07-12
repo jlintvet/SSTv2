@@ -51,6 +51,7 @@ _REGION_CONFIGS = {
     "mid_atlantic": {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21, "suffix": ""},
     "ga_sc":        {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20, "suffix": "_ga_sc"},
     "ne_fl":        {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14, "suffix": "_ne_fl"},
+    "va_ri":        {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97, "suffix": "_va_ri"},
 }
 _REGION = os.environ.get("REGION", "mid_atlantic").strip()
 if _REGION not in _REGION_CONFIGS:

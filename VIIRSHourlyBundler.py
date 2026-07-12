@@ -81,6 +81,10 @@ _REGION_CONFIGS = {
         "subdir": "ne_fl",
         "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},
     },
+    "va_ri": {
+        "subdir": "va_ri",
+        "bbox": {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97},
+    },
 }
 _REGION = os.environ.get("REGION", "mid_atlantic").strip()
 if _REGION not in _REGION_CONFIGS:
