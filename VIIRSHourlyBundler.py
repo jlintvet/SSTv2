@@ -4,6 +4,20 @@ VIIRSHourlyBundler.py
 Fetches NOAA VIIRS hourly SST passes from the CoastWatch THREDDS catalog and
 writes one compact JSON bundle per day into DailySSTData/VIIRS/Bundled/.
 
+Multi-satellite fetch (test: mid_atlantic only)
+------------------------------------------------
+NOAA-20 ("N20") is the original production source. A single polar-orbiting
+satellite only crosses a fixed region ~2x/day, so this bundler can also pull
+the same VIIRS instrument on the sister JPSS satellites — Suomi NPP ("NPP")
+and NOAA-21 ("N21") — to increase passes/day for a region. See
+VIIRS_SATELLITES / MULTI_SAT_REGIONS below: currently only mid_atlantic
+fetches all three; every other region still fetches N20 only until this is
+validated. NPP's THREDDS dataset id has been confirmed to exist on NOAA's
+catalog; N21's has NOT been directly confirmed reachable (this environment
+cannot reach coastwatch.noaa.gov to verify) — it follows NOAA's naming
+convention but if the path is wrong it just contributes 0 extra passes and
+logs "no .nc files"; it will not break N20/NPP fetching.
+
 Output files
 ------------
   viirs_YYYY-MM-DD.json   — one file per day, clean passes only
@@ -31,6 +45,12 @@ Bundle format  (viirs_YYYY-MM-DD.json)
 The flat sst array is indexed by  latIdx * len(lonSet) + lonIdx.
 null = cloud gap or satellite didn't cover that point this pass.
 All SST values are in degrees Fahrenheit.
+
+If two satellites both produce a pass that falls in the same UTC hour bucket,
+their pixels are merged (gap-fill: first satellite processed wins per cell,
+the second only fills cells the first left empty) rather than one overwriting
+the other. The output schema is unchanged — the frontend still sees one
+pass per hour key.
 
 Run schedule
 ------------
@@ -93,6 +113,39 @@ if _REGION not in _REGION_CONFIGS:
 _SUBDIR = _REGION_CONFIGS[_REGION]["subdir"]
 
 BBOX = _REGION_CONFIGS[_REGION]["bbox"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VIIRS satellite sources
+# ─────────────────────────────────────────────────────────────────────────────
+# NOAA-20 is the original production source (confirmed working). Suomi NPP
+# ("NPP") and NOAA-21 ("N21") carry the same VIIRS instrument on sister
+# polar-orbiting satellites in the JPSS constellation, offset in orbit from
+# NOAA-20 — adding them should roughly double/triple the hourly passes/day
+# available for a region, since a single polar orbiter only crosses a fixed
+# region ~2x/day.
+#
+# Dataset id notes:
+#   N20 — confirmed via existing production use.
+#   NPP — confirmed to exist on NOAA CoastWatch's THREDDS catalog
+#         (gridNPPVIIRSNRTL3UWW00).
+#   N21 — follows the same NOAA naming convention seen on other CoastWatch
+#         VIIRS products, but has NOT been directly confirmed reachable (this
+#         environment cannot reach coastwatch.noaa.gov to verify). If the
+#         path is wrong, the fetch just logs "no .nc files" for N21 and
+#         contributes 0 extra passes — it will not break N20/NPP fetching.
+VIIRS_SATELLITES = [
+    {"id": "N20", "dataset": "gridN20VIIRSNRTL3UWW00"},
+    {"id": "NPP", "dataset": "gridNPPVIIRSNRTL3UWW00"},
+    {"id": "N21", "dataset": "gridN21VIIRSNRTL3UWW00"},
+]
+
+# Test rollout: only fetch the extra satellites (NPP, N21) for mid_atlantic
+# until results are validated. Every other region stays on NOAA-20 only.
+MULTI_SAT_REGIONS = {"mid_atlantic"}
+
+ACTIVE_SATELLITES = (
+    VIIRS_SATELLITES if _REGION in MULTI_SAT_REGIONS else VIIRS_SATELLITES[:1]
+)
 
 # Fixed regular output grid — all bundles and the composite use exactly this
 # grid so React's bilinear interpolation always gets a uniform lat/lon set.
@@ -407,23 +460,24 @@ def _build_bundle_csv(date: datetime.date,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# THREDDS catalog fetch — one day at a time
+# THREDDS catalog fetch — one day, one satellite dataset at a time
 # ─────────────────────────────────────────────────────────────────────────────
 THREDDS_CATALOG = (
     "https://coastwatch.noaa.gov/thredds/catalog"
-    "/gridN20VIIRSNRTL3UWW00/{year}/{doy:03d}/catalog.xml"
+    "/{dataset}/{year}/{doy:03d}/catalog.xml"
 )
 THREDDS_OPENDAP = (
     "https://coastwatch.noaa.gov/thredds/dodsC"
-    "/gridN20VIIRSNRTL3UWW00/{year}/{doy:03d}/{nc_name}"
+    "/{dataset}/{year}/{doy:03d}/{nc_name}"
 )
 
 
-def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, list, list]]:
+def _fetch_passes_for_dataset(date: datetime.date, dataset: str,
+                              sat_id: str) -> list[tuple[int, np.ndarray, list, list]]:
     """
-    Fetch all available VIIRS hourly passes for *date* from THREDDS.
-    Fragmented / edge-of-swath passes are rejected by the spatial coherence
-    filter before being returned.
+    Fetch all available VIIRS hourly passes for *date* from one satellite's
+    THREDDS dataset. Fragmented / edge-of-swath passes are rejected by the
+    spatial coherence filter before being returned.
 
     Returns a list of (hour_utc, sst_fahrenheit_2d, lats, lons) tuples.
     sst_fahrenheit_2d is a 2-D numpy array (lats x lons) with NaN for gaps.
@@ -431,25 +485,25 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
     doy  = date.timetuple().tm_yday
     year = date.year
 
-    catalog_url = THREDDS_CATALOG.format(year=year, doy=doy)
+    catalog_url = THREDDS_CATALOG.format(dataset=dataset, year=year, doy=doy)
     try:
         resp = SESSION.get(catalog_url, timeout=30)
         resp.raise_for_status()
         matches = re.findall(
-            r"gridN20VIIRSNRTL3UWW00/[^\"]+\.nc", resp.text
+            rf"{re.escape(dataset)}/[^\"]+\.nc", resp.text
         )
         if not matches:
-            log.info("  No .nc files in THREDDS catalog for %s (DOY %03d)", date, doy)
+            log.info("  [%s] No .nc files in THREDDS catalog for %s (DOY %03d)", sat_id, date, doy)
             return []
-        log.info("  %s: found %d pass(es) in THREDDS catalog", date, len(matches))
+        log.info("  [%s] %s: found %d pass(es) in THREDDS catalog", sat_id, date, len(matches))
     except Exception as exc:
-        log.warning("  THREDDS catalog unavailable for %s: %s", date, exc)
+        log.warning("  [%s] THREDDS catalog unavailable for %s: %s", sat_id, date, exc)
         return []
 
     results = []
     for nc_path_match in sorted(matches):
         nc_name    = nc_path_match.split("/")[-1]
-        opendap    = THREDDS_OPENDAP.format(year=year, doy=doy, nc_name=nc_name)
+        opendap    = THREDDS_OPENDAP.format(dataset=dataset, year=year, doy=doy, nc_name=nc_name)
         hour_match = re.search(r"(\d{8})(\d{2})\d{4}", nc_name)
         hour       = int(hour_match.group(2)) if hour_match else 0
 
@@ -459,7 +513,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
             lat_name = next((c for c in ds.coords if "lat" in c.lower()), None)
             lon_name = next((c for c in ds.coords if "lon" in c.lower()), None)
             if not lat_name or not lon_name:
-                log.warning("    %02d:00Z — no lat/lon coords, skipping", hour)
+                log.warning("    [%s] %02d:00Z — no lat/lon coords, skipping", sat_id, hour)
                 ds.close()
                 continue
 
@@ -487,7 +541,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
                     None,
                 )
             if sst_var is None:
-                log.warning("    %02d:00Z — no SST variable, skipping", hour)
+                log.warning("    [%s] %02d:00Z — no SST variable, skipping", sat_id, hour)
                 ds.close()
                 continue
 
@@ -514,7 +568,7 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
 
             valid = np.sum(np.isfinite(vals_f))
             if valid == 0:
-                log.info("    %02d:00Z — 0 valid SST pixels (full cloud cover), skipping", hour)
+                log.info("    [%s] %02d:00Z — 0 valid SST pixels (full cloud cover), skipping", sat_id, hour)
                 ds.close()
                 continue
 
@@ -534,23 +588,23 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
 
             if valid < MIN_PASS_PIXELS:
                 log.info(
-                    "    %02d:00Z — too few pixels (%d < %d minimum), skipping",
-                    hour, valid, MIN_PASS_PIXELS,
+                    "    [%s] %02d:00Z — too few pixels (%d < %d minimum), skipping",
+                    sat_id, hour, valid, MIN_PASS_PIXELS,
                 )
                 ds.close()
                 continue
 
             if local_density < MIN_PASS_DENSITY:
                 log.info(
-                    "    %02d:00Z — fragmented pass (%.1f%% local density < %.0f%% threshold), skipping",
-                    hour, local_density * 100, MIN_PASS_DENSITY * 100,
+                    "    [%s] %02d:00Z — fragmented pass (%.1f%% local density < %.0f%% threshold), skipping",
+                    sat_id, hour, local_density * 100, MIN_PASS_DENSITY * 100,
                 )
                 ds.close()
                 continue
 
             log.info(
-                "    %02d:00Z — %d valid pixels  %.1f-%.1f F  (density %.0f%%)",
-                hour, valid,
+                "    [%s] %02d:00Z — %d valid pixels  %.1f-%.1f F  (density %.0f%%)",
+                sat_id, hour, valid,
                 float(np.nanmin(vals_f)), float(np.nanmax(vals_f)),
                 local_density * 100,
             )
@@ -558,9 +612,24 @@ def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, l
             ds.close()
 
         except Exception as exc:
-            log.warning("    %02d:00Z — error opening %s: %s", hour, nc_name, exc)
+            log.warning("    [%s] %02d:00Z — error opening %s: %s", sat_id, hour, nc_name, exc)
 
     return results
+
+
+def _fetch_passes_for_date(date: datetime.date) -> list[tuple[int, np.ndarray, list, list]]:
+    """
+    Fetch and combine VIIRS hourly passes for *date* across every satellite in
+    ACTIVE_SATELLITES (N20 always; NPP/N21 only for regions in
+    MULTI_SAT_REGIONS). Each satellite is fetched independently so a bad
+    catalog path for one (e.g. an unconfirmed N21 dataset id) can't prevent
+    the others from contributing passes.
+    """
+    combined: list[tuple[int, np.ndarray, list, list]] = []
+    for sat in ACTIVE_SATELLITES:
+        sat_passes = _fetch_passes_for_dataset(date, sat["dataset"], sat["id"])
+        combined.extend(sat_passes)
+    return combined
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -572,6 +641,12 @@ def _build_bundle(date: datetime.date,
     Build the daily bundle using the fixed canonical grid (FIXED_LATS/FIXED_LONS).
     Every pass is resampled onto that grid via nearest-neighbour snapping (with
     stripe gap-fill) so the output latSet/lonSet is always uniform.
+
+    When multiple satellites both produce a pass in the same UTC hour bucket,
+    the passes are merged by gap-fill: the first satellite processed for that
+    hour wins per cell, and later satellites only fill cells the first left
+    empty. This avoids silently dropping one satellite's coverage while
+    keeping the JSON schema (one entry per hour key) unchanged.
     """
     hours_dict: dict[str, dict] = {}
     available_hours: list[int] = []
@@ -583,7 +658,24 @@ def _build_bundle(date: datetime.date,
             log.info("    %02d:00Z — no pixels landed on fixed grid, skipping", hour)
             continue
 
-        hours_dict[str(hour)] = {
+        key = str(hour)
+        if key in hours_dict:
+            existing = hours_dict[key]["sst"]
+            merged_count = 0
+            for i, v in enumerate(flat):
+                if v is not None and existing[i] is None:
+                    existing[i] = v
+                    merged_count += 1
+            merged_valid = [v for v in existing if v is not None]
+            hours_dict[key]["min"] = round(min(merged_valid), 1)
+            hours_dict[key]["max"] = round(max(merged_valid), 1)
+            log.info(
+                "    %02d:00Z — merged additional satellite pass into existing hour bucket (+%d cells filled)",
+                hour, merged_count,
+            )
+            continue
+
+        hours_dict[key] = {
             "sst": flat,
             "min": round(min(valid_vals), 1),
             "max": round(max(valid_vals), 1),
@@ -855,8 +947,9 @@ def _write_composite_if_sufficient(composite: dict) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
     log.info(
-        "=== VIIRSHourlyBundler  target=%s  days_back=%d  keep=%d  grid=%dx%d ===",
-        TARGET_DATE, DAYS_BACK, KEEP_DAYS, N_LATS, N_LONS,
+        "=== VIIRSHourlyBundler  target=%s  days_back=%d  keep=%d  grid=%dx%d  region=%s  satellites=%s ===",
+        TARGET_DATE, DAYS_BACK, KEEP_DAYS, N_LATS, N_LONS, _REGION,
+        ",".join(s["id"] for s in ACTIVE_SATELLITES),
     )
 
     dates_to_process = [
