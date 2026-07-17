@@ -25,10 +25,15 @@ STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2","44072",
             # added (kept only if inside the region bbox below):
             "41159","CLKN7","BFTN7","41013","OCPN7","41110",
             # va_ri (VA to RI incl. NJ/NY/CT/Long Island Sound) — verified against
-            # NDBC's live station_table.txt / activestations.xml 2026-07-17:
-            "44009","44091","44025","44065","44017","44097","44020","44008","44085",
-            # ga_sc (GA/SC offshore) — same verification pass:
-            "41004","41008","41024","41029","41033","41003","41112",
+            # NDBC's live station_table.txt / activestations.xml 2026-07-17.
+            # (44017 Montauk Point removed 2026-07-17: recovered for service 2/10/23,
+            # data never restored per NDBC's own station page -- confirmed dead, not
+            # just quiet.)
+            "44009","44091","44025","44065","44097","44020","44008","44085",
+            # ga_sc (GA/SC offshore) — same verification pass.
+            # (41003 removed 2026-07-17: historical data stops in 1982, effectively
+            # decommissioned despite still being listed in station_table.txt.)
+            "41004","41008","41024","41029","41033","41112",
             # ne_fl (NE FL to Ft Lauderdale) — same verification pass:
             "41009","41010","41068","41069","41113","41117","41122"]
 
@@ -44,12 +49,12 @@ NAMES = {
     "41013": "Frying Pan Shoals", "OCPN7": "Ocean Crest Pier", "41110": "Masonboro",
     # va_ri
     "44009": "Delaware Bay",      "44091": "Barnegat, NJ",     "44025": "Long Island, NY",
-    "44065": "New York Harbor",   "44017": "Montauk Point, NY","44097": "Block Island, RI",
+    "44065": "New York Harbor",   "44097": "Block Island, RI",
     "44020": "Nantucket Sound",   "44008": "Nantucket",        "44085": "Buzzards Bay, MA",
     # ga_sc
     "41004": "Edisto, SC",        "41008": "Grays Reef, GA",   "41024": "Sunset Beach, NC",
     "41029": "Capers Nearshore, SC", "41033": "Fripp Nearshore, SC",
-    "41003": "Jacksonville Offshore, FL", "41112": "Fernandina Beach, FL",
+    "41112": "Fernandina Beach, FL",
     # ne_fl
     "41009": "Canaveral, FL",     "41010": "Canaveral East, FL", "41068": "Fort Pierce, FL",
     "41069": "Ponce Inlet, FL",   "41113": "Canaveral Nearshore, FL",
