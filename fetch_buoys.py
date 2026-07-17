@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Fetch latest observations from NOAA NDBC buoys for the Mid-Atlantic region
-(MD / VA / NC offshore + Chesapeake Bay) and write a compact JSON for the
-RipLoc map "Weather Buoys" overlay.
+Fetch latest observations from NOAA NDBC buoys covering all four RipLoc
+regions (mid_atlantic: MD/VA/NC offshore + Chesapeake Bay; va_ri: VA-to-RI
+incl. NJ/NY/CT Long Island Sound; ga_sc: GA/SC offshore; ne_fl: NE FL to
+Ft Lauderdale) and write a single compact JSON for the map "Weather Buoys"
+overlay. One shared file works for every region because the frontend
+(SSTHeatmapLeaflet.jsx) already filters to buoys within 75nm of the
+selected departure location, regardless of which region is active.
 
 Output: DailySST/Buoys/buoys_latest.json
   { generated_utc, source, buoys: [ {id,name,lat,lon,obs:{...}} ] }
@@ -15,11 +19,18 @@ import json, re, datetime
 import requests
 from pathlib import Path
 
-# Stations from the curated MD/VA/NC + Chesapeake list
+# Stations from the curated MD/VA/NC + Chesapeake list (mid_atlantic)
 STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2","44072",
             "44080","44061","44042","44056","41025","44086","41063",
             # added (kept only if inside the region bbox below):
-            "41159","CLKN7","BFTN7","41013","OCPN7","41110"]
+            "41159","CLKN7","BFTN7","41013","OCPN7","41110",
+            # va_ri (VA to RI incl. NJ/NY/CT/Long Island Sound) — verified against
+            # NDBC's live station_table.txt / activestations.xml 2026-07-17:
+            "44009","44091","44025","44065","44017","44097","44020","44008","44085",
+            # ga_sc (GA/SC offshore) — same verification pass:
+            "41004","41008","41024","41029","41033","41003","41112",
+            # ne_fl (NE FL to Ft Lauderdale) — same verification pass:
+            "41009","41010","41068","41069","41113","41117","41122"]
 
 # Friendly display names (fall back to station_table name if missing)
 NAMES = {
@@ -31,14 +42,33 @@ NAMES = {
     "44072": "York Spit",
     "41159": "Onslow Bay Outer", "CLKN7": "Cape Lookout", "BFTN7": "Beaufort, NC",
     "41013": "Frying Pan Shoals", "OCPN7": "Ocean Crest Pier", "41110": "Masonboro",
+    # va_ri
+    "44009": "Delaware Bay",      "44091": "Barnegat, NJ",     "44025": "Long Island, NY",
+    "44065": "New York Harbor",   "44017": "Montauk Point, NY","44097": "Block Island, RI",
+    "44020": "Nantucket Sound",   "44008": "Nantucket",        "44085": "Buzzards Bay, MA",
+    # ga_sc
+    "41004": "Edisto, SC",        "41008": "Grays Reef, GA",   "41024": "Sunset Beach, NC",
+    "41029": "Capers Nearshore, SC", "41033": "Fripp Nearshore, SC",
+    "41003": "Jacksonville Offshore, FL", "41112": "Fernandina Beach, FL",
+    # ne_fl
+    "41009": "Canaveral, FL",     "41010": "Canaveral East, FL", "41068": "Fort Pierce, FL",
+    "41069": "Ponce Inlet, FL",   "41113": "Canaveral Nearshore, FL",
+    "41117": "St. Augustine, FL", "41122": "Hollywood Beach, FL",
 }
 
-# App region (matches frontend BOUNDS); buoys outside this box are dropped.
-REGION = {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.89, "lon_max": -72.21}
+# App regions (matches frontend src/config/regionConfig.js REGION_CONFIGS bounds);
+# buoys outside every one of these boxes are dropped. Keep in sync with that file.
+REGIONS = [
+    {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.84, "lon_max": -72.21},  # mid_atlantic
+    {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20},  # ga_sc
+    {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},  # ne_fl
+    {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97},  # va_ri
+]
 def in_region(lat, lon):
-    return (lat is not None and lon is not None
-            and REGION["lat_min"] <= lat <= REGION["lat_max"]
-            and REGION["lon_min"] <= lon <= REGION["lon_max"])
+    if lat is None or lon is None:
+        return False
+    return any(r["lat_min"] <= lat <= r["lat_max"] and r["lon_min"] <= lon <= r["lon_max"]
+               for r in REGIONS)
 
 OUT           = Path("DailySST/Buoys/buoys_latest.json")
 STATION_TABLE = "https://www.ndbc.noaa.gov/data/stations/station_table.txt"
