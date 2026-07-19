@@ -627,8 +627,15 @@ def fetch_bluetopo_region(lat_min: float, lat_max: float,
     # for near-zero benefit was very likely what pushed the previous run
     # over some resource limit.
     elev = _fill_ocean_gaps(elev, max_passes=1)
-    elev = _smooth_elevation(elev, sigma=2.2)
-    log.info("BlueTopo elevation smoothing complete (sigma=2.2)")
+    # No _smooth_elevation() call here (unlike the CRM path). That function
+    # exists to fix blocky artifacts from CRM's coarser source data being
+    # interpolated onto a finer grid -- BlueTopo tiles are natively
+    # high-resolution, not upsampled, so there's no such artifact to fix.
+    # Skipping it also drops several more full-grid array allocations
+    # (2x gaussian_filter passes plus intermediates) at the exact point
+    # where repeated live runs have been dying with no traceback -- a
+    # signature consistent with an OOM kill, not a code exception.
+    log.info("BlueTopo elevation ready (no CRM-style smoothing needed)")
 
     geo = dict(lat_min=lat_min, lat_max=lat_max,
                lon_min=lon_min, lon_max=lon_max,
