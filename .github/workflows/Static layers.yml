@@ -61,5 +61,14 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: update static layers (bathymetry + wrecks)"
-            git push origin HEAD
+            # This job runs for 5 regions and can take a long time (CRM fetch +
+            # GDAL tiling), so by the time it commits, other automated workflows
+            # (SST fetch, VIIRS bundler, buoys) have very likely pushed to main
+            # in the meantime -- a plain `git push` was failing here with a
+            # non-fast-forward rejection. Same retry pattern already used in
+            # Daily SST.yml / VIIRSHourlyBundler.yml.
+            for i in 1 2 3 4 5; do
+              git pull --rebase --autostash origin HEAD && git push origin HEAD && break
+              echo "push attempt $i failed, retrying in 5s..."; sleep 5
+            done
           fi
