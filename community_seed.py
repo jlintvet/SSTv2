@@ -212,7 +212,7 @@ def load_zones():
     """Active admin-drawn zones (seed_zones). Empty -> fall back to built-in SPOTS."""
     try:
         return rest_get("seed_zones",
-                        "active=eq.true&select=name,center_lat,center_lon,radius_nm,species,weight")
+                        "active=eq.true&select=name,center_lat,center_lon,radius_nm,species,weight,region")
     except RuntimeError as e:
         log.warning("seed_zones unreadable (%s) -- using built-in spots", e)
         return []
@@ -229,27 +229,87 @@ def _rand_point_in_circle(lat, lon, radius_nm):
     dlon = (r * math.sin(th)) / (111320.0 * math.cos(math.radians(lat)))
     return lat + dlat, lon + dlon
 
+# ── SST sampling (actual composite, matches the live map -- spec #5.3) ──────
+# Was previously a TODO stub (random.uniform(74, 82) unconditionally, see git
+# history) -- pins showed plausible-looking but unrelated temps regardless of
+# the real water at that spot/day. Now samples the current VIIRS composite for
+# whichever region the pin's zone belongs to (region-aware since seed_zones
+# spans all 4 regions, not just mid_atlantic); only falls back to the random
+# seasonal range if the composite can't be fetched or that grid cell has no
+# data, matching the spec's stated fallback behavior.
+VIIRS_COMPOSITE_URLS = {
+    "mid_atlantic": "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/viirs_composite.json",
+    "ga_sc":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/ga_sc/viirs_composite.json",
+    "ne_fl":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/ne_fl/viirs_composite.json",
+    "va_ri":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/va_ri/viirs_composite.json",
+}
+_SST_GRID_CACHE = {}   # region -> parsed grid dict, or None if fetch/parse failed (cached per run)
+
+def _load_sst_grid(region):
+    if region in _SST_GRID_CACHE:
+        return _SST_GRID_CACHE[region]
+    url = VIIRS_COMPOSITE_URLS.get(region)
+    grid = None
+    if url:
+        try:
+            req = urllib.request.Request(f"{url}?t={int(time.time())}",
+                                          headers={"User-Agent": "community_seed.py"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                d = json.loads(resp.read().decode())
+            lat_set, lon_set, sst_arr = d.get("latSet"), d.get("lonSet"), d.get("sst")
+            if lat_set and lon_set and sst_arr and len(lat_set) > 1 and len(lon_set) > 1:
+                grid = {"lat_set": lat_set, "lon_set": lon_set, "sst": sst_arr,
+                        "n_lon": len(lon_set),
+                        "d_lat": (lat_set[-1] - lat_set[0]) / (len(lat_set) - 1),
+                        "d_lon": (lon_set[-1] - lon_set[0]) / (len(lon_set) - 1)}
+        except Exception as e:
+            log.warning("SST composite fetch failed for region=%s (%s)", region, e)
+    _SST_GRID_CACHE[region] = grid
+    return grid
+
+def sample_sst_f(lat, lon, region):
+    """Nearest-neighbor sample of the region's current VIIRS composite (already
+    Fahrenheit, see VIIRSHourlyBundler.py) at (lat, lon). Returns None if the
+    composite is unavailable or the nearest cell has no data -- same None/<=0
+    no-data convention FishingHotspotAnalyzer.py uses for this same file."""
+    grid = _load_sst_grid(region)
+    if not grid:
+        return None
+    li = round((lat - grid["lat_set"][0]) / grid["d_lat"]) if grid["d_lat"] else 0
+    loi = round((lon - grid["lon_set"][0]) / grid["d_lon"]) if grid["d_lon"] else 0
+    li = max(0, min(len(grid["lat_set"]) - 1, li))
+    loi = max(0, min(len(grid["lon_set"]) - 1, loi))
+    v = grid["sst"][li * grid["n_lon"] + loi]
+    if v is None or v <= 0:
+        return None
+    return float(v)
+
+
 def make_pin(user, kind, created_at=None, zones=None):
     if zones:
         z = _pick_zone(zones)
         lat, lon = _rand_point_in_circle(z["center_lat"], z["center_lon"], z.get("radius_nm"))
         pool = z.get("species") or SPECIES
+        region = z.get("region") or "mid_atlantic"
     else:
-        _, blat, blon = random.choice(SPOTS)
+        _, blat, blon = random.choice(SPOTS)   # SPOTS are all mid_atlantic canyons/lumps
         lat = blat + random.uniform(-0.04, 0.04)
         lon = blon + random.uniform(-0.04, 0.04)
         pool = SPECIES
+        region = "mid_atlantic"
     lat = round(lat, 5); lon = round(lon, 5)
     spp = random.sample(pool, k=min(len(pool), random.randint(1, 2)))
     qty = {s: random.choice([0, 1, 1, 2, 2, 3, 4, 5, 6]) for s in spp}
     now = dt.datetime.now(dt.timezone.utc)
     base = created_at or now
     ttl = dt.timedelta(hours=LIVE_TTL_H) if kind == "live" else dt.timedelta(days=REPORT_TTL_D)
+    sampled_sst = sample_sst_f(lat, lon, region)
+    water_temp = round(sampled_sst, 1) if sampled_sst is not None else round(random.uniform(74, 82), 1)
     row = {
         "user_id": user["user_id"], "display_name": user["display_name"],
         "type": kind, "lat": lat, "lon": lon,
         "species": spp, "quantity": qty,
-        "water_temp": round(random.uniform(74, 82), 1),   # TODO: sample VIIRS composite
+        "water_temp": water_temp,
         "notes": random.choice(NOTES) if random.random() < 0.5 else None,
         "venmo_handle": None, "cashapp_handle": None,      # seed pins are never tippable
         "points_awarded": LIVE_POINTS if kind == "live" else REPORT_POINTS,
