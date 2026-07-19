@@ -2,15 +2,24 @@
 """
 BathyTileGenerator.py
 =====================
-Generates bathymetric imagery XYZ tiles from NCEI CRM 2023 via OPeNDAP.
-Pipeline: OPeNDAP fetch → merged elevation GeoTIFF → hillshade + color-relief
+Generates bathymetric imagery XYZ tiles.
+mid_atlantic / ga_sc / ne_fl / va_ri: NCEI CRM 2023 via OPeNDAP.
+s_fl: NOAA BlueTopo (National Bathymetric Source) via the `noaabathymetry`
+      package -- CRM's crm_vol3_2023 volume stops at 24.0N and leaves s_fl's
+      southern bounds (Straits south of the Lower Keys, toward Cuba) blank.
+      BlueTopo is real chart-quality bathymetry with GMRT gap-fill in deep
+      water, and covers this area. Used for s_fl only -- see
+      fetch_bluetopo_region() below. Jon's call 2026-07-19: "Plan #3 for
+      this region only. No users are subscribed to this region so we can
+      do it here."
+Pipeline: fetch → merged elevation GeoTIFF → hillshade + color-relief
           → multiply blend + ocean-alpha mask → gdal2tiles → S3 upload.
 
 Usage:
     python BathyTileGenerator.py                # mid_atlantic
     REGION=ga_sc python BathyTileGenerator.py
     REGION=ne_fl python BathyTileGenerator.py
-    REGION=s_fl  python BathyTileGenerator.py
+    REGION=s_fl  python BathyTileGenerator.py    # BlueTopo, not CRM
     REGION=all python BathyTileGenerator.py
 
 System requirements (installed in GitHub Actions workflow):
@@ -18,6 +27,8 @@ System requirements (installed in GitHub Actions workflow):
 
 Python requirements:
     pip install netCDF4 numpy Pillow boto3
+    # s_fl only (lazy-imported, not required for the other 4 regions):
+    pip install "gdal==$(gdal-config --version)" noaabathymetry
 """
 
 import os
@@ -67,14 +78,11 @@ REGION_CONFIGS = {
         "lat_min": 26.00, "lat_max": 30.50,
         "lon_min": -81.97, "lon_max": -76.14,
     },
-    # NOTE: s_fl's southern edge (22.15N, near Cuba) extends well south of
-    # CRM_VOLUMES' coverage below. crm_vol3_2023 ("FL / E Gulf") only reaches
-    # 24.0N, so bathy tiles for s_fl will have NO elevation data south of
-    # ~24.0N (the Florida Straits south of the Lower Keys, and Cuba itself) --
-    # they'll render blank/transparent there, not wrong data. This mirrors
-    # every other region's tiles simply not existing outside CRM coverage.
-    # Flagged to Jon 2026-07-19; a different bathymetry source would be needed
-    # to close this gap if it matters for fishing use south of the Keys.
+    # s_fl uses NOAA BlueTopo instead of CRM (see fetch_bluetopo_region()) --
+    # CRM_VOLUMES doesn't reach this region's southern bounds (22.15N, near
+    # Cuba). BlueTopo covers the full bbox including south of 24.0N. Bounds
+    # deliberately extend toward Cuba for map-extent purposes only; no Cuba
+    # ports/content exist anywhere in the app.
     "s_fl": {
         "lat_min": 22.15, "lat_max": 27.47,
         "lon_min": -83.16, "lon_max": -76.14,
@@ -456,6 +464,143 @@ def fetch_crm_region(lat_min: float, lat_max: float,
     return master, geo
 
 
+def fetch_bluetopo_region(lat_min: float, lat_max: float,
+                          lon_min: float, lon_max: float,
+                          workdir: Path) -> tuple[np.ndarray, dict]:
+    """
+    Fetch NOAA BlueTopo (National Bathymetric Source) elevation data for the
+    given bbox via the official `noaabathymetry` package, resampled onto the
+    same WGS84 grid convention fetch_crm_region() produces.
+
+    s_fl only. CRM_VOLUMES stops at 24.0N and leaves everything south of the
+    Lower Keys blank; BlueTopo is NOAA's curated, chart-quality bathymetric
+    product (GMRT-gap-filled in deep water) and covers this area. Jon's
+    explicit call 2026-07-19: "Plan #3 for this region only... No users are
+    subscribed to this region so we can do it here." Not used for the other
+    4 regions, which stay on CRM.
+
+    Requires GDAL Python bindings (osgeo.gdal) and the `noaabathymetry`
+    package -- both lazy-imported here so the CRM path (all other regions)
+    picks up zero new dependencies.
+
+    Returns (elevation_array, geo_info) in the exact same contract as
+    fetch_crm_region():
+      - elevation_array: float32 [n_rows x n_cols], rows north->south
+      - geo_info: dict with lat/lon bounds, grid dimensions, res_deg
+
+    NOTE: this integrates a data source that can't be exercised end-to-end
+    outside GitHub Actions (AWS S3 + GDAL Python bindings are both
+    unreachable/uninstallable in the dev sandbox this was written in) --
+    logging here is intentionally verbose so a first live run's output is
+    enough to diagnose any issue without a second round-trip.
+    """
+    from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
+    from osgeo import gdal
+    gdal.UseExceptions()
+
+    project_dir = workdir / "bluetopo_project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # fetch_tiles()/mosaic_tiles() bbox format is "xmin,ymin,xmax,ymax" i.e.
+    # lon_min,lat_min,lon_max,lat_max (verified against the installed
+    # package's parse_geometry_input()).
+    bbox = f"{lon_min},{lat_min},{lon_max},{lat_max}"
+    log.info("BlueTopo fetch: bbox=%s  project_dir=%s", bbox, project_dir)
+
+    fetch_result = fetch_tiles(str(project_dir), geometry=bbox, data_source="bluetopo")
+    log.info("BlueTopo fetch: %d downloaded, %d existing, %d failed, %d not_found",
+             len(fetch_result.downloaded), len(fetch_result.existing),
+             len(fetch_result.failed), len(fetch_result.not_found))
+    for f in fetch_result.failed:
+        log.warning("  BlueTopo tile failed: %s (%s)", f.get("tile"), f.get("reason"))
+    if not fetch_result.downloaded and not fetch_result.existing:
+        raise RuntimeError(f"BlueTopo fetch_tiles() returned no usable tiles for bbox {bbox}")
+
+    mosaic_result = mosaic_tiles(str(project_dir), data_source="bluetopo")
+    log.info("BlueTopo mosaic: %d UTM zone(s) built, %d skipped, %d failed",
+             len(mosaic_result.built), len(mosaic_result.skipped), len(mosaic_result.failed))
+    for f in mosaic_result.failed:
+        log.warning("  BlueTopo UTM zone failed: %s (%s)", f.get("utm"), f.get("reason"))
+
+    mosaic_paths = [b["mosaic"] for b in mosaic_result.built]
+    if not mosaic_paths and mosaic_result.skipped:
+        # Shouldn't happen -- project_dir is a fresh /tmp dir every run --
+        # but fail loudly instead of silently producing a blank region
+        # rather than assuming "skipped" is harmless.
+        raise RuntimeError(
+            f"BlueTopo mosaic_tiles() skipped all UTM zones {mosaic_result.skipped} "
+            "and built none -- project_dir was supposed to be fresh, investigate.")
+    if not mosaic_paths:
+        raise RuntimeError(f"BlueTopo mosaic_tiles() produced no mosaics for bbox {bbox}")
+
+    log.info("BlueTopo UTM zone mosaics: %s", [b["utm"] for b in mosaic_result.built])
+
+    # Each mosaic is a multiband VRT (band 1=Elevation, 2=Uncertainty,
+    # 3=Contributor) in its native UTM projection -- s_fl's bbox spans UTM
+    # 17N/18N so expect 2 here. Pull just the elevation band out of each
+    # before merging.
+    elev_only_paths = []
+    for i, mosaic_path in enumerate(mosaic_paths):
+        single_band_vrt = workdir / f"bluetopo_elev_{i}.vrt"
+        run(["gdal_translate", "-of", "VRT", "-b", "1",
+             mosaic_path, str(single_band_vrt)])
+        elev_only_paths.append(str(single_band_vrt))
+
+    # Read the source NoData value so we can pass it to gdalwarp explicitly
+    # rather than relying on implicit detection.
+    probe_ds = gdal.Open(elev_only_paths[0])
+    src_nodata_val = probe_ds.GetRasterBand(1).GetNoDataValue()
+    probe_ds = None
+    if src_nodata_val is None:
+        log.warning("BlueTopo source VRT has no NoData value set in metadata -- "
+                    "gdalwarp will rely on -dstnodata alone for masking")
+
+    # Merge + reproject all UTM-zone mosaics onto the same WGS84 grid
+    # fetch_crm_region() uses, so every downstream step (write_vrt,
+    # hillshade, color-relief, blend/mask, tiling) is untouched.
+    res_deg = CRM_STRIDE / 3600.0
+    n_rows = round((lat_max - lat_min) / res_deg) + 1
+    n_cols = round((lon_max - lon_min) / res_deg) + 1
+
+    merged_tif = workdir / "bluetopo_merged_wgs84.tif"
+    warp_cmd = [
+        "gdalwarp",
+        "-t_srs", "EPSG:4326",
+        "-te", str(lon_min), str(lat_min), str(lon_max), str(lat_max),
+        "-ts", str(n_cols), str(n_rows),
+        "-r", "bilinear",
+        "-dstnodata", str(NODATA),
+        "-multi", "-wo", "NUM_THREADS=ALL_CPUS",
+        "-of", "GTiff", "-ot", "Float32",
+    ]
+    if src_nodata_val is not None:
+        warp_cmd += ["-srcnodata", str(src_nodata_val)]
+    warp_cmd += elev_only_paths + [str(merged_tif)]
+    run(warp_cmd)
+
+    ds = gdal.Open(str(merged_tif))
+    if ds is None:
+        raise RuntimeError(f"gdalwarp output could not be reopened: {merged_tif}")
+    elev = ds.GetRasterBand(1).ReadAsArray().astype(np.float32)
+    ds = None
+
+    elev = np.where(np.isnan(elev), NODATA, elev).astype(np.float32)
+
+    ocean_cells = int(np.sum((elev < 0) & (elev != NODATA)))
+    nodata_cells = int(np.sum(elev == NODATA))
+    log.info("BlueTopo merged grid: %d rows x %d cols, %d ocean cells, %d NODATA cells",
+             n_rows, n_cols, ocean_cells, nodata_cells)
+
+    elev = _fill_ocean_gaps(elev)
+    elev = _smooth_elevation(elev, sigma=2.2)
+    log.info("BlueTopo elevation smoothing complete (sigma=2.2)")
+
+    geo = dict(lat_min=lat_min, lat_max=lat_max,
+               lon_min=lon_min, lon_max=lon_max,
+               n_rows=n_rows, n_cols=n_cols, res_deg=res_deg)
+    return elev, geo
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Step 2 — Write elevation as raw binary + VRT (no GDAL Python bindings)
 # ──────────────────────────────────────────────────────────────────────────
@@ -708,7 +853,10 @@ def process_region(region: str) -> None:
     try:
         # 1. Fetch
         t0 = time.time()
-        elev, geo = fetch_crm_region(lat_min, lat_max, lon_min, lon_max)
+        if region == "s_fl":
+            elev, geo = fetch_bluetopo_region(lat_min, lat_max, lon_min, lon_max, workdir)
+        else:
+            elev, geo = fetch_crm_region(lat_min, lat_max, lon_min, lon_max)
         log.info("Fetch: %.1fs", time.time() - t0)
 
         # 2. Write VRT

@@ -59,6 +59,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install netCDF4 numpy Pillow boto3 scipy
+          # s_fl only: GDAL Python bindings (pinned to the apt-installed
+          # libgdal version above) + NOAA's official BlueTopo fetch/mosaic
+          # tool. fetch_bluetopo_region() lazy-imports both, so this only
+          # matters when REGION=s_fl (or REGION=all, which includes it) --
+          # installed unconditionally here since region isn't known until
+          # the Python script reads its env var.
+          python -m pip install "GDAL==$(gdal-config --version)"
+          python -m pip install noaabathymetry
 
       - name: Run BathyTileGenerator.py
         env:
