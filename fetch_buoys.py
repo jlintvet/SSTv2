@@ -35,7 +35,18 @@ STATIONS = ["44014","44099","44089","44064","44062","44063","OCSM2","44072",
             # decommissioned despite still being listed in station_table.txt.)
             "41004","41008","41024","41029","41033","41112",
             # ne_fl (NE FL to Ft Lauderdale) — same verification pass:
-            "41009","41010","41068","41069","41113","41117","41122"]
+            "41009","41010","41068","41069","41113","41117","41122",
+            # 13 stations added 2026-07-19: found via a full activestations.xml
+            # sweep against all 4 region bboxes below -- the 2026-07-17 pass had
+            # only checked station_table.txt (a narrower legacy table that
+            # excludes some active IOOS-partner stations, e.g. 44095) and missed
+            # a batch of others outright. Each of these reports standard met
+            # data (met="y") and is NOT a near-duplicate of a station already
+            # above (near-duplicate wave-only companions and a couple of
+            # ~0.5nm-apart redundant moorings were deliberately left out --
+            # see fetch_buoys.py git history for the full list considered).
+            "41001","41037","41038","41066","41082","41083","44079",
+            "41108","41120","44058","44084","44095","44100"]
 
 # Friendly display names (fall back to station_table name if missing)
 NAMES = {
@@ -59,12 +70,20 @@ NAMES = {
     "41009": "Canaveral, FL",     "41010": "Canaveral East, FL", "41068": "Fort Pierce, FL",
     "41069": "Ponce Inlet, FL",   "41113": "Canaveral Nearshore, FL",
     "41117": "St. Augustine, FL", "41122": "Hollywood Beach, FL",
+    # added 2026-07-19
+    "41001": "East Hatteras",              "41037": "Wrightsville Beach Offshore, NC",
+    "41038": "Wrightsville Beach Nearshore, NC", "41066": "Charleston Harbor, SC",
+    "41082": "OOI Pioneer Central, NC",    "41083": "OOI Pioneer Southern, NC",
+    "44079": "OOI Pioneer Northern, NC",   "41108": "Wilmington Harbor, NC",
+    "41120": "Cape Hatteras East, NC",     "44058": "Stingray Point, VA",
+    "44084": "Bethany Beach, DE",          "44095": "Oregon Inlet, NC",
+    "44100": "Duck FRF 26m, NC",
 }
 
 # App regions (matches frontend src/config/regionConfig.js REGION_CONFIGS bounds);
 # buoys outside every one of these boxes are dropped. Keep in sync with that file.
 REGIONS = [
-    {"lat_min": 33.70, "lat_max": 39.00, "lon_min": -78.84, "lon_max": -72.21},  # mid_atlantic
+    {"lat_min": 33.70, "lat_max": 39.50, "lon_min": -78.84, "lon_max": -72.21},  # mid_atlantic
     {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20},  # ga_sc
     {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},  # ne_fl
     {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97},  # va_ri
