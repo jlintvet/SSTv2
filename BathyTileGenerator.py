@@ -578,6 +578,17 @@ def fetch_bluetopo_region(lat_min: float, lat_max: float,
     warp_cmd += elev_only_paths + [str(merged_tif)]
     run(warp_cmd)
 
+    # Free disk now -- the downloaded source tiles + per-UTM mosaic VRTs
+    # are fully consumed by the warp above and not needed again. A live
+    # run for s_fl downloaded 629 tiles; on a runner with ~14GB disk, that
+    # plus the GeoTIFF/ENVI copies still to come is enough to matter.
+    # process_region()'s finally-block rmtree only runs at the very end of
+    # the whole pipeline (hillshade/tiling/upload still ahead of us), so
+    # don't wait for it.
+    if project_dir.exists():
+        shutil.rmtree(project_dir, ignore_errors=True)
+        log.info("Freed BlueTopo project_dir (source tiles + mosaics)")
+
     # Read the merged raster back as a numpy array via ENVI raw binary +
     # np.fromfile rather than GDAL's ReadAsArray(). ReadAsArray() requires
     # the _gdal_array C extension, which pip's build isolation frequently
@@ -588,16 +599,34 @@ def fetch_bluetopo_region(lat_min: float, lat_max: float,
     # approach used for the CRM path.
     raw_path = workdir / "bluetopo_merged.raw"
     run(["gdal_translate", "-of", "ENVI", "-ot", "Float32", str(merged_tif), str(raw_path)])
-    elev = np.fromfile(raw_path, dtype="<f4").reshape(n_rows, n_cols)
+    elev = np.fromfile(raw_path, dtype="<f4").reshape(n_rows, n_cols).copy()
+    merged_tif.unlink(missing_ok=True)  # consumed; free the ~1.9GB GeoTIFF
+    raw_path.unlink(missing_ok=True)    # np.fromfile already read it fully (.copy() above detaches from the mmap-like buffer)
+    raw_path.with_suffix(".hdr").unlink(missing_ok=True)
 
     elev = np.where(np.isnan(elev), NODATA, elev).astype(np.float32)
 
     ocean_cells = int(np.sum((elev < 0) & (elev != NODATA)))
     nodata_cells = int(np.sum(elev == NODATA))
-    log.info("BlueTopo merged grid: %d rows x %d cols, %d ocean cells, %d NODATA cells",
-             n_rows, n_cols, ocean_cells, nodata_cells)
+    nodata_pct = 100.0 * nodata_cells / (n_rows * n_cols)
+    log.info("BlueTopo merged grid: %d rows x %d cols, %d ocean cells, %d NODATA cells (%.1f%%)",
+             n_rows, n_cols, ocean_cells, nodata_cells, nodata_pct)
+    if nodata_pct > 10.0:
+        log.info("NODATA is a large share of the grid -- likely water outside "
+                 "BlueTopo's US-EEZ coverage (e.g. toward Cuba/international "
+                 "waters), not a bug. Those areas render transparent, same as "
+                 "any other out-of-coverage water in this pipeline.")
 
-    elev = _fill_ocean_gaps(elev)
+    # max_passes=1 (not the default 5): BlueTopo's mosaics are already
+    # NOAA-curated seamless products per UTM zone, so the only real "seam"
+    # to clean up here is the UTM 17N/18N merge boundary -- one pass
+    # handles that. The large NODATA area above is a genuine coverage gap,
+    # not a seam artifact, and 4-connected fill can't and shouldn't try to
+    # paper over it (pass 1 alone only ever closes ~0.2% of a hole this
+    # size) -- running the other 4 default passes against a 483M-cell grid
+    # for near-zero benefit was very likely what pushed the previous run
+    # over some resource limit.
+    elev = _fill_ocean_gaps(elev, max_passes=1)
     elev = _smooth_elevation(elev, sigma=2.2)
     log.info("BlueTopo elevation smoothing complete (sigma=2.2)")
 
