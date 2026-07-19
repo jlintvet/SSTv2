@@ -16,6 +16,7 @@ Set the REGION environment variable before running:
   REGION=mid_atlantic python sst_data_fetcher.py   # default
   REGION=ga_sc        python sst_data_fetcher.py   # Georgia & South Carolina
   REGION=ne_fl         python sst_data_fetcher.py   # Northeast Florida
+  REGION=s_fl          python sst_data_fetcher.py   # Southern Florida
 
 mid_atlantic  — writes to DailySSTData/MUR/, DailySSTData/GOES/Composite/,
                 DailySSTData/VIIRS/Passes/  (no subdir — backward-compatible)
@@ -23,6 +24,8 @@ ga_sc         — writes to DailySSTData/MUR/ga_sc/, DailySSTData/GOES/Composite
                 DailySSTData/VIIRS/Passes/ga_sc/
 ne_fl         — writes to DailySSTData/MUR/ne_fl/, DailySSTData/GOES/Composite/ne_fl/,
                 DailySSTData/VIIRS/Passes/ne_fl/
+s_fl          — writes to DailySSTData/MUR/s_fl/, DailySSTData/GOES/Composite/s_fl/,
+                DailySSTData/VIIRS/Passes/s_fl/
 =========================================================
 LAND FILTER POLICY
 =========================================================
@@ -125,6 +128,7 @@ def hard_timeout(seconds: int, label: str = ""):
 #   REGION=mid_atlantic  (default — no subdir, backward-compatible)
 #   REGION=ga_sc         (Georgia & South Carolina)
 #   REGION=ne_fl         (Northeast Florida)
+#   REGION=s_fl          (Southern Florida)
 #   REGION=va_ri         (Virginia to Rhode Island)
 _REGION_CONFIGS = {
     "mid_atlantic": {
@@ -147,6 +151,13 @@ _REGION_CONFIGS = {
         "west":  -81.97,
         "east":  -76.14,
         "subdir": "ne_fl",   # files go into DIRS paths + /ne_fl/
+    },
+    "s_fl": {
+        "north":  27.47,
+        "south":  22.15,
+        "west":  -83.16,
+        "east":  -76.14,
+        "subdir": "s_fl",    # files go into DIRS paths + /s_fl/
     },
     "va_ri": {
         "north":  41.51,
@@ -253,6 +264,7 @@ def _dpath(*parts):
     # mid_atlantic: DailySSTData/MUR
     # ga_sc:        DailySSTData/MUR/ga_sc
     # ne_fl:        DailySSTData/MUR/ne_fl
+    # s_fl:         DailySSTData/MUR/s_fl
     if _SUBDIR:
         return os.path.join(BASE_DIR, *parts, _SUBDIR)
     return os.path.join(BASE_DIR, *parts)

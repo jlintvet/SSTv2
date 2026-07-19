@@ -87,6 +87,7 @@ REGIONS = [
     {"lat_min": 29.80, "lat_max": 35.20, "lon_min": -82.00, "lon_max": -75.20},  # ga_sc
     {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},  # ne_fl
     {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97},  # va_ri
+    {"lat_min": 22.15, "lat_max": 27.47, "lon_min": -83.16, "lon_max": -76.14},  # s_fl
 ]
 def in_region(lat, lon):
     if lat is None or lon is None:

@@ -17,8 +17,8 @@ GITHUB_BRANCH = "main"
 # widened from 29.0 to 25.0 to reach ne_fl's southern edge (26.00N); LAT_MAX
 # widened from 40.0 to 42.0 and LON_MAX widened from -72.5 to -68.0 to reach
 # va_ri's northern (41.51N) and eastern (-68.97W) edges.
-LAT_MIN, LAT_MAX, LAT_STEP = 25.0, 42.0, 0.25
-LON_MIN, LON_MAX, LON_STEP = -82.5, -68.0, 0.25
+LAT_MIN, LAT_MAX, LAT_STEP = 21.0, 42.0, 0.25
+LON_MIN, LON_MAX, LON_STEP = -84.0, -68.0, 0.25
 
 # ── Build grid ────────────────────────────────────────────────────────────────
 lats, lons = [], []

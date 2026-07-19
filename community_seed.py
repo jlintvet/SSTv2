@@ -231,6 +231,7 @@ VIIRS_COMPOSITE_URLS = {
     "mid_atlantic": "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/viirs_composite.json",
     "ga_sc":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/ga_sc/viirs_composite.json",
     "ne_fl":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/ne_fl/viirs_composite.json",
+    "s_fl":         "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/s_fl/viirs_composite.json",
     "va_ri":        "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/VIIRS/Bundled/va_ri/viirs_composite.json",
 }
 _SST_GRID_CACHE = {}   # region -> parsed grid dict, or None if fetch/parse failed (cached per run)

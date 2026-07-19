@@ -59,6 +59,10 @@ _REGION_CONFIGS = {
         "bbox": {"lat_min": 26.00, "lat_max": 30.50, "lon_min": -81.97, "lon_max": -76.14},
         "subdir": "ne_fl",
     },
+    "s_fl": {
+        "bbox": {"lat_min": 22.15, "lat_max": 27.47, "lon_min": -83.16, "lon_max": -76.14},
+        "subdir": "s_fl",
+    },
     "va_ri": {
         "bbox": {"lat_min": 37.26, "lat_max": 41.51, "lon_min": -77.46, "lon_max": -68.97},
         "subdir": "va_ri",

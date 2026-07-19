@@ -10,6 +10,7 @@ Usage:
     python BathyTileGenerator.py                # mid_atlantic
     REGION=ga_sc python BathyTileGenerator.py
     REGION=ne_fl python BathyTileGenerator.py
+    REGION=s_fl  python BathyTileGenerator.py
     REGION=all python BathyTileGenerator.py
 
 System requirements (installed in GitHub Actions workflow):
@@ -65,6 +66,18 @@ REGION_CONFIGS = {
     "ne_fl": {
         "lat_min": 26.00, "lat_max": 30.50,
         "lon_min": -81.97, "lon_max": -76.14,
+    },
+    # NOTE: s_fl's southern edge (22.15N, near Cuba) extends well south of
+    # CRM_VOLUMES' coverage below. crm_vol3_2023 ("FL / E Gulf") only reaches
+    # 24.0N, so bathy tiles for s_fl will have NO elevation data south of
+    # ~24.0N (the Florida Straits south of the Lower Keys, and Cuba itself) --
+    # they'll render blank/transparent there, not wrong data. This mirrors
+    # every other region's tiles simply not existing outside CRM coverage.
+    # Flagged to Jon 2026-07-19; a different bathymetry source would be needed
+    # to close this gap if it matters for fishing use south of the Keys.
+    "s_fl": {
+        "lat_min": 22.15, "lat_max": 27.47,
+        "lon_min": -83.16, "lon_max": -76.14,
     },
     "va_ri": {
         "lat_min": 37.26, "lat_max": 41.51,
