@@ -65,18 +65,6 @@ LIVE_POINTS, REPORT_POINTS = 5000, 1000        # match the app's economy
 LIVE_TTL_H,  REPORT_TTL_D  = 24, 7
 
 # ── Content pools ───────────────────────────────────────────────────────────
-# Offshore Mid-Atlantic structure — canyons / shelf-edge lumps, all deep open
-# water (never land/sound/bay). Jittered slightly per pin.
-SPOTS = [
-    ("Norfolk Canyon", 37.05, -74.74), ("Washington Canyon", 37.42, -74.52),
-    ("Poor Man's Canyon", 37.62, -74.40), ("Baltimore Canyon", 38.18, -73.86),
-    ("Wilmington Canyon", 38.44, -73.64), ("Spencer Canyon", 38.72, -73.42),
-    ("Lindenkohl Canyon", 38.60, -73.55), ("The Hot Dog", 38.02, -74.62),
-    ("The Jackspot", 38.10, -74.78), ("Massey's Canyon", 37.84, -74.62),
-    ("Tea's Canyon", 37.30, -74.65), ("The Rockpile", 37.20, -74.90),
-    ("The Fingers", 38.30, -73.95), ("The Hambone", 35.62, -74.86),
-    ("26 Mile Hill", 35.74, -75.05), ("The Point (offshore)", 35.15, -75.10),
-]
 NAME_A = ["Reel", "Salt", "Tight", "Wahoo", "Mahi", "Canyon", "Offshore", "Blue",
           "Gaff", "Tuna", "Knot", "Bluewater", "Outcast", "Pelagic", "Transom",
           "Chum", "Ballyhoo", "Spreader", "Rigged", "Sportfish"]
@@ -209,12 +197,14 @@ def list_seed_auth():
     return out
 
 def load_zones():
-    """Active admin-drawn zones (seed_zones). Empty -> fall back to built-in SPOTS."""
+    """Active admin-drawn zones (seed_zones). Zones are the sole source of seed
+    pin placement -- empty means no pins should be created this run (no
+    fallback spot list; see git history for why that was removed)."""
     try:
         return rest_get("seed_zones",
                         "active=eq.true&select=name,center_lat,center_lon,radius_nm,species,weight,region")
     except RuntimeError as e:
-        log.warning("seed_zones unreadable (%s) -- using built-in spots", e)
+        log.warning("seed_zones unreadable (%s) -- treating as zero active zones", e)
         return []
 
 def _pick_zone(zones):
@@ -286,17 +276,12 @@ def sample_sst_f(lat, lon, region):
 
 
 def make_pin(user, kind, created_at=None, zones=None):
-    if zones:
-        z = _pick_zone(zones)
-        lat, lon = _rand_point_in_circle(z["center_lat"], z["center_lon"], z.get("radius_nm"))
-        pool = z.get("species") or SPECIES
-        region = z.get("region") or "mid_atlantic"
-    else:
-        _, blat, blon = random.choice(SPOTS)   # SPOTS are all mid_atlantic canyons/lumps
-        lat = blat + random.uniform(-0.04, 0.04)
-        lon = blon + random.uniform(-0.04, 0.04)
-        pool = SPECIES
-        region = "mid_atlantic"
+    """zones must be a non-empty list -- callers check `if not zones` and skip
+    pin creation entirely rather than calling this (no more SPOTS fallback)."""
+    z = _pick_zone(zones)
+    lat, lon = _rand_point_in_circle(z["center_lat"], z["center_lon"], z.get("radius_nm"))
+    pool = z.get("species") or SPECIES
+    region = z.get("region") or "mid_atlantic"
     lat = round(lat, 5); lon = round(lon, 5)
     spp = random.sample(pool, k=min(len(pool), random.randint(1, 2)))
     qty = {s: random.choice([0, 1, 1, 2, 2, 3, 4, 5, 6]) for s in spp}
@@ -419,7 +404,9 @@ def cmd_create():
     # Light back-fill so the map/leaderboard aren't empty at launch.
     users = active_seed_users()
     zones = load_zones()
-    if users and create_backfill_days > 0:
+    if not zones:
+        log.warning("no active seed_zones -- skipping pin backfill (zones-only mode, no fallback spot list)")
+    elif users and create_backfill_days > 0:
         n = 0
         for d in range(1, create_backfill_days + 1):
             for _ in range(random.randint(*BACKFILL_PER_DAY)):
@@ -441,6 +428,9 @@ def cmd_tick():
     if not users:
         log.warning("no active seed users — run create first"); return
     zones = load_zones()
+    if not zones:
+        log.warning("no active seed_zones -- skipping this tick (zones-only mode, no fallback spot list)")
+        return
     pins_min      = _cfg_int(cfg, "pins_per_run_min", PINS_PER_RUN[0])
     pins_max      = max(pins_min, _cfg_int(cfg, "pins_per_run_max", PINS_PER_RUN[1]))
     live_fraction = _cfg_float(cfg, "live_fraction", LIVE_FRACTION)
