@@ -578,11 +578,17 @@ def fetch_bluetopo_region(lat_min: float, lat_max: float,
     warp_cmd += elev_only_paths + [str(merged_tif)]
     run(warp_cmd)
 
-    ds = gdal.Open(str(merged_tif))
-    if ds is None:
-        raise RuntimeError(f"gdalwarp output could not be reopened: {merged_tif}")
-    elev = ds.GetRasterBand(1).ReadAsArray().astype(np.float32)
-    ds = None
+    # Read the merged raster back as a numpy array via ENVI raw binary +
+    # np.fromfile rather than GDAL's ReadAsArray(). ReadAsArray() requires
+    # the _gdal_array C extension, which pip's build isolation frequently
+    # fails to compile even when numpy is already installed in the outer
+    # environment (confirmed by a live run: "ImportError: cannot import
+    # name '_gdal_array' from 'osgeo'" right after a successful gdalwarp).
+    # This mirrors write_vrt()'s existing no-GDAL-python-bindings-for-array-IO
+    # approach used for the CRM path.
+    raw_path = workdir / "bluetopo_merged.raw"
+    run(["gdal_translate", "-of", "ENVI", "-ot", "Float32", str(merged_tif), str(raw_path)])
+    elev = np.fromfile(raw_path, dtype="<f4").reshape(n_rows, n_cols)
 
     elev = np.where(np.isnan(elev), NODATA, elev).astype(np.float32)
 
