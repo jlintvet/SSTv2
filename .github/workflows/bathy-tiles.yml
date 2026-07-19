@@ -46,9 +46,14 @@ jobs:
       - name: Install GDAL
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y gdal-bin
+          # libgdal-dev is required alongside gdal-bin: gdal-bin only ships
+          # the CLI tools (gdal_translate, gdalwarp, gdal2tiles, ...) --
+          # gdal-config (needed below to pin the matching Python bindings
+          # version for the s_fl BlueTopo path) lives in libgdal-dev.
+          sudo apt-get install -y gdal-bin libgdal-dev
           gdal_translate --version
           gdalinfo --version
+          gdal-config --version
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5.6.0
