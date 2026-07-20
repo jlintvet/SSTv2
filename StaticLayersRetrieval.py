@@ -468,6 +468,153 @@ def _fetch_bathymetry(session: requests.Session) -> list[dict]:
     log.info("CRM: total %d points (%d ocean).", len(rows), ocean)
     return rows
 
+def _fetch_bathymetry_bluetopo() -> list[dict]:
+    """
+    Fetch s_fl bathymetry from NOAA BlueTopo instead of CRM. crm_vol3_2023
+    ("FL / E Gulf" in _CRM_VOLUMES above) stops at 24.0N and leaves
+    everything south of the Lower Keys toward Cuba with no bathymetry data
+    at all -- no contour lines, no depth grid. BlueTopo is a US-EEZ product
+    covering that area. s_fl only; every other region keeps using
+    _fetch_bathymetry() (CRM) above, unchanged.
+
+    Mirrors fetch_bluetopo_region() in BathyTileGenerator.py (same
+    fetch_tiles/mosaic_tiles/gdalwarp-merge approach, same lessons learned
+    there: gdal_translate -of ENVI + np.fromfile instead of GDAL's
+    ReadAsArray() since the numpy array extension isn't reliably built
+    under pip's default build isolation, and free the downloaded-tiles
+    project_dir as soon as the merge has consumed it). The one real
+    difference: this returns the flat {lat, lon, depth_ft, depth_fathoms}
+    row format _build_grid()/write_contours()/write_bathymetry_grid()
+    expect, at this file's existing coarse target resolution
+    (res_deg = _CRM_STRIDE/3600 ~= 0.004167 deg, ~463m -- see module
+    docstring), not a raster array. That's a requirement, not just an
+    optimization: _build_grid()'s gap-fill and _extract_contour_lines()
+    are pure-Python loops over every cell, sized for CRM's existing
+    resolution across all 5 regions -- BlueTopo's native resolution would
+    be ~225x more cells (matching BathyTileGenerator.py's much finer
+    stride) and would not finish in a reasonable time here. gdalwarp
+    downsamples during the merge regardless of source tile resolution, so
+    targeting the coarse grid directly keeps this well inside what every
+    other region's CRM run already handles.
+    """
+    import shutil as _shutil
+    import subprocess as _subprocess
+    import numpy as _np
+    from pathlib import Path as _Path
+    from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
+    from osgeo import gdal as _gdal
+    _gdal.UseExceptions()
+
+    def _run(cmd):
+        log.info("$ %s", " ".join(str(c) for c in cmd))
+        result = _subprocess.run(cmd, capture_output=True, text=True)
+        if result.stdout.strip():
+            for line in result.stdout.strip().splitlines():
+                log.info("  %s", line)
+        if result.returncode != 0:
+            for line in result.stderr.strip().splitlines():
+                log.warning("  %s", line)
+            raise RuntimeError(f"Command failed (rc={result.returncode}): {' '.join(str(c) for c in cmd)}")
+        return result
+
+    workdir = _Path("/tmp/staticlayers_bluetopo_s_fl")
+    if workdir.exists():
+        _shutil.rmtree(workdir)
+    workdir.mkdir(parents=True)
+    project_dir = workdir / "bluetopo_project"
+    project_dir.mkdir(parents=True)
+
+    bbox = f"{LON_MIN},{LAT_MIN},{LON_MAX},{LAT_MAX}"
+    log.info("BlueTopo fetch (contours): bbox=%s  project_dir=%s", bbox, project_dir)
+
+    fetch_result = fetch_tiles(str(project_dir), geometry=bbox, data_source="bluetopo")
+    log.info("BlueTopo fetch: %d downloaded, %d existing, %d failed, %d not_found",
+             len(fetch_result.downloaded), len(fetch_result.existing),
+             len(fetch_result.failed), len(fetch_result.not_found))
+    for f in fetch_result.failed:
+        log.warning("  BlueTopo tile failed: %s (%s)", f.get("tile"), f.get("reason"))
+    if not fetch_result.downloaded and not fetch_result.existing:
+        raise RuntimeError(f"BlueTopo fetch_tiles() returned no usable tiles for bbox {bbox}")
+
+    mosaic_result = mosaic_tiles(str(project_dir), data_source="bluetopo")
+    log.info("BlueTopo mosaic: %d UTM zone(s) built, %d skipped, %d failed",
+             len(mosaic_result.built), len(mosaic_result.skipped), len(mosaic_result.failed))
+    for f in mosaic_result.failed:
+        log.warning("  BlueTopo UTM zone failed: %s (%s)", f.get("utm"), f.get("reason"))
+    mosaic_paths = [b["mosaic"] for b in mosaic_result.built]
+    if not mosaic_paths:
+        raise RuntimeError(f"BlueTopo mosaic_tiles() produced no mosaics for bbox {bbox}")
+    log.info("BlueTopo UTM zone mosaics: %s", [b["utm"] for b in mosaic_result.built])
+
+    elev_only_paths = []
+    for i, mosaic_path in enumerate(mosaic_paths):
+        single_band_vrt = workdir / f"bluetopo_elev_{i}.vrt"
+        _run(["gdal_translate", "-of", "VRT", "-b", "1", mosaic_path, str(single_band_vrt)])
+        elev_only_paths.append(str(single_band_vrt))
+
+    probe_ds = _gdal.Open(elev_only_paths[0])
+    src_nodata_val = probe_ds.GetRasterBand(1).GetNoDataValue()
+    probe_ds = None
+
+    # Free the downloaded tiles + per-UTM mosaics now -- fully consumed by
+    # the warp below, and this can be several GB (629 tiles for the same
+    # bbox in the raster-pipeline run).
+    if project_dir.exists():
+        _shutil.rmtree(project_dir, ignore_errors=True)
+        log.info("Freed BlueTopo project_dir (source tiles + mosaics)")
+
+    res_deg = _CRM_STRIDE / 3600.0
+    n_rows = round((LAT_MAX - LAT_MIN) / res_deg) + 1
+    n_cols = round((LON_MAX - LON_MIN) / res_deg) + 1
+    log.info("Target grid (matches CRM resolution): %d rows x %d cols", n_rows, n_cols)
+
+    merged_tif = workdir / "bluetopo_merged_wgs84.tif"
+    warp_cmd = [
+        "gdalwarp",
+        "-t_srs", "EPSG:4326",
+        "-te", str(LON_MIN), str(LAT_MIN), str(LON_MAX), str(LAT_MAX),
+        "-ts", str(n_cols), str(n_rows),
+        "-r", "bilinear",
+        "-dstnodata", "-9999",
+        "-of", "GTiff", "-ot", "Float32",
+    ]
+    if src_nodata_val is not None:
+        warp_cmd += ["-srcnodata", str(src_nodata_val)]
+    warp_cmd += elev_only_paths + [str(merged_tif)]
+    _run(warp_cmd)
+
+    raw_path = workdir / "bluetopo_merged.raw"
+    _run(["gdal_translate", "-of", "ENVI", "-ot", "Float32", str(merged_tif), str(raw_path)])
+    elev = _np.fromfile(raw_path, dtype="<f4").reshape(n_rows, n_cols).copy()
+
+    _shutil.rmtree(workdir, ignore_errors=True)
+
+    # Convert to the same flat {lat, lon, depth_ft, depth_fathoms} row
+    # format _fetch_bathymetry() (CRM) returns, snapped onto the same
+    # canonical grid (multiples of res_deg from the origin) the same way.
+    rows: list[dict] = []
+    lat_vals = [round(round((LAT_MAX - i * res_deg) / res_deg) * res_deg, 7) for i in range(n_rows)]
+    lon_vals = [round(round((LON_MIN + j * res_deg) / res_deg) * res_deg, 7) for j in range(n_cols)]
+    for i in range(n_rows):
+        lat = lat_vals[i]
+        row_z = elev[i]
+        for j in range(n_cols):
+            z = float(row_z[j])
+            lon = lon_vals[j]
+            if math.isnan(z) or z <= -9999.0 or z >= 0:
+                rows.append({"lat": lat, "lon": lon, "depth_ft": None, "depth_fathoms": None})
+            else:
+                depth_m = -z
+                rows.append({"lat": lat, "lon": lon,
+                             "depth_ft":      round(depth_m * 3.28084, 1),
+                             "depth_fathoms": round(depth_m / 1.8288,  2)})
+
+    if not rows:
+        raise RuntimeError("BlueTopo fetch returned no data.")
+    ocean = sum(1 for r in rows if r["depth_ft"] is not None)
+    log.info("BlueTopo: total %d points (%d ocean).", len(rows), ocean)
+    return rows
+
 # ---------------------------------------------------------------------------
 # Ocean mask — retired (Natural Earth 10m polygon approach)
 # ---------------------------------------------------------------------------
@@ -950,7 +1097,7 @@ def main() -> None:
     if _bathy_cache_valid():
         log.info("Using cached bathymetry — skipping fetch.")
     else:
-        rows = _fetch_bathymetry(session)
+        rows = _fetch_bathymetry_bluetopo() if _REGION == "s_fl" else _fetch_bathymetry(session)
         log.info("Building depth grid ...")
         lats, lons, grid = _build_grid(rows)
         log.info("Grid: %d lats × %d lons", len(lats), len(lons))

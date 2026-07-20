@@ -13,13 +13,24 @@ jobs:
   retrieve-static-layers:
     name: Fetch bathymetry and wrecks
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150   # bumped from 120: s_fl's BlueTopo fetch+mosaic alone took ~20min in the raster-tile pipeline
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
+
+      - name: Install GDAL
+        run: |
+          sudo apt-get update -qq
+          # libgdal-dev is required alongside gdal-bin: gdal-bin only ships
+          # the CLI tools (gdal_translate, gdalwarp) -- gdal-config (needed
+          # below to pin the matching Python bindings version for s_fl's
+          # BlueTopo contour fetch) lives in libgdal-dev.
+          sudo apt-get install -y gdal-bin libgdal-dev
+          gdal_translate --version
+          gdal-config --version
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5.6.0
@@ -31,6 +42,13 @@ jobs:
           python -m ensurepip --upgrade
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          # s_fl only: GDAL Python bindings + NOAA's official BlueTopo
+          # fetch/mosaic tool, for _fetch_bathymetry_bluetopo() in
+          # StaticLayersRetrieval.py. Lazy-imported there, so this only
+          # matters for the s_fl run below -- installed unconditionally
+          # here since it's cheap and this step runs once for all 5 regions.
+          python -m pip install "GDAL==$(gdal-config --version)"
+          python -m pip install noaabathymetry
 
       - name: Clear bathymetry cache (force CRM re-fetch on bathy-crm branch)
         run: rm -f DailySST/bathymetry*.json DailySST/bathymetry_contours*.json DailySST/bathymetry_grid*.json
