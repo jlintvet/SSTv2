@@ -53,6 +53,7 @@ import sys
 import json
 import time
 import shutil
+import base64
 import logging
 import subprocess
 from pathlib import Path
@@ -103,6 +104,19 @@ CHL_COMPOSITE_URL = (
     "https://raw.githubusercontent.com/jlintvet/SSTv2/main/"
     "SSTv2/Chlorophyll/Bundled/chl_composite.json"
 )
+
+# Same prebaked coastline mask the frontend uses (waterMaskRef / loadPrebakedMask
+# in SSTHeatmapLeaflet.jsx) -- on the identical 0.02 deg canonical grid as
+# chl_composite.json (bounds/step/rows/cols all match for mid_atlantic; verified
+# against the live file). MUST be applied here too: gap_fill_bounded() only
+# knows grid distance, not land/ocean, so without this mask a real chlorophyll
+# reading near the Chesapeake Bay mouth gets Gaussian-blended across the bay
+# and inland -- Richmond and Petersburg are well within the gap-fill radius in
+# grid-distance terms even though they're ~100+ km from open water. This is
+# the same "SST colors bleed onto land" failure mode SST_RENDERING.md problem
+# #1 already documents and fixes for SST; the fix belongs here at the source
+# (this script), not as a frontend clip -- see CLAUDE.md's architecture rule.
+OCEAN_MASK_URL = "https://raw.githubusercontent.com/jlintvet/SSTv2/main/DailySSTData/ocean_mask.json"
 
 # ── Tile output ─────────────────────────────────────────────────────────────
 ZOOM_MIN = 5
@@ -246,6 +260,40 @@ def fetch_chl_composite(region: str) -> tuple[np.ndarray, dict]:
         window_days=comp.get("window_days"),
     )
     return arr_north_first, geo
+
+
+def fetch_ocean_mask(region: str) -> np.ndarray:
+    """
+    Fetch and decode the prebaked coastline mask (same file + bit-packing
+    convention as loadPrebakedMask() in SSTHeatmapLeaflet.jsx): a base64
+    string of MSB-first-packed bits, row-major, row 0 = north, col 0 = west
+    -- True = ocean, False = land. Verified against the live file: bounds/
+    step/rows/cols match chl_composite.json's canonical grid exactly for
+    mid_atlantic, and decoding correctly flags Richmond/Petersburg VA as
+    land and the Chesapeake Bay mouth/open Atlantic as ocean.
+    """
+    cfg = REGION_CONFIGS[region]
+    resp = requests.get(OCEAN_MASK_URL, timeout=60)
+    resp.raise_for_status()
+    obj = resp.json()
+    bounds, step, rows, cols = obj["bounds"], obj["step"], obj["rows"], obj["cols"]
+
+    if abs(bounds["n"] - cfg["lat_max"]) > 0.001 or abs(bounds["s"] - cfg["lat_min"]) > 0.001 \
+            or abs(bounds["w"] - cfg["lon_min"]) > 0.001 or abs(bounds["e"] - cfg["lon_max"]) > 0.001:
+        raise RuntimeError(
+            f"ocean_mask.json bounds don't match REGION_CONFIGS['{region}']: "
+            f"got {bounds}, expected lat {cfg['lat_min']}-{cfg['lat_max']} lon {cfg['lon_min']}-{cfg['lon_max']}"
+        )
+    if abs(step - GRID_STEP) > 1e-9:
+        raise RuntimeError(f"ocean_mask.json step {step} != GRID_STEP {GRID_STEP}")
+
+    raw = base64.b64decode(obj["packed"])
+    bits = np.frombuffer(raw, dtype=np.uint8)
+    n_cells = rows * cols
+    unpacked = np.unpackbits(bits, bitorder="big")[:n_cells]
+    ocean = unpacked.astype(bool).reshape(rows, cols)   # row 0 = north, matches grid_north_first
+    log.info("Ocean mask: %d x %d, %.1f%% ocean", rows, cols, 100.0 * ocean.mean())
+    return ocean
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -553,7 +601,14 @@ def process_region(region: str) -> None:
         t0 = time.time()
         grid_nf, geo = fetch_chl_composite(region)
 
+        ocean_mask = fetch_ocean_mask(region)
+        # Pin land to NaN before gap-fill so a coastal observation never
+        # blends across land (see OCEAN_MASK_URL comment above), then again
+        # after -- belt and suspenders, matching the frontend's own
+        # "waterMaskRef provides a secondary check" pattern for SST.
+        grid_nf = np.where(ocean_mask, grid_nf, np.nan)
         grid_filled_nf = gap_fill_bounded(grid_nf, MAX_FILL_CELLS)
+        grid_filled_nf = np.where(ocean_mask, grid_filled_nf, np.nan)
 
         vrt = write_vrt(grid_filled_nf, geo, workdir)
 
