@@ -1,0 +1,66 @@
+name: CHL Tile Generation (TEST - mid_atlantic only)
+
+# Manual trigger only. This is an experimental test of a raster tile pyramid
+# + contour-line pipeline for chlorophyll, evaluating whether GDAL lanczos
+# resampling (same technique as bathy-tiles.yml's Shaded Relief) renders
+# sharper than the current client-side canvas + blur(4px) approach.
+# See CHLTileGenerator.py docstring and SST_RENDERING.md problem #8.
+#
+# Do not schedule this or extend it to other regions until Jon has reviewed
+# the test tiles against the existing CHL rendering.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read   # read-only repo access -- output goes to S3, not git
+
+jobs:
+  generate-chl-tiles:
+    name: Generate and upload CHL test tiles (mid_atlantic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Install GDAL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gdal-bin
+          gdal_translate --version
+          gdal2tiles.py --version || gdal2tiles --version
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests numpy Pillow boto3 scipy contourpy
+
+      - name: Run CHLTileGenerator.py
+        env:
+          REGION: mid_atlantic
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: python CHLTileGenerator.py
+
+      - name: Tile summary
+        if: always()
+        run: |
+          echo "CloudFront tile URL pattern:"
+          echo "  https://d3qy1jhzqojgwx.cloudfront.net/chl/mid_atlantic/{z}/{x}/{y}.png"
+          echo ""
+          echo "Contours GeoJSON:"
+          echo "  https://d3qy1jhzqojgwx.cloudfront.net/chl/mid_atlantic/contours.json"
+          echo ""
+          echo "Manifest:"
+          echo "  https://d3qy1jhzqojgwx.cloudfront.net/chl/mid_atlantic/manifest.json"
+          echo ""
+          echo "Test a tile in browser (zoom 7, roughly mid-Atlantic Bight):"
+          echo "  https://d3qy1jhzqojgwx.cloudfront.net/chl/mid_atlantic/7/36/48.png"
