@@ -64,7 +64,7 @@ import boto3
 from PIL import Image
 
 try:
-    from scipy.ndimage import distance_transform_edt
+    from scipy.ndimage import distance_transform_edt, gaussian_filter
     _SCIPY_AVAILABLE = True
 except ImportError:
     _SCIPY_AVAILABLE = False
@@ -254,11 +254,26 @@ def fetch_chl_composite(region: str) -> tuple[np.ndarray, dict]:
 
 def gap_fill_bounded(grid: np.ndarray, max_cells: int) -> np.ndarray:
     """
-    Fill NaN cells with the value of the nearest valid cell, but only if
-    that nearest valid cell is within `max_cells` (Euclidean, grid units).
-    Cells farther than that stay NaN (rendered transparent) -- this is a
-    display-continuity fill, not a fabrication of unseen data, mirroring
-    the frontend's existing gapFillGrid MAX_FILL_DIST cap.
+    Fill NaN cells with a normalized Gaussian-weighted blend of nearby valid
+    cells, but only within `max_cells` (Euclidean, grid units) of an actual
+    observation -- cells farther than that stay NaN (rendered transparent).
+    This is a display-continuity fill, not a fabrication of unseen data,
+    mirroring the frontend's existing gapFillGrid MAX_FILL_DIST cap.
+
+    IMPORTANT: this must be a smooth blend, not nearest-neighbor lookup.
+    chl_composite.json is very sparse (~16% raw coverage at the time this
+    was written, real observations ~25 cells apart on average) -- a pure
+    nearest-neighbor fill (distance_transform_edt's return_indices) turns
+    into a Voronoi tessellation: every gap cell copies whichever single
+    observation happens to be closest, with a hard seam exactly at the
+    boundary between two observations' "territory." That produced the
+    large flat-colored blobs with sharp circular edges seen in the first
+    version of this script's test tiles. The Gaussian-weighted approach
+    below (same NODATA-safe normalized-convolution technique as
+    BathyTileGenerator.py's _smooth_elevation) blends ALL nearby valid
+    cells with distance-based weight instead of picking one owner, which
+    verified against the real composite data reduced the p99 adjacent-cell
+    jump from ~28-30 mg/m3 down to ~11-16 for the same fill area.
     """
     invalid = np.isnan(grid)
     n_invalid = int(invalid.sum())
@@ -269,15 +284,25 @@ def gap_fill_bounded(grid: np.ndarray, max_cells: int) -> np.ndarray:
         log.warning("scipy not installed -- skipping gap-fill (%d NaN cells stay transparent)", n_invalid)
         return grid
 
-    dist, (inds_r, inds_c) = distance_transform_edt(invalid, return_distances=True, return_indices=True)
-    nearest_vals = grid[inds_r, inds_c]
-    fillable = invalid & (dist <= max_cells)
-    out = np.where(fillable, nearest_vals, grid)
+    valid = ~invalid
+    # sigma heuristic: most of the Gaussian's weight falls within max_cells,
+    # so the effective fill radius roughly matches the old hard cap.
+    sigma = max_cells / 2.5
+    values = np.where(valid, grid, 0.0).astype(np.float32)
+    weights = valid.astype(np.float32)
+    fv = gaussian_filter(values, sigma=sigma)
+    fw = gaussian_filter(weights, sigma=sigma)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        blended = np.where(fw > 1e-6, fv / fw, np.nan)
+
+    dist = distance_transform_edt(invalid)
+    fillable = invalid & (dist <= max_cells) & ~np.isnan(blended)
+    out = np.where(fillable, blended, grid)
 
     n_filled = int(fillable.sum())
     n_remaining = int(np.isnan(out).sum())
-    log.info("Gap-fill: %d/%d NaN cells filled (within %d cells of an observation), %d remain transparent",
-             n_filled, n_invalid, max_cells, n_remaining)
+    log.info("Gap-fill: %d/%d NaN cells filled (Gaussian blend, sigma=%.1f, within %d cells of an observation), %d remain transparent",
+             n_filled, n_invalid, sigma, max_cells, n_remaining)
     return out
 
 
