@@ -358,8 +358,18 @@ AUTHORITY["EPSG","4326"]]</SRS>
 # ──────────────────────────────────────────────────────────────────────────
 
 def build_color_ramp_text() -> str:
-    lines = [f"{val:<8g}{r:>4}{g:>4}{b:>4}" for val, (r, g, b) in CHL_COLOR_STOPS]
-    lines.append("nv        0   0   0")
+    """
+    gdaldem's color-relief text format supports an optional 5th (alpha)
+    column per row; if omitted, GDAL defaults THAT ROW to fully opaque
+    (255) -- including the special "nv" (nodata) row. The first version
+    of this script left the alpha column off "nv", so every NODATA pixel
+    (all land, plus all ocean beyond the gap-fill radius) rendered as
+    opaque black instead of transparent, hiding the basemap underneath
+    entirely except where real CHL color existed. Explicit alpha=255 on
+    every real stop and alpha=0 on "nv" avoids relying on that default.
+    """
+    lines = [f"{val:<8g}{r:>4}{g:>4}{b:>4}{255:>4}" for val, (r, g, b) in CHL_COLOR_STOPS]
+    lines.append("nv        0   0   0   0")
     return "\n".join(lines) + "\n"
 
 
