@@ -133,11 +133,27 @@ NODATA = -1.0
 
 # ── Gap-fill cap ────────────────────────────────────────────────────────────
 # Cells farther than this from a real observation stay transparent rather
-# than being filled -- mirrors gapFillGrid's MAX_FILL_DIST philosophy
-# (frontend, SST): smooth over small gaps for visual continuity, but never
-# invent data far from an observation. 15 cells * 0.02 deg ~= 0.3 deg
-# ~= 33 km at this latitude.
-MAX_FILL_CELLS = 15
+# than being filled. This must match the OLD renderer's actual policy, not
+# just avoid the earlier hard-edge bug: gridToDataURL (frontend) bilinearly
+# interpolates strictly between the 4 immediate neighboring grid cells at
+# each render pixel -- if those specific neighbors are null it renders
+# transparent, it never searches further away for real data. Its effective
+# "reach" beyond a real observation is about 1 grid cell (0.02 deg, ~2km).
+#
+# The first version of this script used 15 cells (~33km), intended only to
+# avoid re-introducing the earlier Voronoi-blob bug -- but at that range a
+# single real reading near a river mouth gets blended across an entire body
+# of water (e.g. the whole Chesapeake Bay rendered as one fabricated
+# uniform "high chlorophyll" block, extrapolated from one real coastal
+# pixel). That's not a resolution/sharpness problem, it's inventing data
+# far from any observation -- exactly what CLAUDE.md's architecture rule
+# says not to do. 2 cells (~4.4km) is close to the old renderer's own
+# implicit tolerance: enough to softly feather a real pixel's edge (so the
+# original hard Voronoi-blob bug still doesn't return), nowhere near enough
+# to extrapolate across an estuary. Expect this to make the tiles look much
+# sparser/patchier where the composite's cloud coverage is poor -- that's
+# the honest picture, not a regression.
+MAX_FILL_CELLS = 2
 
 # ── Chlorophyll color ramp (mg/m3) ──────────────────────────────────────────
 # gdaldem color-relief only linearly interpolates between adjacent stops, so
