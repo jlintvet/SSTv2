@@ -132,28 +132,35 @@ S3_PREFIX  = "chl"   # -> chl/{region}/{z}/{x}/{y}.png, chl/{region}/contours.js
 NODATA = -1.0
 
 # ── Gap-fill cap ────────────────────────────────────────────────────────────
-# Cells farther than this from a real observation stay transparent rather
-# than being filled. This must match the OLD renderer's actual policy, not
-# just avoid the earlier hard-edge bug: gridToDataURL (frontend) bilinearly
-# interpolates strictly between the 4 immediate neighboring grid cells at
-# each render pixel -- if those specific neighbors are null it renders
-# transparent, it never searches further away for real data. Its effective
-# "reach" beyond a real observation is about 1 grid cell (0.02 deg, ~2km).
+# Set to 0: NO extrapolation beyond genuinely observed cells. Only render
+# what CMEMS actually measured (post land-mask); everything else stays
+# transparent. gap_fill_bounded() becomes a no-op at this value (kept as a
+# function rather than deleted in case a future, more careful reintroduction
+# is wanted) -- see its docstring for why.
 #
-# The first version of this script used 15 cells (~33km), intended only to
-# avoid re-introducing the earlier Voronoi-blob bug -- but at that range a
-# single real reading near a river mouth gets blended across an entire body
-# of water (e.g. the whole Chesapeake Bay rendered as one fabricated
-# uniform "high chlorophyll" block, extrapolated from one real coastal
-# pixel). That's not a resolution/sharpness problem, it's inventing data
-# far from any observation -- exactly what CLAUDE.md's architecture rule
-# says not to do. 2 cells (~4.4km) is close to the old renderer's own
-# implicit tolerance: enough to softly feather a real pixel's edge (so the
-# original hard Voronoi-blob bug still doesn't return), nowhere near enough
-# to extrapolate across an estuary. Expect this to make the tiles look much
-# sparser/patchier where the composite's cloud coverage is poor -- that's
-# the honest picture, not a regression.
-MAX_FILL_CELLS = 2
+# History of getting this wrong, twice, kept here so it doesn't happen a
+# third time:
+#   - v1: MAX_FILL_CELLS=15 (~33km), nearest-neighbor lookup -> Voronoi
+#     tessellation, giant flat blobs with hard seams between them.
+#   - v2: same 15 cells, switched nearest-neighbor for a Gaussian blend ->
+#     smoother edges, but still extrapolated a single coastal reading across
+#     an entire bay (Chesapeake Bay rendered as one fabricated uniform
+#     "high chlorophyll" block).
+#   - v3: dropped to 2 cells (~4.4km) -- better, but still fabricated
+#     coverage across Pamlico Sound wherever real readings happened to sit
+#     ~4km apart along its edge, still more than the actual old renderer
+#     ever shows in this deployment.
+# The old renderer's own behavior (Jon's correction, re-confirmed against
+# SST_RENDERING.md problem #1 and its "what works" fix for SST -- ingest-
+# time + frontend land/water masking, nothing about extrapolating into
+# open water): show color ONLY where there's a real observation. No
+# distance-based extrapolation at all, regardless of how small the radius
+# is -- any nonzero radius eventually fabricates *some* area that was never
+# actually measured, and "how much fabrication is acceptable" was never the
+# right question. Expect tiles to look sparse/patchy wherever the
+# composite's cloud coverage is poor (currently ~16% raw coverage) -- that
+# sparseness IS the honest picture, not a bug.
+MAX_FILL_CELLS = 0
 
 # ── Chlorophyll color ramp (mg/m3) ──────────────────────────────────────────
 # gdaldem color-relief only linearly interpolates between adjacent stops, so
@@ -454,14 +461,24 @@ def generate_color_relief(vrt: Path, workdir: Path) -> Path:
 # ──────────────────────────────────────────────────────────────────────────
 
 def generate_tiles(color_relief_tif: Path, tiles_dir: Path) -> None:
-    """Run gdal2tiles to produce XYZ PNG tiles at zoom ZOOM_MIN-ZOOM_MAX,
-    lanczos-resampled -- the whole point of this test: proper per-zoom
-    resampling instead of one client-side stretched canvas + CSS blur."""
+    """
+    Run gdal2tiles to produce XYZ PNG tiles at zoom ZOOM_MIN-ZOOM_MAX -- the
+    whole point of this test: proper per-zoom resampling instead of one
+    client-side stretched canvas + CSS blur.
+
+    Resampling: "cubic", not "lanczos". Jon's test showed a visible cross-
+    hatch/moire pattern layered over the color. Lanczos has negative side-
+    lobes (it "rings" -- overshoots/undershoots near sharp transitions),
+    which is exactly what you get resampling a naturally blocky,
+    high-contrast source like this coarse satellite grid. Cubic
+    (Catmull-Rom) is still noticeably sharper than plain bilinear/the old
+    CSS blur, without lanczos's ringing artifact on this kind of source.
+    """
     tiles_dir.mkdir(parents=True, exist_ok=True)
     run([
         gdal2tiles_cmd(),
         "-z", f"{ZOOM_MIN}-{ZOOM_MAX}",
-        "-r", "lanczos",
+        "-r", "cubic",
         "--xyz",
         str(color_relief_tif),
         str(tiles_dir),
