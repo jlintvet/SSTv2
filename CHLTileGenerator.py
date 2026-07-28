@@ -486,38 +486,49 @@ def generate_tiles(color_relief_tif: Path, tiles_dir: Path) -> None:
     whole point of this test: proper per-zoom resampling instead of one
     client-side stretched canvas + CSS blur.
 
-    Resampling: "average", not "cubic" or "lanczos".
+    Every zoom level is generated with its OWN gdal2tiles invocation
+    ("-z Z-Z", one call per Z from ZOOM_MIN to ZOOM_MAX) instead of one
+    call covering the whole range. This is deliberate -- see history below.
 
     History: lanczos showed a visible cross-hatch/moire pattern (negative
     side-lobes "ringing" near sharp transitions on this naturally blocky,
     high-contrast source). Switching to cubic fixed that, but introduced a
     NEW artifact: a crisp rectilinear grid of transparent/dark lines, only
     visible at zoom levels BELOW ZOOM_MAX (confirmed by direct tile
-    inspection -- z=11, the native zoom rendered straight from the color-
-    relief raster, is clean; z=8, an overview gdal2tiles builds by
-    downsampling, shows the grid). gdal2tiles builds each lower-zoom tile
-    by resampling from up to 4 higher-zoom child tiles independently, then
-    stitching them into one parent tile. With ~25-75% of pixels NODATA
-    (alpha=0, RGB=(0,0,0) per the "nv" ramp row -- MAX_FILL_CELLS=0 means
-    no gap-fill smooths this out anymore), a wide-kernel resampler like
-    cubic needs source pixels beyond each child tile's own edge that
-    aren't available, and blends in that pure-black/zero-alpha "nv" color
-    inconsistently at every child-tile boundary -- visible as a self-
-    similar grid at every zoom level below native. "average" (box/mean
-    over the immediate 2x2 block) doesn't reach beyond the block it's
-    downsampling, so it can't produce this boundary-dependent artifact --
-    the standard, conventional choice for NODATA-heavy continuous rasters
-    in tile-serving pipelines for exactly this reason.
+    inspection -- z=11 was clean, z=8 showed the grid). The first fix
+    attempt (switch "-r cubic" to "-r average") did NOT resolve it --
+    Jon re-ran the pipeline and the grid was still there. That ruled out
+    the resize FILTER as the cause: gdal2tiles doesn't warp each zoom
+    independently from the source raster. Only the top zoom of whatever
+    "-z" range you give it is a direct warp; every zoom below that is
+    built by pasting 4 higher-zoom child PNG tiles into one canvas and
+    downsampling -- recursively, so a low zoom is several combine-steps
+    removed from the source. Since "average" (a 2x2 box filter that never
+    needs to look past its own block) still showed the grid, the seam
+    isn't coming from the resize step at all -- it's introduced when the
+    4 child tiles are pasted together, before any resampling filter runs,
+    so no choice of "-r" was ever going to fix it.
+
+    The fix: give gdal2tiles a single-zoom range ("-z Z-Z") on every
+    call. gdal2tiles always treats the top of whatever range it's given
+    as a direct warp from the source raster -- exactly the code path
+    that produced the clean z=11 tiles. Doing this for every zoom from
+    ZOOM_MIN to ZOOM_MAX means no zoom level ever goes through the
+    child-tile-combine path, so the paste-seam can't occur anywhere.
+    Slower (N separate warps of the same small mid_atlantic-only raster
+    instead of 1), but mid_atlantic is small enough that this is still
+    well within the Action's 60-minute timeout.
     """
     tiles_dir.mkdir(parents=True, exist_ok=True)
-    run([
-        gdal2tiles_cmd(),
-        "-z", f"{ZOOM_MIN}-{ZOOM_MAX}",
-        "-r", "average",
-        "--xyz",
-        str(color_relief_tif),
-        str(tiles_dir),
-    ])
+    for z in range(ZOOM_MIN, ZOOM_MAX + 1):
+        run([
+            gdal2tiles_cmd(),
+            "-z", f"{z}-{z}",
+            "-r", "average",
+            "--xyz",
+            str(color_relief_tif),
+            str(tiles_dir),
+        ])
     n_tiles = len(glob(str(tiles_dir / "**/*.png"), recursive=True))
     log.info("Generated %d tiles in %s", n_tiles, tiles_dir)
 
