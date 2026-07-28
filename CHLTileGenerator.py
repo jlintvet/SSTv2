@@ -486,19 +486,34 @@ def generate_tiles(color_relief_tif: Path, tiles_dir: Path) -> None:
     whole point of this test: proper per-zoom resampling instead of one
     client-side stretched canvas + CSS blur.
 
-    Resampling: "cubic", not "lanczos". Jon's test showed a visible cross-
-    hatch/moire pattern layered over the color. Lanczos has negative side-
-    lobes (it "rings" -- overshoots/undershoots near sharp transitions),
-    which is exactly what you get resampling a naturally blocky,
-    high-contrast source like this coarse satellite grid. Cubic
-    (Catmull-Rom) is still noticeably sharper than plain bilinear/the old
-    CSS blur, without lanczos's ringing artifact on this kind of source.
+    Resampling: "average", not "cubic" or "lanczos".
+
+    History: lanczos showed a visible cross-hatch/moire pattern (negative
+    side-lobes "ringing" near sharp transitions on this naturally blocky,
+    high-contrast source). Switching to cubic fixed that, but introduced a
+    NEW artifact: a crisp rectilinear grid of transparent/dark lines, only
+    visible at zoom levels BELOW ZOOM_MAX (confirmed by direct tile
+    inspection -- z=11, the native zoom rendered straight from the color-
+    relief raster, is clean; z=8, an overview gdal2tiles builds by
+    downsampling, shows the grid). gdal2tiles builds each lower-zoom tile
+    by resampling from up to 4 higher-zoom child tiles independently, then
+    stitching them into one parent tile. With ~25-75% of pixels NODATA
+    (alpha=0, RGB=(0,0,0) per the "nv" ramp row -- MAX_FILL_CELLS=0 means
+    no gap-fill smooths this out anymore), a wide-kernel resampler like
+    cubic needs source pixels beyond each child tile's own edge that
+    aren't available, and blends in that pure-black/zero-alpha "nv" color
+    inconsistently at every child-tile boundary -- visible as a self-
+    similar grid at every zoom level below native. "average" (box/mean
+    over the immediate 2x2 block) doesn't reach beyond the block it's
+    downsampling, so it can't produce this boundary-dependent artifact --
+    the standard, conventional choice for NODATA-heavy continuous rasters
+    in tile-serving pipelines for exactly this reason.
     """
     tiles_dir.mkdir(parents=True, exist_ok=True)
     run([
         gdal2tiles_cmd(),
         "-z", f"{ZOOM_MIN}-{ZOOM_MAX}",
-        "-r", "cubic",
+        "-r", "average",
         "--xyz",
         str(color_relief_tif),
         str(tiles_dir),
