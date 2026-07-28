@@ -172,6 +172,15 @@ MAX_FILL_CELLS = 0
 # If this becomes a real (non-test) feature, keep CHL_COLOR_STOPS below in
 # sync with a matching CHL_GRADIENT in SSTLive.jsx -- same pattern already
 # enforced for SLA_STOPS/SLA_GRADIENT (see SST_RENDERING.md problem #9).
+#
+# DATA_ALPHA: baked directly into every real-data tile pixel (see
+# build_color_ramp_text() below) instead of being applied as a Leaflet
+# `opacity` prop in the frontend. A CSS-level layer opacity < 1 revealed
+# hairline seams between adjacent tiles (browser sub-pixel rounding of
+# 256px tile edges) -- baking translucency into the PNG alpha channel and
+# setting the Leaflet layer to opacity 1 removes that seam artifact.
+# 229/255 (~90%) matches the prior `opacity: 0.9` visual weight.
+DATA_ALPHA = 229
 CHL_COLOR_STOPS = [
     (0.02,  (35,  10,  85)),   # deep purple  -- ultra-oligotrophic
     (0.05,  (35,  55, 150)),
@@ -436,10 +445,21 @@ def build_color_ramp_text() -> str:
     of this script left the alpha column off "nv", so every NODATA pixel
     (all land, plus all ocean beyond the gap-fill radius) rendered as
     opaque black instead of transparent, hiding the basemap underneath
-    entirely except where real CHL color existed. Explicit alpha=255 on
-    every real stop and alpha=0 on "nv" avoids relying on that default.
+    entirely except where real CHL color existed.
+
+    DATA_ALPHA (not 255): translucency is baked directly into the tile
+    pixels here instead of being applied as Leaflet layer `opacity` in the
+    frontend. Jon's test showed a visible grid/waffle pattern across the
+    ocean -- classic Leaflet hairline tile-seam artifact (adjacent 256px
+    tiles get sub-pixel-rounded to slightly different screen positions by
+    the browser; at full opacity the seam is invisible, but with a
+    layer-level `opacity < 1` the basemap peeks through the gap as a thin
+    line). Baking the translucency into the PNG's own alpha channel and
+    setting the Leaflet tile layer to opacity 1 removes the CSS-level
+    blending that exposes the seams. DATA_ALPHA=229 (~90%) matches the
+    frontend's old `opacity: 0.9` visual weight.
     """
-    lines = [f"{val:<8g}{r:>4}{g:>4}{b:>4}{255:>4}" for val, (r, g, b) in CHL_COLOR_STOPS]
+    lines = [f"{val:<8g}{r:>4}{g:>4}{b:>4}{DATA_ALPHA:>4}" for val, (r, g, b) in CHL_COLOR_STOPS]
     lines.append("nv        0   0   0   0")
     return "\n".join(lines) + "\n"
 
