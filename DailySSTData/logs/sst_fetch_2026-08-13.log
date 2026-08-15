@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-15 09:05:05
+  UTC    : 2026-08-15 09:34:15
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -13,7 +13,9 @@ SST PIPELINE
   MUR 20260814 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Access Forbidden -- Your IP address is on thi
   ✓ MUR 20260813 (cached)
   ✓ MUR 20260812 (cached)
   ✓ MUR 20260811 (cached)
@@ -23,12 +25,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✓ GOES composite 20260813 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -43,7 +45,7 @@ RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-15 09:06:47
+  UTC    : 2026-08-15 09:35:53
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -53,7 +55,9 @@ SST PIPELINE
   MUR 20260814 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Access Forbidden -- Your IP address is on thi
   ✓ MUR 20260813 (cached)
   ✓ MUR 20260812 (cached)
   ✓ MUR 20260811 (cached)
@@ -61,14 +65,14 @@ SST PIPELINE
 
 ── GOES-19 geo-polar blended daily composite ──
   Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✓ GOES composite 20260813 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -83,7 +87,7 @@ RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-15 09:09:12
+  UTC    : 2026-08-15 09:37:26
   Region : ne_fl
   Bbox   : 26.0–30.5°N  -81.97–-76.14°E
   Output : DailySSTData/MUR/ne_fl  (and siblings)
@@ -93,7 +97,9 @@ SST PIPELINE
   MUR 20260814 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Access Forbidden -- Your IP address is on thi
   ✓ MUR 20260813 (cached)
   ✓ MUR 20260812 (cached)
   ✓ MUR 20260811 (cached)
@@ -103,12 +109,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
   GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.noaa.gov blacklisted after resets
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✓ GOES composite 20260813 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -123,7 +129,7 @@ RUNNING REGION: va_ri
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-15 09:11:54
+  UTC    : 2026-08-15 09:39:27
   Region : va_ri
   Bbox   : 37.26–41.51°N  -77.46–-68.97°E
   Output : DailySSTData/MUR/va_ri  (and siblings)
@@ -133,7 +139,9 @@ SST PIPELINE
   MUR 20260814 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Access Forbidden -- Your IP address is on thi
   ✓ MUR 20260813 (cached)
   ✓ MUR 20260812 (cached)
   ✓ MUR 20260811 (cached)
@@ -141,14 +149,14 @@ SST PIPELINE
 
 ── GOES-19 geo-polar blended daily composite ──
   Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
-  GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✓ GOES composite 20260813 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -163,7 +171,7 @@ RUNNING REGION: s_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-15 09:14:26
+  UTC    : 2026-08-15 09:40:39
   Region : s_fl
   Bbox   : 22.15–27.47°N  -83.16–-76.14°E
   Output : DailySSTData/MUR/s_fl  (and siblings)
@@ -173,7 +181,9 @@ SST PIPELINE
   MUR 20260814 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260814 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  ✗ MUR 20260814 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 403 Forbidden — blacklisted: Error {
+    code=403;
+    message="Forbidden: Access Forbidden -- Your IP address is on thi
   ✓ MUR 20260813 (cached)
   ✓ MUR 20260812 (cached)
   ✓ MUR 20260811 (cached)
@@ -183,12 +193,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260815 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20260815 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260815 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   GOES 20260814 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260814 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDLDaily] … skipped (host blacklisted)
+  GOES 20260814 [pfeg/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
   ✓ GOES composite 20260813 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
