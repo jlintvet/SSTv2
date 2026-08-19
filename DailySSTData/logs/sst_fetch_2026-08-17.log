@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-19 06:59:14
+  UTC    : 2026-08-19 07:08:06
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -13,7 +13,7 @@ SST PIPELINE
   MUR 20260818 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20260817 (cached)
   ✓ MUR 20260816 (cached)
   ✓ MUR 20260815 (cached)
@@ -23,12 +23,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260819 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260819 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260817 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -313,6 +313,7 @@ SST PIPELINE
   n20 20260819_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20260819_0600 …   → DailySSTData/VIIRS/Passes/viirs_n20_20260819_0600.csv  (23748 pts, 265 lats × 333 lons)
   n21 20260817_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -452,20 +453,20 @@ SST PIPELINE
   n21 20260819_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 0 written, 9 cached, 408 miss/cloud, 554 outside windows.
+  VIIRS summary: 1 written, 9 cached, 409 miss/cloud, 556 outside windows.
 
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for mid_atlantic
 ========================================
 RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-19 07:10:27
+  UTC    : 2026-08-19 07:19:03
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -475,7 +476,7 @@ SST PIPELINE
   MUR 20260818 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20260817 (cached)
   ✓ MUR 20260816 (cached)
   ✓ MUR 20260815 (cached)
@@ -485,12 +486,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260819 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260819 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260817 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -776,6 +777,7 @@ SST PIPELINE
   n20 20260819_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0600 …   → DailySSTData/VIIRS/Passes/ga_sc/viirs_n20_20260819_0600.csv  (47034 pts, 270 lats × 278 lons)
+  n20 20260819_0610 …   → DailySSTData/VIIRS/Passes/ga_sc/viirs_n20_20260819_0610.csv  (1332 pts, 13 lats × 221 lons)
   n21 20260817_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -918,7 +920,7 @@ SST PIPELINE
   n21 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 1 written, 10 cached, 408 miss/cloud, 556 outside windows.
+  VIIRS summary: 2 written, 10 cached, 408 miss/cloud, 556 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -928,7 +930,7 @@ RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-19 07:21:36
+  UTC    : 2026-08-19 07:30:04
   Region : ne_fl
   Bbox   : 26.0–30.5°N  -81.97–-76.14°E
   Output : DailySSTData/MUR/ne_fl  (and siblings)
@@ -938,7 +940,7 @@ SST PIPELINE
   MUR 20260818 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectTimeout: HTTPSConnectionPool(host='upwell.pfeg.noaa.gov', port=443): Max retries exceeded with url: /erddap/gridd
+  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20260817 (cached)
   ✓ MUR 20260816 (cached)
   ✓ MUR 20260815 (cached)
@@ -948,12 +950,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260819 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260819 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260817 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -1393,7 +1395,7 @@ RUNNING REGION: va_ri
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-19 07:33:12
+  UTC    : 2026-08-19 07:40:54
   Region : va_ri
   Bbox   : 37.26–41.51°N  -77.46–-68.97°E
   Output : DailySSTData/MUR/va_ri  (and siblings)
@@ -1403,7 +1405,7 @@ SST PIPELINE
   MUR 20260818 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20260817 (cached)
   ✓ MUR 20260816 (cached)
   ✓ MUR 20260815 (cached)
@@ -1413,12 +1415,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260819 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260819 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260817 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -1565,6 +1567,7 @@ SST PIPELINE
   npp 20260819_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260819_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -1848,7 +1851,7 @@ SST PIPELINE
   n21 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 1 written, 10 cached, 410 miss/cloud, 558 outside windows.
+  VIIRS summary: 1 written, 10 cached, 411 miss/cloud, 559 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -1858,7 +1861,7 @@ RUNNING REGION: s_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-08-19 07:44:35
+  UTC    : 2026-08-19 07:51:48
   Region : s_fl
   Bbox   : 22.15–27.47°N  -83.16–-76.14°E
   Output : DailySSTData/MUR/s_fl  (and siblings)
@@ -1868,7 +1871,7 @@ SST PIPELINE
   MUR 20260818 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20260818 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+  ✗ MUR 20260818 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20260817 (cached)
   ✓ MUR 20260816 (cached)
   ✓ MUR 20260815 (cached)
@@ -1878,12 +1881,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20260819 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260819 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
-  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: ('Connection aborted.', ConnectionResetError(104, 'Connection r
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260819 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20260818 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443):
-  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20260818 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20260817 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -2031,6 +2034,7 @@ SST PIPELINE
   npp 20260819_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   npp 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  npp 20260819_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260817_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -2172,6 +2176,7 @@ SST PIPELINE
   n20 20260819_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20260819_0610 …   → DailySSTData/VIIRS/Passes/s_fl/viirs_n20_20260819_0610.csv  (47968 pts, 267 lats × 283 lons)
+  n20 20260819_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260817_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -2315,7 +2320,7 @@ SST PIPELINE
   n21 20260819_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20260819_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 1 written, 9 cached, 413 miss/cloud, 561 outside windows.
+  VIIRS summary: 1 written, 9 cached, 415 miss/cloud, 564 outside windows.
 
 =========================================================
 ✓ Pipeline complete
