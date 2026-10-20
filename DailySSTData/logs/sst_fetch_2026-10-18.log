@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-20 14:56:08
+  UTC    : 2026-10-20 19:08:40
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -11,293 +11,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20261019 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261019 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: HTTP 503: Error {
-    code=503;
-    message="Service Unavailable: There was a (temporary?) problem.  Wait a minute, then
-  ✓ MUR 20261018 (cached)
-  ✓ MUR 20261017 (cached)
-  ✓ MUR 20261016 (cached)
-  ✓ MUR 20261015 (cached)
-
-── GOES-19 geo-polar blended daily composite ──
-  Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20261018 (cached)
-
-── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
-  ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
-  Hourly windows : 48
-  Window range   : 2026-10-18 14:50Z → 2026-10-20 14:10Z
-  Half-width     : ±10 min per bucket
-  ⚠ dir listing failed npp 2026/291: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out.
-  npp 20261019_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1800 ✓ (cached)
-  npp 20261019_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261019_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0800 …   → DailySSTData/VIIRS/Passes/viirs_npp_20261020_0800.csv  (18426 pts, 265 lats × 316 lons)
-  npp 20261020_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  npp 20261020_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1700 ✓ (cached)
-  n20 20261018_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261018_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0700 ✓ (cached)
-  n20 20261019_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261019_2350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0210 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0250 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0300 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0310 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0350 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0400 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0410 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0450 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0500 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0510 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0550 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_0950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1000 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1010 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1150 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1200 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261020_1210 … ✗ hard timeout: hard timeout (150s) exceeded: 20261020121000-STAR-L3U_GHRSST-SSTsubskin-VIIRS_N20-ACSPO_V2.80-v02.0-fv01.0.nc
-
-  ⏱ soft time budget (25 min) reached -- stopping VIIRS fetch early so this run can still commit what succeeded, rather than risk the external 60-min GitHub Actions job kill (which commits nothing).
-
-  VIIRS summary: 1 written, 3 cached, 230 miss/cloud, 318 outside windows.
-
-=========================================================
-✓ Pipeline complete
-=========================================================
-========================================
-RUNNING REGION: ga_sc
-========================================
-=========================================================
-SST PIPELINE
-  UTC    : 2026-10-20 15:23:53
-  Region : ga_sc
-  Bbox   : 29.8–35.2°N  -82.0–-75.2°E
-  Output : DailySSTData/MUR/ga_sc  (and siblings)
-=========================================================
-
-── MUR daily composite (last 5 days) ──
-  MUR 20261019 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 14 coastline polygons)
-  (land filter: dropped 81 inland, kept 9965 ocean)
+  MUR 20261019 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 94 inland, kept 8892 ocean)
   ✓ MUR 20261019
-  → DailySSTData/MUR/ga_sc/mur_20261019.csv  (9965 pts, 109 lats × 126 lons)
+  → DailySSTData/MUR/mur_20261019.csv  (8892 pts, 107 lats × 133 lons)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
   ✓ MUR 20261016 (cached)
@@ -305,47 +22,7 @@ SST PIPELINE
 
 ── GOES-19 geo-polar blended daily composite ──
   Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20261018 (cached)
-
-── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
-  ✗ Neither VIIRS NRT file server URL is reachable.
-
-=========================================================
-✓ Pipeline complete
-=========================================================
-========================================
-RUNNING REGION: ne_fl
-========================================
-=========================================================
-SST PIPELINE
-  UTC    : 2026-10-20 15:25:35
-  Region : ne_fl
-  Bbox   : 26.0–30.5°N  -81.97–-76.14°E
-  Output : DailySSTData/MUR/ne_fl  (and siblings)
-=========================================================
-
-── MUR daily composite (last 5 days) ──
-  MUR 20261019 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 19 coastline polygons)
-  (land filter: dropped 216 inland, kept 8119 ocean)
-  ✓ MUR 20261019
-  → DailySSTData/MUR/ne_fl/mur_20261019.csv  (8119 pts, 91 lats × 111 lons)
-  ✓ MUR 20261018 (cached)
-  ✓ MUR 20261017 (cached)
-  ✓ MUR 20261016 (cached)
-  ✓ MUR 20261015 (cached)
-
-── GOES-19 geo-polar blended daily composite ──
-  Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
@@ -362,22 +39,18 @@ SST PIPELINE
 ✓ Pipeline complete
 =========================================================
 ========================================
-RUNNING REGION: va_ri
+RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-20 15:28:20
-  Region : va_ri
-  Bbox   : 37.26–41.51°N  -77.46–-68.97°E
-  Output : DailySSTData/MUR/va_ri  (and siblings)
+  UTC    : 2026-10-20 19:12:04
+  Region : ga_sc
+  Bbox   : 29.8–35.2°N  -82.0–-75.2°E
+  Output : DailySSTData/MUR/ga_sc  (and siblings)
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20261019 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 33 coastline polygons)
-  (land filter: dropped 242 inland, kept 9614 ocean)
-  ✓ MUR 20261019
-  → DailySSTData/MUR/va_ri/mur_20261019.csv  (9614 pts, 86 lats × 166 lons)
+  ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
   ✓ MUR 20261016 (cached)
@@ -386,11 +59,11 @@ SST PIPELINE
 ── GOES-19 geo-polar blended daily composite ──
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
   GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.noaa.gov blacklisted after resets
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20261018 (cached)
@@ -401,27 +74,21 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
+No data changes to commit for ga_sc
 ========================================
-RUNNING REGION: s_fl
+RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-20 15:31:19
-  Region : s_fl
-  Bbox   : 22.15–27.47°N  -83.16–-76.14°E
-  Output : DailySSTData/MUR/s_fl  (and siblings)
+  UTC    : 2026-10-20 19:14:29
+  Region : ne_fl
+  Bbox   : 26.0–30.5°N  -81.97–-76.14°E
+  Output : DailySSTData/MUR/ne_fl  (and siblings)
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20261019 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261019 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 166 coastline polygons)
-  (land filter: dropped 472 inland, kept 11992 ocean)
-  ✓ MUR 20261019
-  → DailySSTData/MUR/s_fl/mur_20261019.csv  (11992 pts, 107 lats × 141 lons)
-  MUR 20261018 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261018 (coastwatch.pfeg.noaa.gov) …   (land filter: dropped 472 inland, kept 11992 ocean)
-  ✓ MUR 20261018
-  → DailySSTData/MUR/s_fl/mur_20261018.csv  (11992 pts, 107 lats × 141 lons)
+  ✓ MUR 20261019 (cached)
+  ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
   ✓ MUR 20261016 (cached)
   ✓ MUR 20261015 (cached)
@@ -432,8 +99,8 @@ SST PIPELINE
   GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: host coastwatch.noaa.gov blacklisted after resets
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … skipped (host blacklisted)
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
   GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20261018 (cached)
@@ -444,3 +111,78 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
+No data changes to commit for ne_fl
+========================================
+RUNNING REGION: va_ri
+========================================
+=========================================================
+SST PIPELINE
+  UTC    : 2026-10-20 19:17:15
+  Region : va_ri
+  Bbox   : 37.26–41.51°N  -77.46–-68.97°E
+  Output : DailySSTData/MUR/va_ri  (and siblings)
+=========================================================
+
+── MUR daily composite (last 5 days) ──
+  ✓ MUR 20261019 (cached)
+  ✓ MUR 20261018 (cached)
+  ✓ MUR 20261017 (cached)
+  ✓ MUR 20261016 (cached)
+  ✓ MUR 20261015 (cached)
+
+── GOES-19 geo-polar blended daily composite ──
+  Candidates: 4 (2 hosts × 2 dataset IDs)
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  ✓ GOES composite 20261018 (cached)
+
+── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
+  ✗ Neither VIIRS NRT file server URL is reachable.
+
+=========================================================
+✓ Pipeline complete
+=========================================================
+No data changes to commit for va_ri
+========================================
+RUNNING REGION: s_fl
+========================================
+=========================================================
+SST PIPELINE
+  UTC    : 2026-10-20 19:20:01
+  Region : s_fl
+  Bbox   : 22.15–27.47°N  -83.16–-76.14°E
+  Output : DailySSTData/MUR/s_fl  (and siblings)
+=========================================================
+
+── MUR daily composite (last 5 days) ──
+  ✓ MUR 20261019 (cached)
+  ✓ MUR 20261018 (cached)
+  ✓ MUR 20261017 (cached)
+  ✓ MUR 20261016 (cached)
+  ✓ MUR 20261015 (cached)
+
+── GOES-19 geo-polar blended daily composite ──
+  Candidates: 4 (2 hosts × 2 dataset IDs)
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Max 
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  ✓ GOES composite 20261018 (cached)
+
+── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
+  ✗ Neither VIIRS NRT file server URL is reachable.
+
+=========================================================
+✓ Pipeline complete
+=========================================================
+No data changes to commit for s_fl
