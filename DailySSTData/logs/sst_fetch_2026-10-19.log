@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 07:27:24
+  UTC    : 2026-10-21 13:41:44
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -11,9 +11,66 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  MUR 20261020 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 24 coastline polygons)
+  (land filter: dropped 94 inland, kept 8892 ocean)
+  ✓ MUR 20261020
+  → DailySSTData/MUR/mur_20261020.csv  (8892 pts, 107 lats × 133 lons)
+  ✓ MUR 20261019 (cached)
+  ✓ MUR 20261018 (cached)
+  ✓ MUR 20261017 (cached)
+  ✓ MUR 20261016 (cached)
+
+── GOES-19 geo-polar blended daily composite ──
+  Candidates: 4 (2 hosts × 2 dataset IDs)
+  GOES 20261021 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261021 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261021 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  ✓ GOES composite 20261018 (cached)
+
+── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
+  ✗ Neither VIIRS NRT file server URL is reachable.
+
+=========================================================
+✓ Pipeline complete
+=========================================================
+========================================
+RUNNING REGION: ga_sc
+========================================
+=========================================================
+SST PIPELINE
+  UTC    : 2026-10-21 13:47:44
+  Region : ga_sc
+  Bbox   : 29.8–35.2°N  -82.0–-75.2°E
+  Output : DailySSTData/MUR/ga_sc  (and siblings)
+=========================================================
+
+── MUR daily composite (last 5 days) ──
+  MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
+  MUR 20261020 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 14 coastline polygons)
+  (land filter: dropped 81 inland, kept 9965 ocean)
+  ✓ MUR 20261020
+  → DailySSTData/MUR/ga_sc/mur_20261020.csv  (9965 pts, 109 lats × 126 lons)
   ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
@@ -50,15 +107,15 @@ SST PIPELINE
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
   ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
   Hourly windows : 48
-  Window range   : 2026-10-19 07:50Z → 2026-10-21 07:10Z
+  Window range   : 2026-10-19 13:50Z → 2026-10-21 13:10Z
   Half-width     : ±10 min per bucket
   ⚠ dir listing failed npp 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/292/
   ⚠ dir listing failed npp 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/293/
   ⚠ dir listing failed npp 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/294/
-  ⚠ dir listing failed n20 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/292/
-  ⚠ dir listing failed n20 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/293/
-  ⚠ dir listing failed n20 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/294/
-  ⚠ dir listing failed n21 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/292/
+  ⚠ dir listing failed n20 2026/292: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ⚠ dir listing failed n20 2026/293: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ⚠ dir listing failed n20 2026/294: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=30)
+  ⚠ dir listing failed n21 2026/292: HTTPSConnectionPool(host='www.star.nesdis.noaa.gov', port=443): Read timed out. (read timeout=30)
   ⚠ dir listing failed n21 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/293/
   ⚠ dir listing failed n21 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/294/
 
@@ -68,69 +125,12 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for mid_atlantic
-========================================
-RUNNING REGION: ga_sc
-========================================
-=========================================================
-SST PIPELINE
-  UTC    : 2026-10-21 07:33:00
-  Region : ga_sc
-  Bbox   : 29.8–35.2°N  -82.0–-75.2°E
-  Output : DailySSTData/MUR/ga_sc  (and siblings)
-=========================================================
-
-── MUR daily composite (last 5 days) ──
-  MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
-  ✓ MUR 20261019 (cached)
-  ✓ MUR 20261018 (cached)
-  ✓ MUR 20261017 (cached)
-  ✓ MUR 20261016 (cached)
-
-── GOES-19 geo-polar blended daily composite ──
-  Candidates: 4 (2 hosts × 2 dataset IDs)
-  GOES 20261021 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261021 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261021 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  ✓ GOES composite 20261018 (cached)
-
-── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
-  ✗ Neither VIIRS NRT file server URL is reachable.
-
-=========================================================
-✓ Pipeline complete
-=========================================================
-No data changes to commit for ga_sc
 ========================================
 RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 07:38:58
+  UTC    : 2026-10-21 13:55:17
   Region : ne_fl
   Bbox   : 26.0–30.5°N  -81.97–-76.14°E
   Output : DailySSTData/MUR/ne_fl  (and siblings)
@@ -138,9 +138,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  MUR 20261020 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 19 coastline polygons)
+  (land filter: dropped 216 inland, kept 8119 ocean)
+  ✓ MUR 20261020
+  → DailySSTData/MUR/ne_fl/mur_20261020.csv  (8119 pts, 91 lats × 111 lons)
   ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
@@ -180,13 +181,12 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for ne_fl
 ========================================
 RUNNING REGION: va_ri
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 07:44:56
+  UTC    : 2026-10-21 14:01:16
   Region : va_ri
   Bbox   : 37.26–41.51°N  -77.46–-68.97°E
   Output : DailySSTData/MUR/va_ri  (and siblings)
@@ -194,9 +194,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  MUR 20261020 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 33 coastline polygons)
+  (land filter: dropped 242 inland, kept 9614 ocean)
+  ✓ MUR 20261020
+  → DailySSTData/MUR/va_ri/mur_20261020.csv  (9614 pts, 86 lats × 166 lons)
   ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
@@ -236,13 +237,12 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for va_ri
 ========================================
 RUNNING REGION: s_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 07:50:55
+  UTC    : 2026-10-21 14:07:15
   Region : s_fl
   Bbox   : 22.15–27.47°N  -83.16–-76.14°E
   Output : DailySSTData/MUR/s_fl  (and siblings)
@@ -250,9 +250,10 @@ SST PIPELINE
 
 ── MUR daily composite (last 5 days) ──
   MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
-  MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
+  MUR 20261020 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 166 coastline polygons)
+  (land filter: dropped 472 inland, kept 11992 ocean)
+  ✓ MUR 20261020
+  → DailySSTData/MUR/s_fl/mur_20261020.csv  (11992 pts, 107 lats × 141 lons)
   ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
@@ -292,4 +293,3 @@ SST PIPELINE
 =========================================================
 ✓ Pipeline complete
 =========================================================
-No data changes to commit for s_fl
