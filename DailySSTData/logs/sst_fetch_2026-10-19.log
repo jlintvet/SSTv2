@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 05:14:21
+  UTC    : 2026-10-21 07:27:24
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -13,9 +13,7 @@ SST PIPELINE
   MUR 20261020 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20261020 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20261020 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: HTTP 503: Error {
-    code=503;
-    message="Service Unavailable: There was a (temporary?) problem.  Wait a minute, then
+  ✗ MUR 20261020 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: 404 — no data for this date
   ✓ MUR 20261019 (cached)
   ✓ MUR 20261018 (cached)
   ✓ MUR 20261017 (cached)
@@ -50,7 +48,22 @@ SST PIPELINE
   ✓ GOES composite 20261018 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
-  ✗ Neither VIIRS NRT file server URL is reachable.
+  ✓ VIIRS NRT base: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs
+  Hourly windows : 48
+  Window range   : 2026-10-19 07:50Z → 2026-10-21 07:10Z
+  Half-width     : ±10 min per bucket
+  ⚠ dir listing failed npp 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/292/
+  ⚠ dir listing failed npp 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/293/
+  ⚠ dir listing failed npp 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/npp/l3u/2026/294/
+  ⚠ dir listing failed n20 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/292/
+  ⚠ dir listing failed n20 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/293/
+  ⚠ dir listing failed n20 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n20/l3u/2026/294/
+  ⚠ dir listing failed n21 2026/292: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/292/
+  ⚠ dir listing failed n21 2026/293: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/293/
+  ⚠ dir listing failed n21 2026/294: 403 Client Error: Forbidden for url: https://www.star.nesdis.noaa.gov/pub/socd2/coastwatch/sst/nrt/viirs/n21/l3u/2026/294/
+
+  VIIRS summary: 0 written, 0 cached, 0 miss/cloud, 0 outside windows.
+  ⚠ No VIIRS data produced. Check NRT server availability or increase VIIRS_HOURS_BACK.
 
 =========================================================
 ✓ Pipeline complete
@@ -61,7 +74,7 @@ RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 05:21:52
+  UTC    : 2026-10-21 07:33:00
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
@@ -90,11 +103,17 @@ SST PIPELINE
   GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261019 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261019 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261019 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   ✓ GOES composite 20261018 (cached)
@@ -111,7 +130,7 @@ RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 05:27:40
+  UTC    : 2026-10-21 07:38:58
   Region : ne_fl
   Bbox   : 26.0–30.5°N  -81.97–-76.14°E
   Output : DailySSTData/MUR/ne_fl  (and siblings)
@@ -132,11 +151,17 @@ SST PIPELINE
   GOES 20261021 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title
-  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261021 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261021 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
-  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
+  GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261020 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261020 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261019 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
@@ -161,7 +186,7 @@ RUNNING REGION: va_ri
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 05:34:00
+  UTC    : 2026-10-21 07:44:56
   Region : va_ri
   Bbox   : 37.26–41.51°N  -77.46–-68.97°E
   Output : DailySSTData/MUR/va_ri  (and siblings)
@@ -182,10 +207,14 @@ SST PIPELINE
   GOES 20261021 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title
-  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261021 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261021 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261021 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.noaa.gov', port=443): Read tim
+  GOES 20261020 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title
   GOES 20261020 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: HTTP 503: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
 <html><head>
 <title
@@ -213,7 +242,7 @@ RUNNING REGION: s_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-10-21 05:40:08
+  UTC    : 2026-10-21 07:50:55
   Region : s_fl
   Bbox   : 22.15–27.47°N  -83.16–-76.14°E
   Output : DailySSTData/MUR/s_fl  (and siblings)
