@@ -3,7 +3,7 @@ RUNNING REGION: mid_atlantic
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-11-16 20:08:06
+  UTC    : 2026-11-16 20:17:06
   Region : mid_atlantic
   Bbox   : 33.7–39.0°N  -78.89–-72.21°E
   Output : DailySSTData/MUR  (and siblings)
@@ -316,8 +316,9 @@ SST PIPELINE
   n21 20261116_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 2 written, 5 cached, 272 miss/cloud, 527 outside windows.
+  VIIRS summary: 2 written, 5 cached, 273 miss/cloud, 527 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -327,18 +328,14 @@ RUNNING REGION: ga_sc
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-11-16 20:15:59
+  UTC    : 2026-11-16 20:25:12
   Region : ga_sc
   Bbox   : 29.8–35.2°N  -82.0–-75.2°E
   Output : DailySSTData/MUR/ga_sc  (and siblings)
 =========================================================
 
 ── MUR daily composite (last 5 days) ──
-  MUR 20261115 (coastwatch.noaa.gov) … ✗ RuntimeError
-  MUR 20261115 (coastwatch.pfeg.noaa.gov) …   (land filter: loaded 14 coastline polygons)
-  (land filter: dropped 81 inland, kept 9965 ocean)
-  ✓ MUR 20261115
-  → DailySSTData/MUR/ga_sc/mur_20261115.csv  (9965 pts, 109 lats × 126 lons)
+  ✓ MUR 20261115 (cached)
   ✓ MUR 20261114 (cached)
   ✓ MUR 20261113 (cached)
   ✓ MUR 20261112 (cached)
@@ -348,12 +345,12 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20261116 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261116 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261116 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261116 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261116 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
+  GOES 20261116 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
   GOES 20261115 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261115 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261115 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
+  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
+  GOES 20261115 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
   ✓ GOES composite 20261114 (cached)
 
 ── VIIRS multi-pass (last 48h — NPP/N20/N21) ──
@@ -498,10 +495,11 @@ SST PIPELINE
   n20 20261116_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1750 …   ⚠ VIIRS n20 20261116_1750: only 46 pts — skipping write.
 ✗ ok
-  n20 20261116_1800 …   → DailySSTData/VIIRS/Passes/ga_sc/viirs_n20_20261116_1800.csv  (6367 pts, 151 lats × 217 lons)
+  n20 20261116_1800 ✓ (cached)
   n20 20261116_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -635,25 +633,27 @@ SST PIPELINE
   n21 20261116_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20261116_1700 …   → DailySSTData/VIIRS/Passes/ga_sc/viirs_n21_20261116_1700.csv  (2793 pts, 132 lats × 122 lons)
+  n21 20261116_1700 ✓ (cached)
   n21 20261116_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n21 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 2 written, 4 cached, 274 miss/cloud, 527 outside windows.
+  VIIRS summary: 0 written, 6 cached, 276 miss/cloud, 528 outside windows.
 
 =========================================================
 ✓ Pipeline complete
 =========================================================
+No data changes to commit for ga_sc
 ========================================
 RUNNING REGION: ne_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-11-16 20:23:47
+  UTC    : 2026-11-16 20:33:41
   Region : ne_fl
   Bbox   : 26.0–30.5°N  -81.97–-76.14°E
   Output : DailySSTData/MUR/ne_fl  (and siblings)
@@ -663,7 +663,7 @@ SST PIPELINE
   MUR 20261115 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20261115 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20261115 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261115 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Read timed out. (read timeout=15)
+  ✗ MUR 20261115 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Max retries exceeded with url: /erddap/
   ✓ MUR 20261114 (cached)
   ✓ MUR 20261113 (cached)
   ✓ MUR 20261112 (cached)
@@ -673,11 +673,11 @@ SST PIPELINE
   Candidates: 4 (2 hosts × 2 dataset IDs)
   GOES 20261116 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261116 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261116 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
+  GOES 20261116 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443):
   GOES 20261116 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
   GOES 20261115 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261115 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
+  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443):
   GOES 20261115 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
   ✓ GOES composite 20261114 (cached)
 
@@ -827,6 +827,7 @@ SST PIPELINE
   n20 20261116_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
+  n20 20261116_1950 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2050 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2100 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261114_2110 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -969,7 +970,7 @@ SST PIPELINE
   n21 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 2 written, 4 cached, 276 miss/cloud, 528 outside windows.
+  VIIRS summary: 2 written, 4 cached, 277 miss/cloud, 528 outside windows.
 
 =========================================================
 ✓ Pipeline complete
@@ -979,7 +980,7 @@ RUNNING REGION: va_ri
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-11-16 20:32:50
+  UTC    : 2026-11-16 20:42:49
   Region : va_ri
   Bbox   : 37.26–41.51°N  -77.46–-68.97°E
   Output : DailySSTData/MUR/va_ri  (and siblings)
@@ -989,7 +990,7 @@ SST PIPELINE
   MUR 20261115 (coastwatch.noaa.gov) … ✗ RuntimeError
   MUR 20261115 (coastwatch.pfeg.noaa.gov) … ✗ RuntimeError
   MUR 20261115 (upwell.pfeg.noaa.gov) … ✗ RuntimeError
-  ✗ MUR 20261115 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Read timed out. (read timeout=15)
+  ✗ MUR 20261115 — all mirrors failed. Last: upwell.pfeg.noaa.gov: RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Max retries exceeded with url: /erddap/
   ✓ MUR 20261114 (cached)
   ✓ MUR 20261113 (cached)
   ✓ MUR 20261112 (cached)
@@ -1003,7 +1004,7 @@ SST PIPELINE
   GOES 20261116 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443):
   GOES 20261115 [noaa/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: 404 — no data for this date
   GOES 20261115 [noaa/noaacwBLENDEDsstDaily] … ✗ RuntimeError: 404 — no data for this date
-  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ConnectionError: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443):
+  GOES 20261115 [pfeg/noaacwBLENDEDsstDLDaily] … ✗ RuntimeError: ReadTimeout: HTTPSConnectionPool(host='coastwatch.pfeg.noaa.gov', port=443): Rea
   GOES 20261115 [pfeg/noaacwBLENDEDsstDaily] … ✗ RuntimeError: host coastwatch.pfeg.noaa.gov blacklisted after resets
   ✓ GOES composite 20261114 (cached)
 
@@ -1148,7 +1149,7 @@ SST PIPELINE
   n20 20261116_1700 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n20 20261116_1800 …   → DailySSTData/VIIRS/Passes/va_ri/viirs_n20_20261116_1800.csv  (14625 pts, 213 lats × 360 lons)
+  n20 20261116_1800 ✓ (cached)
   n20 20261116_1810 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1850 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n20 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -1288,7 +1289,7 @@ SST PIPELINE
   n21 20261116_1600 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1610 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1650 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
-  n21 20261116_1700 …   → DailySSTData/VIIRS/Passes/va_ri/viirs_n21_20261116_1700.csv  (12688 pts, 213 lats × 372 lons)
+  n21 20261116_1700 ✓ (cached)
   n21 20261116_1710 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1750 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1800 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
@@ -1297,17 +1298,18 @@ SST PIPELINE
   n21 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 2 written, 2 cached, 279 miss/cloud, 528 outside windows.
+  VIIRS summary: 0 written, 4 cached, 279 miss/cloud, 529 outside windows.
 
 =========================================================
 ✓ Pipeline complete
 =========================================================
+No data changes to commit for va_ri
 ========================================
 RUNNING REGION: s_fl
 ========================================
 =========================================================
 SST PIPELINE
-  UTC    : 2026-11-16 20:42:01
+  UTC    : 2026-11-16 20:52:08
   Region : s_fl
   Bbox   : 22.15–27.47°N  -83.16–-76.14°E
   Output : DailySSTData/MUR/s_fl  (and siblings)
@@ -1624,7 +1626,7 @@ SST PIPELINE
   n21 20261116_1900 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
   n21 20261116_1910 … ✗ swath overlaps bbox but all pixels cloud/land masked (raw_valid_in_bbox=0, ql_dist=None)
 
-  VIIRS summary: 1 written, 4 cached, 278 miss/cloud, 529 outside windows.
+  VIIRS summary: 1 written, 4 cached, 278 miss/cloud, 530 outside windows.
 
 =========================================================
 ✓ Pipeline complete
