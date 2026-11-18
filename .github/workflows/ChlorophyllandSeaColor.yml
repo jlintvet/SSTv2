@@ -158,6 +158,13 @@ jobs:
       # ── 5. Commit & push output files ────────────────────────────────────
       # Only commits if files actually changed (git diff --staged --quiet guard).
       # Uses github-actions bot identity to keep commit history clean.
+      #
+      # Other SSTv2 workflows push to main on overlapping schedules, so a single
+      # pull-then-push can lose the race ("cannot lock ref ... expected ...").
+      # Retry up to 6 times, rebasing onto the latest main each time, with a
+      # randomized backoff so colliding workflows don't retry in lockstep.
+      # This workflow only writes Chlorophyll/ and SeaColor/, so the rebase
+      # never conflicts with other workflows' commits.
       - name: Commit and push updated data files
         run: |
           git config user.name  "github-actions[bot]"
@@ -169,11 +176,24 @@ jobs:
 
           if git diff --staged --quiet; then
             echo "No file changes — nothing to commit."
-          else
-            git commit -m "data: chlorophyll + sea color $(date -u +%Y-%m-%d)"
-            git pull --rebase origin main
-            git push
+            exit 0
           fi
+
+          git commit -m "data: chlorophyll + sea color $(date -u +%Y-%m-%d)"
+
+          for attempt in 1 2 3 4 5 6; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              echo "Pushed on attempt $attempt"
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            sleep_for=$(( (RANDOM % 15) + attempt * 5 ))
+            echo "Push rejected (attempt $attempt), retrying in ${sleep_for}s"
+            sleep "$sleep_for"
+          done
+
+          echo "Push failed after 6 attempts"
+          exit 1
 
       # ── 6. Upload artifacts on failure ───────────────────────────────────
       # If the run fails, upload whatever partial output was written so you
